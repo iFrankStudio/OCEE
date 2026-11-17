@@ -78,9 +78,11 @@ fn calibrate(label:&'static str,gas:u64,max_ticks:u64,seed:u64)->Record {
 }
 
 fn main(){
-    let records=[
-        calibrate("E001-default-A-gas",12_000,12_288,7),
-        calibrate("development-A-gas",100_000,2_048,7),
-    ];
+    // Development seeds only; never reuse these as confirmatory held-out data.
+    let mut records=Vec::new();
+    for seed in [7,42,99,2026] {
+        records.push(calibrate("E001-default-A-gas",12_000,12_288,seed));
+        records.push(calibrate("development-A-gas",100_000,2_048,seed));
+    }
     println!("{}",serde_json::to_string_pretty(&records).expect("JSON record"));
 }
