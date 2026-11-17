@@ -53,8 +53,17 @@ pub fn s4_p0_structural_repair()->Program {
     builder.instructions.push(ins(523,Op::ConstU32(0)));
     builder.terminator=Terminator::Yield{
         call:WorldCall::Write,args:vec![521,515,522],
-        next:"tool_test".into(),next_args:vec![519,500,515,523],
+        next:"tool_loop".into(),next_args:vec![519,500,515,523],
     };
+
+    // The control-flow back edge must pass through a VM-enforced bounded
+    // header; unbounded cycles remain statically invalid.
+    f.blocks.push(block("tool_loop",vec![
+        arg(1000,b),arg(1001,b),arg(1002,b),arg(1003,n),arg(1004,b)
+    ],vec![],Terminator::RepeatBounded{limit:2,
+        body:"tool_test".into(),body_args:vec![1000,1001,1002,1003,1004],
+        done:"tool_failed".into(),done_args:vec![]
+    }));
 
     replace(f,block("tool_test",vec![
         arg(530,b),arg(531,b),arg(532,b),arg(533,n),arg(534,b)
@@ -120,7 +129,7 @@ pub fn s4_p0_structural_repair()->Program {
             ins(912,Op::ConstU32(u32::MAX)),
             ins(913,Op::ConstU32(1)),
         ],Terminator::Yield{call:WorldCall::Write,
-            args:vec![911,905,912],next:"tool_test".into(),
+            args:vec![911,905,912],next:"tool_loop".into(),
             next_args:vec![909,901,905,913]
         })
     ]);
