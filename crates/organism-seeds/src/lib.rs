@@ -121,3 +121,6 @@ pub mod s4_structural;
 
 /// S5 seed: closed-vocabulary search using public input/output examples.
 pub mod s5_search;
+
+/// S6: bounded multi-node composition search over a seeded operator grammar.
+pub mod s6_compose;
