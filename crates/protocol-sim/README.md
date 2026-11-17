@@ -14,6 +14,6 @@ Only the world host imports `Protocol` and `Service`; organism VM code cannot ca
 
 ## Status
 
-The crate's frame/semantic tests and its integration with `world-kernel` pass CI. The host publishes legal HELLO request/response samples to `/public/C/hello` for future protocol-discovery research. There is **no independent restricted learner yet**, so protocol learnability and E001 success are unverified.
+The crate's frame/semantic tests, P0/P1 limited-feedback opcode probe, and its integration with `world-kernel` pass CI. The opcode probe starts with a researcher-defined generic P0/P1 framing model; it does not infer an unseen grammar or exercise a VM organism. The host publishes legal HELLO request/response samples to `/public/C/hello` for future protocol-discovery research. There is **no independent restricted learner yet**, so protocol learnability and E001 success are unverified.
 
 Run: `cargo test --workspace`.
