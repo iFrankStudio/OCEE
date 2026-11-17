@@ -22,7 +22,8 @@
 WorldState {
     schema_version: u32, kernel_version: String,
     step: u64, rng_state: DeterministicRng,
-    epoch_index: u64, nodes: BTreeMap<NodeId, NodeState>,
+    epoch_index: u64, last_granted_epoch: Option<u64>,
+    nodes: BTreeMap<NodeId, NodeState>,
     objects: BTreeMap<ObjectId, VersionedObject>,
     organisms: BTreeMap<OrganismId, OrganismState>,
     mailboxes: BTreeMap<MailboxId, VecDeque<Message>>,
@@ -52,7 +53,7 @@ OrganismState {
 给定当前 `step=k`：
 
 1. **前置事件**：按 `(due_step, priority, sequence_no)` 稳定排序并应用所有 `due_step == k` 的事件；将 `deliver_step <= k` 的待投递消息移入邮箱。
-2. **epoch 授予**：若 `floor(k / epoch_length)` 与已记录的 `epoch_index` 不同，按**本 tick 生效的配置**重置各账户本 epoch 可用 gas / 通信吞吐。初始 `k=0` 也进行一次授予。未使用额度默认不结转。
+2. **epoch 授予**：若 `last_granted_epoch != Some(floor(k / epoch_length))`，按**本 tick 生效的配置**重置各账户本 epoch 可用 gas / 通信吞吐，写入 `last_granted_epoch` 并更新派生字段 `epoch_index`。初始 `last_granted_epoch=None`，所以 `k=0` 必须授予。未使用额度默认不结转。
 3. **调度**：若个体可运行，用 VM 恢复 `active_program + continuation + latest_feedback`，执行直到：产生一个 `ActionIntent`、显式停止、gas 用尽或指令上限触发。VM 微指令 gas 由 A 计费；这一阶段不改变外部世界状态。
 4. **动作执行**：对一个 `ActionIntent` 验证权限、参数、版本和预算；计算动作世界侧成本。成功则提交其状态差量并计费；失败则无部分外部写入，只计事先公布的实际解析/探测费。若 VM 未发出意图，该 tick 不发生个体外部操作。
 5. **反馈入队**：把结果加入该个体的 `latest_feedback` 或授权邮箱，只有后续 tick 的活动程序可以消费；`SEND` 的成功只代表请求入队，C/B 处理结果由独立确定性服务事件产生。
@@ -68,7 +69,7 @@ OrganismState {
 
 显式 `EXEC(program_hash,args,gas_limit,isolated=true)` 是一个独立世界动作：
 
-- 仅运行**纯计算及获授权本地快照只读**的候选程序；内部 `WORLD_CALL` 不得写入共享状态、发消息或调用 B/C。遇到副作用意图返回 `ERR_ISOLATED_SIDE_EFFECT`。
+- 仅运行**纯计算及获授权本地快照只读**的候选程序；内部 `WORLD_CALL(OBSERVE|READ)` 可以读取 frozen snapshot 内的授权投影，按指令及读取成本计费但不增加世界 step；`WRITE/SEND/RECEIVE/EXEC` 和任何 B/C 访问一律返回 `ERR_ISOLATED_SIDE_EFFECT`，且不能改变共享世界。
 - 候选的输出、错误和消耗 gas 可被观察。每条候选 VM 指令依旧计费，世界 step 只增加一次。禁止嵌套 `EXEC`。
 - 真实远程协议实验通过活动程序的 `SEND`、`RECEIVE` 进行，按真实通信与资源成本计费；**隔离 EXEC 不能变成免费探测协议的后门**。
 
