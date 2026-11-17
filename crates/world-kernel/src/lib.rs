@@ -162,6 +162,19 @@ pub fn hidden_transform(seed:u64,input:&[u8])->u32 {
     }
 }
 
+/// Independent researcher-side S6 composition reference. Not callable from VM.
+pub fn hidden_compose(seed:u64,input:&[u8])->u32 {
+    let index=(seed%18) as usize;
+    let select=|n:usize|match n {
+        0=>input.len() as u32,
+        1=>input.iter().fold(0u32,|acc,&b|acc ^ u32::from(b)),
+        _=>u32::from(*input.first().unwrap_or(&0)),
+    };
+    let left=select(index%3);
+    let right=select((index/3)%3);
+    if index<9 {left.wrapping_add(right)}else{left ^ right}
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     Observe { actor: u64 },
@@ -320,6 +333,25 @@ impl World {
 
     /// At most eight C messages processed in one tick; requests remain ordered.
     /// If reply capacity is unavailable, leave the request in C for a later tick.
+    fn publish_compose_task(&mut self) {
+        const PATH:&str="/public/E001/compose";
+        if self.state.protocol_service.is_none() || self.state.objects.contains_key(PATH){return;}
+        let seed=self.state.config.seed;
+        let a=vec![13,7,11];
+        let b=vec![18,9,4,6];
+        let held_out=vec![7,8,9,10,3,1];
+        let task=TransformTask{
+            task_id:"binary-byte-compose-v1".into(),
+            examples:vec![
+                TransformExample{input:a.clone(),output:hidden_compose(seed,&a)},
+                TransformExample{input:b.clone(),output:hidden_compose(seed,&b)},
+            ],held_out_input:held_out,
+        };
+        self.state.objects.insert(PATH.into(),Object{
+            owner:0,version:0,bytes:serde_json::to_vec(&task).expect("task"),
+        });
+    }
+
     fn publish_transform_task(&mut self) {
         const PATH:&str="/public/E001/transform";
         if self.state.protocol_service.is_none() || self.state.objects.contains_key(PATH){return;}
@@ -451,6 +483,7 @@ impl World {
                 };
                 if key != "/public/C/hello" && key != "/public/E001/job0" &&
                     key != "/public/E001/transform" &&
+                    key != "/public/E001/compose" &&
                     (obj.owner != actor || !key.starts_with("/self/")) {
                     return ActionResult::fail(Code::Denied);
                 }
@@ -545,6 +578,7 @@ impl World {
         self.publish_hello_sample();
         self.publish_work_item();
         self.publish_transform_task();
+        self.publish_compose_task();
         self.process_service_inbox(); // deterministic service phase, before VM intent
         let (action, vm_used, no_action_code) = if let Some(actor)=organism {
             let state=self.prepare_organism_action(actor);
