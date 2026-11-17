@@ -55,12 +55,13 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 ## 当前工程进度：P1/P2/P3 开发切片
 
 - Rust 世界内核：[world-kernel](./crates/world-kernel/)；受限 VM：[organism-vm](./crates/organism-vm/)；协议模拟器：[protocol-sim](./crates/protocol-sim/)。
-- [最新已验证 CI Run #44063205105](https://github.com/iFrankStudio/OCEE/actions/runs/44105387603)：**34 项关键测试通过，0 项失败**。覆盖时序、权限/资源、状态重放、程序版本与回退、隔离只读、受限循环、三种未知协议的报文处理与 FOLD32 远程服务。
+- [最新已验证 CI Run #44063205105](https://github.com/iFrankStudio/OCEE/actions/runs/44107148906)：**34 项关键测试通过，0 项失败**。覆盖时序、权限/资源、状态重放、程序版本与回退、隔离只读、受限循环、三种未知协议的报文处理与 FOLD32 远程服务。
 - [工程检查点与尚未完成的工作](./07-ENGINEERING-CHECKPOINT.md) 区分实现证据与实验结论：端到端样例使用研究者准备的程序及合法协议报文，**不能算作自发探索、真实新能力创造或 E001 成功**。
 - 已实现真正以 VM 世界动作为主导的 [S0 观察/重放个体与 S1 P0 反馈探测个体](./experiments/E001/DEV-S0-S1.md)。S0 可以跨 P0/P1/P2 利用公开样例；S1 在已知 P0 XOR 规则但未知目标操作码的条件下，通过可见错误反馈识别操作码，诊断屏蔽对照不产生同一发现。**S0 和原版 S1 依旧没有新程序生成；派生工具实验见 S3，尚无跨家族迁移证据。**
 - [S2 P0 远程工作项开发实验](./experiments/E001/DEV-S2.md)：从 S1 持久发现构造有效 FOLD32 请求，主动搜索 RESULT 操作码并保存计算结果；**S2 仍由研究者在阶段边界安装，不是自主创生工具**。
 - [S3 个体内部工具派生与采用](./experiments/E001/DEV-S3-SPECIALIZATION.md)：同一活动 VM 个体依据 S1 发现的操作码派生出可执行报文构造工具，自己测试、注册并用于公开工作项；该工具在两种不同输入长度下复用成功。**生成算法模板仍由研究者预置，这不是新算法发明。**
 - [S4 结构修复研究](./experiments/E001/DEV-S4-STRUCTURAL-REPAIR.md)：同一个 VM 个体先产生可执行但功能错误的程序，随后在输出验证失败后改写指令节点并验证成功；结构修复关闭时无法注册工具。**两种候选及验证策略依然人工预置，不是开放式算法发明。**
+- [S4 标准资源配额开发校准](./experiments/E001/DEV-S4-RESOURCE-CALIBRATION.md)：同一初始程序在 4 个开发 seed 下，12,000 与 100,000 A gas/epoch 两种配置均完成；标准配置其中 3 个 seed 出现 666～673 次资源拒绝，不能把等待资源的逻辑步数算作有效探索。
 - G0 Engineering GO；G1 Calibration **NO-GO**；G2 Confirmatory **NO-GO**。仍缺完整 S/O 基线、P2 结构性可学习性、工作项和 A/B/C/D 对照、独立校准、事务持久化及安全复核。
 - 运行关键测试：`cargo test --workspace`。仅在实现新核心不变量时增加必要测试，避免测试膨胀。
 
