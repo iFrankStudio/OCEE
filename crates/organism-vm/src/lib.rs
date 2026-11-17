@@ -180,6 +180,7 @@ impl Program {
 
     pub fn mutate_literal(&self, block_id:&str, register:u32, replacement:Literal)
         -> Result<Program,VmError> {
+        self.validate()?; // reject malformed inputs before indexing the entry function
         let mut cloned=self.clone();
         let mut changed=false;
         for block in &mut cloned.functions[0].blocks {
