@@ -75,6 +75,26 @@ fn s2_executes_real_b_job_from_s1_discovery_not_hidden_opcode_injection(){
                 }
                 None
             }).collect::<Vec<_>>();
+            let relevant=world.audit.iter().filter(|a|result_sends.iter()
+                .any(|s|a.step==*s || a.step==s+4))
+                .map(|a|{
+                    let sent=if let Some(Action::Send{bytes,..})=&a.action {
+                        p.decode(bytes).ok().map(|f|(f.kind,f.operation,f.request_id,f.body))
+                    }else{None};
+                    let reply=if let Some(Action::Receive{..})=&a.action {
+                        if a.result.code==Code::Ok {
+                            serde_json::from_slice::<Vec<ocee_world_kernel::Message>>(
+                                &a.result.payload).ok().and_then(|ms|{
+                                ms.first().map(|m|(m.id,m.sent_step,m.bytes.len(),
+                                    p.decode(&m.bytes).ok().map(|d|(d.kind,d.operation,d.request_id,d.body)),
+                                    String::from_utf8_lossy(&m.bytes).to_string()))
+                            })
+                        }else{None}
+                    }else{None};
+                    (a.step,sent,reply)
+                }).collect::<Vec<_>>();
+            let relevant_events=world.state.service_events.iter().filter(|e|
+                result_sends.iter().any(|s|e.step==s+2)).collect::<Vec<_>>();
             let window=world.audit.iter().filter(|a|result_sends.iter()
                 .any(|s|a.step>=*s && a.step<=s+8))
                 .map(|a|format!("step={} action={:?} code={:?} payload_len={}",
@@ -84,7 +104,7 @@ fn s2_executes_real_b_job_from_s1_discovery_not_hidden_opcode_injection(){
                         _=>"Other"
                     }),a.result.code,a.result.payload.len()))
                 .collect::<Vec<_>>();
-            panic!("S2 returned {:?}; result queries={sent_results}, query steps={result_sends:?}, B events={:?}, valid replies={:?}, window={window:?}",
+            panic!("S2 returned {:?}; result queries={sent_results}, query steps={result_sends:?}, relevant={relevant:?}, result_events={relevant_events:?}, B events={:?}, valid replies={:?}, window={window:?}",
                 world.state.organisms[&ORGANISM_ID].last_return,
                 world.state.service_events.iter().rev().take(5).collect::<Vec<_>>(),
                 received.iter().filter(|x|x.0.is_some()).collect::<Vec<_>>());
