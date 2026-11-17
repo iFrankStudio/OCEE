@@ -118,3 +118,6 @@ pub mod s2_p0;
 
 /// S4 bounded structural graph repair research seed.
 pub mod s4_structural;
+
+/// S5 seed: closed-vocabulary search using public input/output examples.
+pub mod s5_search;
