@@ -10,3 +10,4 @@ serde_json = "1"
 sha2 = "0.10"
 
 ocee-organism-vm = { path = "../organism-vm" }
+ocee-protocol-sim = { path = "../protocol-sim" }
