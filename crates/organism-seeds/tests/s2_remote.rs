@@ -50,8 +50,28 @@ fn s2_executes_real_b_job_from_s1_discovery_not_hidden_opcode_injection(){
         let s2_hash=install(&mut world,s2_p0_remote_eval(),Some(0));
         assert_ne!(s1_hash,s2_hash);
         run_to_completion(&mut world,800);
-        assert_eq!(world.state.organisms[&ORGANISM_ID].last_return,
-            Some(ocee_organism_vm::Value::U32(1)));
+        if world.state.organisms[&ORGANISM_ID].last_return!=Some(ocee_organism_vm::Value::U32(1)){
+            let p=world.state.protocol_service.as_ref().unwrap().protocol.clone();
+            let sent_results=world.audit.iter().filter_map(|a|{
+                if let Some(Action::Send{bytes,..})=&a.action {
+                    p.decode(bytes).ok().map(|f|f.operation)
+                }else{None}
+            }).filter(|op|*op==Operation::Result).count();
+            let received=world.audit.iter().filter_map(|a|{
+                if let Some(Action::Receive{..})=&a.action {
+                    if a.result.code!=Code::Ok{return None;}
+                    let messages:Vec<ocee_world_kernel::Message>=
+                        serde_json::from_slice(&a.result.payload).ok()?;
+                    let msg=messages.first()?;
+                    Some((p.decode(&msg.bytes).ok().map(|d|(d.operation,d.body)),
+                        msg.bytes.len()))
+                }else{None}
+            }).collect::<Vec<_>>();
+            panic!("S2 returned {:?}; result queries={sent_results}, B events={:?}, receive tail={:?}",
+                world.state.organisms[&ORGANISM_ID].last_return,
+                world.state.service_events.iter().rev().take(5).collect::<Vec<_>>(),
+                received.iter().rev().take(12).collect::<Vec<_>>());
+        }
         assert_eq!(world.state.organisms[&ORGANISM_ID].active_program_hash,
             Some(s2_hash));
         let recorded=&world.state.objects["/self/results/job0/ack"].bytes;
