@@ -166,3 +166,30 @@ pub fn s2_p0_remote_eval()->Program {
         ]}
     ]}
 }
+
+
+/// S2 prior ledger: the protocol and task semantics below were written by the
+/// researcher; only the hidden opcode values and actual response are discovered.
+pub fn s2_manifest()->crate::SeedManifest {
+    crate::SeedManifest {
+        manifest_version:1,
+        kind:"S2-P0-FOLD32-development-invoker",
+        program_hash:format!("sha256:{}",s2_p0_remote_eval().content_hash()
+            .expect("S2 must typecheck")),
+        built_in_modules:vec![
+            "read-S1-discovery","known-P0-frame-layout",
+            "known-FOLD32-body-format-and-fixed-3-value-count",
+            "generic-XOR-checksum-builder","bounded-RESULT-opcode-probe",
+            "known-P0-result-frame-length-and-status-field",
+            "store-ACK-and-computed-u32-value"
+        ],
+        initial_tool_hashes:vec![],
+        known_protocol_families:vec!["P0-XOR-frame-envelope".into()],
+        prohibited_knowledge:vec![
+            "hidden-REMOTE_EVAL-opcode-value","hidden-RESULT-opcode-value",
+            "private-generator-seed","expected-work-item-answer",
+            "external-evaluator-score"
+        ],
+        research_status:"RESEARCHER_INSTALLED_STAGE_2_NOT_SELF_CREATED_TOOL_NOT_E001_CONFIRMATORY",
+    }
+}
