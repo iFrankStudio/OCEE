@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44118175171](https://github.com/iFrankStudio/OCEE/actions/runs/44118175171) — Rust workspace **38 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44119126829](https://github.com/iFrankStudio/OCEE/actions/runs/44119126829) — Rust workspace **38 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
