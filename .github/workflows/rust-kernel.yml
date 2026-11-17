@@ -33,3 +33,5 @@ jobs:
         run: cargo test --workspace
       - name: Print auditable development organism manifests
         run: cargo run --quiet -p ocee-organism-seeds --example manifest
+      - name: Report S4 resource feasibility under original and development budgets
+        run: cargo run --quiet -p ocee-organism-seeds --example s4_calibration
