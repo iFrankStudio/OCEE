@@ -8,7 +8,8 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
+use ocee_protocol_sim::{Family, ParseError, Service, ServiceOutput};
 
 mod program_host;
 
@@ -104,6 +105,23 @@ pub struct WorldState {
     pub pending_deliveries: Vec<Message>,
     pub events: Vec<ScheduledEvent>,
     pub next_sequence: u64,
+    pub protocol_service: Option<Service>,
+    pub service_events: Vec<ServiceEvent>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ServiceEvent {
+    pub step: u64,
+    pub request_message_id: u64,
+    pub b_gas_charged: u64,
+    pub response_message_id: u64,
+    pub diagnostic: Option<ParseError>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct TransportDiagnostic {
+    pub in_reply_to_message_id: u64,
+    pub code: ParseError,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -195,9 +213,18 @@ impl World {
                 rng_state: config.seed, config, nodes, organisms,
                 objects: BTreeMap::new(), mailboxes: BTreeMap::new(),
                 pending_deliveries: vec![], events: vec![], next_sequence: 0,
+                protocol_service: None, service_events: vec![],
             },
             audit: vec![],
         }
+    }
+
+    /// Construct a self-contained simulated C/B service; never opens sockets.
+    /// The protocol parameters are kept in privileged world state, not OBSERVE.
+    pub fn with_protocol(config:Config,family:Family,seed:u64)->Self {
+        let mut world=Self::new(config);
+        world.state.protocol_service=Some(Service::new(family,seed));
+        world
     }
 
     pub fn schedule_event(&mut self, event: ScheduledEvent) {
@@ -251,6 +278,54 @@ impl World {
             node.bandwidth_available = node.bandwidth_per_epoch;
         }
         self.state.last_granted_epoch = Some(epoch);
+    }
+
+    /// At most eight C messages processed in one tick; requests remain ordered.
+    /// If reply capacity is unavailable, leave the request in C for a later tick.
+    fn process_service_inbox(&mut self) {
+        if self.state.protocol_service.is_none() {return;}
+        let mut queue:VecDeque<Message>=self.state.mailboxes.remove(&NodeId::C)
+            .unwrap_or_default().into();
+        let mut deferred=Vec::<Message>::new();
+        for _ in 0..8 {
+            let Some(message)=queue.pop_front() else {break;};
+            let available_b=self.state.nodes.get(&NodeId::B).expect("node B").gas_available;
+            let mut trial=self.state.protocol_service.as_ref().expect("service").clone();
+            let processed=trial.handle(message.actor,self.state.step,&message.bytes,available_b);
+            let (payload,diagnostic)=match processed.output {
+                ServiceOutput::Frame(bytes)=>(bytes,None),
+                ServiceOutput::Diagnostic(code)=>(
+                    serde_json::to_vec(&TransportDiagnostic{
+                        in_reply_to_message_id:message.id,code,
+                    }).expect("diagnostic"),Some(code)),
+            };
+            let bandwidth=payload.len() as u64;
+            let left=self.state.nodes.get(&NodeId::C).expect("node C").bandwidth_available;
+            if bandwidth>left || payload.len()>self.state.config.max_message_bytes {
+                deferred.push(message);
+                break;
+            }
+            // Commit service state, B gas, link budget and outbound message together.
+            self.state.protocol_service=Some(trial);
+            self.state.nodes.get_mut(&NodeId::B).expect("node B").gas_available -=
+                processed.b_gas_charged;
+            self.state.nodes.get_mut(&NodeId::C).expect("node C").bandwidth_available -= bandwidth;
+            let id=self.state.next_sequence;
+            self.state.next_sequence+=1;
+            self.state.pending_deliveries.push(Message{
+                id,actor:message.actor,source:NodeId::C,destination:NodeId::A,
+                bytes:payload,sent_step:self.state.step,
+                deliver_step:self.state.step.saturating_add(self.state.config.message_delay),
+                sequence_no:id,
+            });
+            self.state.service_events.push(ServiceEvent{
+                step:self.state.step,request_message_id:message.id,
+                response_message_id:id,b_gas_charged:processed.b_gas_charged,
+                diagnostic,
+            });
+        }
+        deferred.extend(queue);
+        if !deferred.is_empty(){self.state.mailboxes.insert(NodeId::C,deferred);}
     }
 
     fn valid_actor(&self, actor: u64) -> bool {
@@ -374,6 +449,7 @@ impl World {
         let k = self.state.step;
         self.deliver_events();
         self.grant_epoch_if_needed();
+        self.process_service_inbox(); // deterministic service phase, before VM intent
         let (action, vm_used, no_action_code) = if let Some(actor)=organism {
             let state=self.prepare_organism_action(actor);
             (state.action,state.gas_used,state.status)
