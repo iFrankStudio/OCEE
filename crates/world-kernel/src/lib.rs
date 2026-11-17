@@ -131,6 +131,17 @@ pub struct HelloSample {
     pub response: Vec<u8>,
 }
 
+/// Public workload data, never a prebuilt protocol frame or answer.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct WorkItem {
+    pub job_id: u32,
+    pub operation: String,
+    pub count: u16,
+    pub values: Vec<u32>,
+    pub values_le: Vec<u8>,
+    pub answer_schema: String,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     Observe { actor: u64 },
@@ -289,6 +300,28 @@ impl World {
 
     /// At most eight C messages processed in one tick; requests remain ordered.
     /// If reply capacity is unavailable, leave the request in C for a later tick.
+    fn publish_work_item(&mut self) {
+        const PATH:&str="/public/E001/job0";
+        if self.state.protocol_service.is_none() || self.state.objects.contains_key(PATH){return;}
+        let mut rng=self.state.config.seed ^ 0x4f43_4545_2d4a_4f42;
+        let mut values=Vec::new();
+        let mut values_le=Vec::new();
+        for _ in 0..3 {
+            rng=rng.wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            let v=(rng>>32) as u32;
+            values.push(v);
+            values_le.extend_from_slice(&v.to_le_bytes());
+        }
+        let work=WorkItem{
+            job_id:1,operation:"FOLD32".into(),count:3,
+            values,values_le,answer_schema:"u32le".into(),
+        };
+        self.state.objects.insert(PATH.into(),Object{
+            owner:0,version:0,bytes:serde_json::to_vec(&work).expect("work item"),
+        });
+    }
+
     fn publish_hello_sample(&mut self) {
         if self.state.step % 256 != 0 {return;}
         let Some(service)=self.state.protocol_service.as_ref() else {return;};
@@ -377,7 +410,7 @@ impl World {
                 let Some(obj) = self.state.objects.get(&key) else {
                     return ActionResult::fail(Code::NotFound);
                 };
-                if key != "/public/C/hello" &&
+                if key != "/public/C/hello" && key != "/public/E001/job0" &&
                     (obj.owner != actor || !key.starts_with("/self/")) {
                     return ActionResult::fail(Code::Denied);
                 }
@@ -470,6 +503,7 @@ impl World {
         self.deliver_events();
         self.grant_epoch_if_needed();
         self.publish_hello_sample();
+        self.publish_work_item();
         self.process_service_inbox(); // deterministic service phase, before VM intent
         let (action, vm_used, no_action_code) = if let Some(actor)=organism {
             let state=self.prepare_organism_action(actor);
