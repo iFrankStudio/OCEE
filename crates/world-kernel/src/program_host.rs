@@ -97,6 +97,15 @@ pub(crate) fn isolated_exec(world:&mut World, actor:u64, hash:&str)->ActionResul
             let mut r=ActionResult::fail(Code::Gas);
             r.gas_charged=gas_used;
             r
+        },
+        SliceResult::Faulted{error,gas_used}=>{
+            if let Err(code)=world.spend_a_gas(gas_used){return ActionResult::fail(code);}
+            let mut r=ActionResult::fail(match error {
+                VmError::OutputTooLarge=>Code::Quota,
+                _=>Code::InvalidCode,
+            });
+            r.gas_charged=gas_used;
+            r
         }
     }
 }
@@ -174,7 +183,8 @@ impl World {
         let used=match &slice {
             SliceResult::Returned{gas_used,..}|
             SliceResult::Yielded{gas_used,..}|
-            SliceResult::Exhausted{gas_used}=>*gas_used,
+            SliceResult::Exhausted{gas_used}|
+            SliceResult::Faulted{gas_used,..}=>*gas_used,
         };
         // debit all VM microsteps before the external action starts
         if self.spend_a_gas(used).is_err() {
@@ -190,6 +200,7 @@ impl World {
                 }else{Code::Ok}}
             },
             SliceResult::Exhausted{..}=>VmTick{action:None,gas_used:used,status:Code::Gas},
+            SliceResult::Faulted{..}=>VmTick{action:None,gas_used:used,status:Code::InvalidCode},
             SliceResult::Yielded{call,args,..}=>{
                 match into_action(actor,call,&args) {
                     Ok(action)=>VmTick{action:Some(action),gas_used:used,status:Code::Ok},
