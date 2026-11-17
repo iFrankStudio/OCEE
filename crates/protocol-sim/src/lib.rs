@@ -237,7 +237,7 @@ struct Job { values: Vec<u32>, result: u32, ready_step: u64 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Service {
     pub protocol: Protocol,
-    jobs: BTreeMap<(u64,u32),Job>,
+    jobs: BTreeMap<String,Job>,
     pub ready_latency_steps: u64,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -268,6 +268,7 @@ impl Service {
             Err(err)=>return self.diagnostic(err),
         };
         let id=request.request_id;
+        let job_key=format!("{actor:016x}:{id:08x}");
         let (status,body,bill)=match request.operation {
             Operation::Hello => {
                 if request.body.len()!=0 && request.body.len()!=4 {
@@ -288,7 +289,7 @@ impl Service {
                 }
                 let values=data[2..].chunks_exact(4)
                     .map(|v|u32::from_le_bytes(v.try_into().unwrap())).collect::<Vec<_>>();
-                if let Some(old)=self.jobs.get(&(actor,id)) {
+                if let Some(old)=self.jobs.get(&job_key) {
                     if old.values!=values {return self.diagnostic(ParseError::BadBody);}
                     (0,vec![],0)
                 } else {
@@ -297,7 +298,7 @@ impl Service {
                         return self.diagnostic(ParseError::ServiceBusy);
                     }
                     let result=fold32(&values).expect("validated count");
-                    self.jobs.insert((actor,id),Job{
+                    self.jobs.insert(job_key.clone(),Job{
                         values,result,ready_step:now_step.saturating_add(self.ready_latency_steps),
                     });
                     (0,vec![],gas)
@@ -305,7 +306,7 @@ impl Service {
             },
             Operation::Result => {
                 if !request.body.is_empty(){return self.diagnostic(ParseError::BadBody);}
-                let Some(job)=self.jobs.get(&(actor,id)) else {
+                let Some(job)=self.jobs.get(&job_key) else {
                     return self.diagnostic(ParseError::Unauthorized);
                 };
                 if now_step<job.ready_step {(1,vec![],0)}
