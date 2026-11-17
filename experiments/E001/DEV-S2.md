@@ -3,7 +3,7 @@
 - 日期：2026-11-17
 - 状态：**Development Evidence ONLY**；**不是** E001 正式实验，也**没有**达到 M0
 - 验证代码：[S2-P0](../../crates/organism-seeds/src/s2_p0.rs)、[端到端测试](../../crates/organism-seeds/tests/s2_remote.rs)
-- 已验证 CI：[GitHub Actions #44070090727](https://github.com/iFrankStudio/OCEE/actions/runs/44070090727)，Rust workspace **28 passed / 0 failed**
+- 已验证 CI：[GitHub Actions #44070568515](https://github.com/iFrankStudio/OCEE/actions/runs/44070568515)，Rust workspace **28 passed / 0 failed**
 
 ## 待验证假说
 
@@ -24,6 +24,7 @@
 - **S2 未获预置的信息**：真实 REMOTE_EVAL 和 RESULT 操作码值、隐藏协议种子、工作项的具体 u32 数值与正确计算结果。
 - 工作项公开路径：`/public/E001/job0`，包含 `job_id`、`count`、`values`、`values_le`、输出约定；**不包含 B 返回的正确答案**。
 - S2 将结果分别记录于 `/self/results/job0/ack` 与 `/self/results/job0/value_le`；两种存储写入均来自它自己的世界 `WRITE` 操作。
+- **S2 开发程序真实哈希**：`sha256:6047da42fe592baabf7e5c3d282866488551b2bac0700de84369117e8426a27d`（由 [CI #44070568515](https://github.com/iFrankStudio/OCEE/actions/runs/44070568515) 的 seed manifest 步骤生成；不代表正式 E001 预注册版本）。
 
 ## 已验证结果
 
