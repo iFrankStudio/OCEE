@@ -25,6 +25,14 @@
 程序代码：[S0](../../crates/organism-seeds/src/lib.rs)、[S1](../../crates/organism-seeds/src/p0_probe.rs)。
 运行 `cargo run --quiet -p ocee-organism-seeds --example manifest` 生成两种代码的真实内容哈希与先验清单；**这些尚未作为正式 E001 初始程序封存**。
 
+本轮 CI 生成的可审计程序哈希（仅本次开发构建指纹，**非正式预注册版本**）：
+
+- S0：`sha256:cdd5839ffaa6db1c4023ac1efb9e032df1f43a514da9f984ac5943b6e2df5edc`
+- S1：`sha256:b1169116d4111bfa5ce71d9f092f20fd54f7afbce39394425682ff30a4815ab3`
+
+来源：[Run #44063548989](https://github.com/iFrankStudio/OCEE/actions/runs/44063548989) 的 `Print auditable development organism manifests` 步骤。
+
+
 ## 已验证观察
 
 - S0 在 P0/P1/P2 各两个种子（7、42）上完成合法 HELLO 交互，使用 VM 自身产生的 `READ/SEND/RECEIVE/WRITE`；消息、观察和快照可复验。
