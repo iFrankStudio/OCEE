@@ -1,0 +1,25 @@
+name: OCEE World Kernel
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/world-kernel/**"
+      - ".github/workflows/rust-kernel.yml"
+  pull_request:
+    paths:
+      - "crates/world-kernel/**"
+      - ".github/workflows/rust-kernel.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run core invariant tests
+        run: cargo test --manifest-path crates/world-kernel/Cargo.toml
