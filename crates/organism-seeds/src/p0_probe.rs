@@ -186,18 +186,40 @@ pub fn s1_p0_tool_builder()->Program {
             ins(521,Op::Concat(520,519)),
             ins(522,Op::ConstU32(u32::MAX)),
         ],Terminator::Yield{call:WorldCall::Write,
-            args:vec![521,515,522],next:"tool_test".into(),next_args:vec![519]}),
-        block("tool_test",vec![arg(530,b),arg(531,b)],vec![
-            ins(532,bytes(&[0,0,0,0,1,0,9,0,0,0])),
+            args:vec![521,515,522],next:"tool_test".into(),next_args:vec![519,500]}),
+        block("tool_test",vec![arg(530,b),arg(531,b),arg(532,b)],vec![
+            ins(533,bytes(&[0,0,0,0,1,0,9,0,0,0])),
         ],Terminator::Yield{call:WorldCall::Exec,
-            args:vec![530,532],next:"tool_verify".into(),next_args:vec![530]}),
-        block("tool_verify",vec![arg(540,b),arg(541,b)],vec![
-            ins(542,bytes(b"code")),
-            ins(543,Op::JsonFieldString(541,542)),
-            ins(544,bytes(b"Ok")),
-            ins(545,Op::EqBytes(543,544)),
-        ],Terminator::Branch{condition:545,
-            if_true:"tool_register".into(),true_args:vec![540],
+            args:vec![530,533],next:"tool_verify".into(),next_args:vec![530,531]}),
+        block("tool_verify",vec![arg(540,b),arg(541,b),arg(542,b)],vec![
+            ins(543,bytes(b"code")),
+            ins(544,Op::JsonFieldString(542,543)),
+            ins(545,bytes(b"Ok")),
+            ins(546,Op::EqBytes(544,545)),
+        ],Terminator::Branch{condition:546,
+            if_true:"tool_verify_bytes".into(),true_args:vec![540,541,542],
+            if_false:"tool_failed".into(),false_args:vec![]}),
+        // An EXEC success code alone does NOT prove a functional candidate.
+        // Verify the produced frame against a separately assembled reference
+        // using the actual learnt HELLO-derived prefix and test input.
+        block("tool_verify_bytes",vec![arg(700,b),arg(701,b),arg(702,b)],vec![
+            ins(703,bytes(b"payload")),
+            ins(704,Op::JsonFieldBytes(702,703)),
+            ins(705,bytes(b"Bytes")),
+            ins(706,Op::JsonFieldBytes(704,705)),
+            ins(707,Op::ConstU32(0)),
+            ins(708,Op::ConstU32(3)),
+            ins(709,Op::Slice(701,707,708)),
+            ins(710,bytes(&[10,0])),
+            ins(711,Op::Concat(709,710)),
+            ins(712,bytes(&[0,0,0,0,1,0,9,0,0,0])),
+            ins(713,Op::Concat(711,712)),
+            ins(714,Op::XorFold(713)),
+            ins(715,Op::PackByte(714)),
+            ins(716,Op::Concat(713,715)),
+            ins(717,Op::EqBytes(706,716)),
+        ],Terminator::Branch{condition:717,
+            if_true:"tool_register".into(),true_args:vec![700],
             if_false:"tool_failed".into(),false_args:vec![]}),
         block("tool_register",vec![arg(550,b)],vec![
             ins(551,bytes(b"/self/tools/p0-eval-frame")),
