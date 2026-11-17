@@ -44,6 +44,10 @@ pub enum Op {
     JsonIndex(u32,u32),
     /// Copy a byte vector while replacing a single byte at the given index.
     ReplaceByte(u32,u32,u32),
+    /// Generic byte-vector XOR reduction, not protocol-specific.
+    XorFold(u32),
+    /// Pack the low 8 bits of U32 as a one-byte vector.
+    PackByte(u32),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Terminator {
@@ -239,10 +243,11 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
         },
         Op::EqU32(a,b)=>{need(defs,*a,Type::U32)?;need(defs,*b,Type::U32)?;Ok(Type::Bool)},
         Op::EqBytes(a,b)=>{need(defs,*a,Type::Bytes)?;need(defs,*b,Type::Bytes)?;Ok(Type::Bool)},
-        Op::Len(a)|Op::Sha256(a)|Op::HexEncode(a)=>{
+        Op::Len(a)|Op::Sha256(a)|Op::HexEncode(a)|Op::XorFold(a)=>{
             need(defs,*a,Type::Bytes)?;
-            Ok(if matches!(op,Op::Len(_)){Type::U32}else{Type::Bytes})
+            Ok(if matches!(op,Op::Len(_)|Op::XorFold(_)){Type::U32}else{Type::Bytes})
         },
+        Op::PackByte(a)=>{need(defs,*a,Type::U32)?;Ok(Type::Bytes)},
         Op::ByteAt(a,i)=>{
             need(defs,*a,Type::Bytes)?;need(defs,*i,Type::U32)?;Ok(Type::U32)
         },
@@ -350,6 +355,12 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             out.extend_from_slice(y);
             Value::Bytes(out)
         },
+        Op::XorFold(a)=>Value::U32(bytes(regs,*a)?.iter().fold(0u32,|acc,&v|acc ^ u32::from(v))),
+        Op::PackByte(a)=>{
+            let value=num(regs,*a)?;
+            if value>255 {return Err(VmError::Range);}
+            Value::Bytes(vec![value as u8])
+        },
         Op::JsonIndex(source,index)=>{
             let raw=bytes(regs,*source)?;
             let data:serde_json::Value=serde_json::from_slice(raw)
@@ -400,6 +411,7 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::Slice(_,_,len)=>num(regs,*len)? as usize,
         Op::Sha256(a)=>bytes(regs,*a)?.len(),
         Op::HexEncode(a)=>bytes(regs,*a)?.len().saturating_mul(2),
+        Op::XorFold(a)=>bytes(regs,*a)?.len(),
         Op::JsonIndex(a,_)|Op::ReplaceByte(a,_,_)=>bytes(regs,*a)?.len(),
         Op::JsonFieldBytes(a,b)|Op::JsonFieldString(a,b)=>
             bytes(regs,*a)?.len().saturating_add(bytes(regs,*b)?.len()),
