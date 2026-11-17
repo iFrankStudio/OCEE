@@ -10,14 +10,15 @@ A small deterministic interpreter for type-checked, bounded program graphs, deli
 - Canonical JSON bytes with sorted object keys and domain-separated content hash:
   `SHA-256("OCEE-PROGRAM-V1\\0" || canonical_json)`.
 - Pure isolated evaluation, bounded gas usage and metered runtime faults.
+- `RepeatBounded` CFG header (up to 256 iterations), with loop counters persisted in continuation and unbounded cycles forbidden.
 - `Continuation` serialized across tick boundaries; `YIELD` emits a typed world intent with feedback injected upon resumption.
 - A typed, validated `mutate_literal` example for candidate version creation; no automatic strategy selection.
 
 ### Deliberate limitations
 
-- Only `Bool`, `U32`, `Bytes` and **one function per program** currently supported; no recursive calls, bounded loop opcode or generic result type yet.
+- Only `Bool`, `U32`, `Bytes` and **one function per program** currently supported; cross-function `CALL`, `Unit` and `Result<T>` are pending. Generic CFG cycles are rejected unless controlled by a statically bounded loop header.
 - Graph edges must be acyclic. This is a P2 slice, not a full implementation of all instruction forms in engineering contract 04.
-- `run_isolated` permits pure computation only in this slice; local authorized snapshot reads inside EXEC are pending.
+- The standalone `run_isolated` helper permits pure computation; world-kernel's `EXEC` bridge additionally permits metered, authorized local snapshot `OBSERVE/READ`, while rejecting SEND/WRITE and other side effects.
 - The VM does not invent or choose useful programs. Any exploration strategy must be explicitly implemented and credited to the organism initial seed or experimentally developed behavior.
 - Version storage, switching and world effects are exclusively handled by the world kernel.
 
