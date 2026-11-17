@@ -146,3 +146,81 @@ pub fn s1_manifest()->crate::SeedManifest {
         research_status:"DEVELOPMENT_ABLATION_NOT_E001_FULL_NOT_NEW_TOOL",
     }
 }
+
+    
+/// This specializes an *explicitly seeded* general P0 frame algorithm using
+/// an opcode actually discovered through world interaction. It is NOT invention
+/// of the algorithm. No researcher switches its active program mid-run.
+pub fn s1_p0_tool_builder()->Program {
+    let mut program=s1_p0_probe();
+    let f=&mut program.functions[0];
+    let found=f.blocks.iter_mut().find(|b|b.id=="found")
+        .expect("S1 discovery block");
+    found.terminator=Terminator::Yield{
+        call:WorldCall::Write,args:vec![131,130,132],
+        next:"tool_prepare".into(),next_args:vec![130],
+    };
+    let b=Type::Bytes;
+    let u=Type::U32;
+    f.blocks.extend([
+        block("tool_prepare",vec![arg(500,b),arg(501,b)],vec![
+            ins(502,Op::ConstU32(0)),
+            ins(503,Op::ByteAt(500,502)),
+            ins(504,Op::PackByte(503)),
+            ins(505,bytes(&[0])),
+            ins(506,Op::ConstU32(2)),
+            ins(507,Op::ByteAt(500,506)),
+            ins(508,Op::PackByte(507)),
+            ins(509,Op::Concat(504,505)),
+            ins(510,Op::Concat(509,508)),
+            ins(511,Op::HexEncode(510)),
+            ins(512,Op::ConstBytes{hex:"7b22656e7472795f66756e6374696f6e223a226d61696e222c22666f726d61745f76657273696f6e223a312c2266756e6374696f6e73223a5b7b2261726773223a5b224279746573225d2c22626c6f636b73223a5b7b226964223a22656e747279222c22696e737472756374696f6e73223a5b7b226964223a312c226f70223a7b22436f6e73744279746573223a7b22686578223a22".into()}),
+            ins(513,Op::Concat(512,511)),
+            ins(514,Op::ConstBytes{hex:"227d7d7d2c7b226964223a322c226f70223a7b224c656e223a307d7d2c7b226964223a332c226f70223a7b225061636b5531364c65223a327d7d2c7b226964223a342c226f70223a7b22436f6e636174223a5b312c335d7d7d2c7b226964223a352c226f70223a7b22436f6e636174223a5b342c305d7d7d2c7b226964223a362c226f70223a7b22586f72466f6c64223a357d7d2c7b226964223a372c226f70223a7b225061636b42797465223a367d7d2c7b226964223a382c226f70223a7b22436f6e636174223a5b352c375d7d7d5d2c22706172616d73223a5b7b226964223a302c227479223a224279746573227d5d2c227465726d696e61746f72223a7b2252657475726e223a7b2276616c7565223a387d7d7d5d2c226e616d65223a226d61696e222c2272657475726e73223a224279746573227d5d7d".into()}),
+            ins(515,Op::Concat(513,514)),
+            ins(516,bytes(b"OCEE-PROGRAM-V1\\0")),
+            ins(517,Op::Concat(516,515)),
+            ins(518,Op::Sha256(517)),
+            ins(519,Op::HexEncode(518)),
+            ins(520,bytes(b"/self/versions/")),
+            ins(521,Op::Concat(520,519)),
+            ins(522,Op::ConstU32(u32::MAX)),
+        ],Terminator::Yield{call:WorldCall::Write,
+            args:vec![521,515,522],next:"tool_test".into(),next_args:vec![519]}),
+        block("tool_test",vec![arg(530,b),arg(531,b)],vec![
+            ins(532,bytes(&[0,0,0,0,1,0,9,0,0,0])),
+        ],Terminator::Yield{call:WorldCall::Exec,
+            args:vec![530,532],next:"tool_verify".into(),next_args:vec![530]}),
+        block("tool_verify",vec![arg(540,b),arg(541,b)],vec![
+            ins(542,bytes(b"code")),
+            ins(543,Op::JsonFieldString(541,542)),
+            ins(544,bytes(b"Ok")),
+            ins(545,Op::EqBytes(543,544)),
+        ],Terminator::Branch{condition:545,
+            if_true:"tool_register".into(),true_args:vec![540],
+            if_false:"tool_failed".into(),false_args:vec![]}),
+        block("tool_register",vec![arg(550,b)],vec![
+            ins(551,bytes(b"/self/tools/p0-eval-frame")),
+            ins(552,Op::ConstU32(u32::MAX)),
+        ],Terminator::Yield{call:WorldCall::Write,
+            args:vec![551,550,552],next:"tool_done".into(),next_args:vec![]}),
+        block("tool_done",vec![arg(560,b)],vec![
+            ins(561,Op::ConstU32(1)),
+        ],Terminator::Return{value:561}),
+        block("tool_failed",vec![],vec![
+            ins(570,Op::ConstU32(0)),
+        ],Terminator::Return{value:570}),
+    ]);
+    program.validate().expect("S1 tool specialist must be type-safe");
+    program
+}
+
+pub fn s1_p0_tool_builder_no_feedback()->Program {
+    let mut program=s1_p0_tool_builder();
+    let diagnostic=program.functions[0].blocks.iter_mut()
+        .find(|b|b.id=="diagnostic").expect("selector block");
+    diagnostic.instructions.iter_mut().find(|i|i.id==115)
+        .expect("diagnostic field").op=bytes(b"UnknownOperation");
+    program.validate().expect("ablation program must validate");
+    program
+}
