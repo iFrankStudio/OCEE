@@ -65,8 +65,8 @@ pub(crate) fn after_write(state:&mut WorldState, actor:u64, active:Option<String
     }
 }
 
-/// Pure isolated EXEC for the initial P2 slice. Authorized snapshot READ during
-/// EXEC is deferred; all yielded world I/O is rejected rather than performed.
+/// Isolated candidate EXEC: pure computation plus authorized snapshot reads.
+/// Reads consume gas but neither world steps nor externally visible effects.
 pub(crate) fn isolated_exec(world:&mut World, actor:u64, hash:&str)->ActionResult {
     let program=match stored_program(&world.state,actor,hash) {
         Ok(p)=>p,
@@ -76,39 +76,78 @@ pub(crate) fn isolated_exec(world:&mut World, actor:u64, hash:&str)->ActionResul
         Ok(c)=>c,
         Err(_)=>return ActionResult::fail(Code::InvalidCode),
     };
-    let gas=world.state.nodes.get(&NodeId::A).expect("A").gas_available.min(VM_SLICE_GAS);
-    let result=match continuation.resume(&program,None,gas) {
-        Ok(v)=>v,
-        Err(VmError::OutputTooLarge)=>return ActionResult::fail(Code::Quota),
-        Err(_)=>return ActionResult::fail(Code::InvalidCode),
-    };
-    match result {
-        SliceResult::Returned{output,gas_used}=>{
-            if let Err(code)=world.spend_a_gas(gas_used){return ActionResult::fail(code);}
-            ActionResult::ok(serde_json::to_vec(&output).expect("value"),gas_used,0)
-        },
-        SliceResult::Yielded{gas_used,..}=>{
-            if let Err(code)=world.spend_a_gas(gas_used){return ActionResult::fail(code);}
-            let mut r=ActionResult::fail(Code::IsolatedSideEffect);
-            r.gas_charged=gas_used;
-            r
-        },
-        SliceResult::Exhausted{gas_used}=>{
-            if let Err(code)=world.spend_a_gas(gas_used){return ActionResult::fail(code);}
-            let mut r=ActionResult::fail(Code::Gas);
-            r.gas_charged=gas_used;
-            r
-        },
-        SliceResult::Faulted{error,gas_used}=>{
-            if let Err(code)=world.spend_a_gas(gas_used){return ActionResult::fail(code);}
-            let mut r=ActionResult::fail(match error {
-                VmError::OutputTooLarge=>Code::Quota,
-                _=>Code::InvalidCode,
-            });
-            r.gas_charged=gas_used;
-            r
+    let budget=world.state.nodes.get(&NodeId::A).expect("A")
+        .gas_available.min(VM_SLICE_GAS);
+    let mut consumed=0u64;
+    let mut feedback:Option<Vec<u8>>=None;
+
+    // Static P2 graph is acyclic; this is an additional hard action count bound.
+    for _ in 0..128 {
+        let slice=continuation.resume(&program,feedback.take(),budget-consumed);
+        let (gas,code,output,next)=match slice {
+            Ok(SliceResult::Returned{output,gas_used})=>
+                (gas_used,Code::Ok,Some(serde_json::to_vec(&output).expect("value")),None),
+            Ok(SliceResult::Exhausted{gas_used})=>
+                (gas_used,Code::Gas,None,None),
+            Ok(SliceResult::Faulted{error,gas_used})=>
+                (gas_used,match error {
+                    VmError::OutputTooLarge=>Code::Quota,
+                    _=>Code::InvalidCode,
+                },None,None),
+            Ok(SliceResult::Yielded{call,args,gas_used})=>
+                (gas_used,Code::Ok,None,Some((call,args))),
+            Err(_)=> (0,Code::InvalidCode,None,None),
+        };
+        consumed+=gas;
+        if let Some((call,args))=next {
+            let observation:Result<ActionResult,Code>=match call {
+                WorldCall::Observe if args.is_empty()=>{
+                    let a=&world.state.nodes[&NodeId::A];
+                    let sample=if world.state.protocol_service.is_some() {
+                        Some("/public/C/hello")
+                    }else{None};
+                    let view=serde_json::to_vec(&(world.state.step,a.gas_available,
+                        a.storage_capacity,sample)).expect("observable");
+                    Ok(ActionResult::ok(view,1,0))
+                },
+                WorldCall::Read if args.len()==1=>{
+                    let key=utf8(&args[0]);
+                    key.and_then(|key|{
+                        let object=world.state.objects.get(&key).ok_or(Code::NotFound)?;
+                        if key!="/public/C/hello" &&
+                            (object.owner!=actor || !key.starts_with("/self/")) {
+                            return Err(Code::Denied);
+                        }
+                        if object.bytes.len()>4096 {return Err(Code::Quota);}
+                        let fee=1+(object.bytes.len() as u64).saturating_add(63)/64;
+                        Ok(ActionResult::ok(object.bytes.clone(),fee,0))
+                    })
+                },
+                _=>Err(Code::IsolatedSideEffect),
+            };
+            match observation {
+                Ok(r)=>{
+                    if consumed.saturating_add(r.gas_charged)>budget {
+                        return charge_isolated(world,consumed,Code::Gas,vec![]);
+                    }
+                    consumed+=r.gas_charged;
+                    feedback=Some(serde_json::to_vec(&r).expect("read feedback"));
+                    continue;
+                },
+                Err(code)=>return charge_isolated(world,consumed,code,vec![]),
+            }
         }
+        return charge_isolated(world,consumed,code,output.unwrap_or_default());
     }
+    charge_isolated(world,consumed,Code::Gas,vec![])
+}
+
+fn charge_isolated(world:&mut World,gas:u64,code:Code,payload:Vec<u8>)->ActionResult {
+    if let Err(err)=world.spend_a_gas(gas){return ActionResult::fail(err);}
+    let mut result=ActionResult::fail(code);
+    result.payload=payload;
+    result.gas_charged=gas;
+    result
 }
 
 fn as_bytes(v:&Value)->Result<&[u8],Code> {
