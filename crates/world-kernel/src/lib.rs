@@ -64,6 +64,7 @@ pub struct OrganismHostState {
     pub active_program_hash: Option<String>,
     pub vm_continuation: Option<ocee_organism_vm::Continuation>,
     pub pending_feedback: Option<Vec<u8>>,
+    pub last_return: Option<ocee_organism_vm::Value>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Message {
@@ -186,7 +187,7 @@ impl World {
         organisms.insert(ORGANISM_ID, OrganismHostState {
             id: ORGANISM_ID, home: NodeId::A, storage_used: 0,
             active_program_hash: None, vm_continuation: None,
-            pending_feedback: None,
+            pending_feedback: None, last_return: None,
         });
         Self {
             state: WorldState {
