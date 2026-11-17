@@ -4,7 +4,7 @@
 - 代码：[S6 组合个体](../../crates/organism-seeds/src/s6_compose.rs)、[独立测试与消融](../../crates/organism-seeds/tests/s6_compose.rs)
 - 首次通过核心测试的 CI：[GitHub Actions #44118175171](https://github.com/iFrankStudio/OCEE/actions/runs/44118175171)
 - 完整复验 CI：[GitHub Actions #44118404623](https://github.com/iFrankStudio/OCEE/actions/runs/44118404623)
-- 初始程序哈希：由 `cargo run --quiet -p ocee-organism-seeds --example manifest` 生成，具体值须以通过 CI 的 manifest 为准；**不是正式 E001 程序封存**
+- **S6 初始程序哈希**：`sha256:43a322685d6db26cf99522887363b146372ef535d4b8d0114366a1d988657190`；由 [CI #44118175171](https://github.com/iFrankStudio/OCEE/actions/runs/44118175171) 自动产生并确认。**仅开发构建指纹，非正式预注册**。
 
 ## 实验想回答的问题
 
