@@ -1,6 +1,6 @@
 # OCEE — 开放式演化赛博生态世界
 
-**当前规范版本：v0.2.0 · 工程：P1 与 P2 初始切片已通过 CI（15 项关键测试）· E001 尚未校准或正式验证**
+**规范基线：v0.2.0 · 工程：P1/P2/P3 初始切片通过 CI（21 项关键测试）· E001 未校准、未预注册**
 
 OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是探索一种能够适应未知数字环境、学习使用现有软硬件与网络服务、创造新工具并持续改进自身的赛博生命培养机制。
 
@@ -18,6 +18,7 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 | [04-ENGINEERING-CONTRACTS.md](./04-ENGINEERING-CONTRACTS.md) | **唯一权威执行语义**：tick、VM、显式 EXEC、状态持久化、确定性重放 | 可按规范开始实现 |
 | [05-INITIAL-ORGANISMS.md](./05-INITIAL-ORGANISMS.md) | O/S 个体先验、初始能力来源账本、四组机制开关 | 真实程序/hash 待构建 |
 | [06-E001-IMPLEMENTATION.md](./06-E001-IMPLEMENTATION.md) | P0/P1/P2 字节级协议、FOLD32 服务、独立可学性校准与正式集封存 | 可开发校准工具 |
+| [07-ENGINEERING-CHECKPOINT.md](./07-ENGINEERING-CHECKPOINT.md) | P1/P2/P3 实际 CI 证据、限制与下一个校准闸门 | 工程事实检查点 |
 | [08-DESIGN-DECISIONS.md](./08-DESIGN-DECISIONS.md) | 8 项开工前 ADR、风险与 G0/G1/G2 启动闸门 | 决策已记录 |
 
 **规范权威边界**：01/02/03 描述研究与行为概念；执行顺序/VM ABI 以 04 为准，初始能力及对照机制以 05 为准，E001 字节级协议与服务以 06 为准。发现冲突时先更新规范，不能在代码中隐式任选一套解释。
@@ -51,13 +52,13 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 5. 运行独立可学性校准（开发 seed），评估资源权衡与统计功效。
 6. 根据校准结果版本化修订必要参数；冻结正式配置，运行 E001 并保留包括失败在内的所有结果。
 
-## 当前工程进度（P1 与 P2 初始切片）
+## 当前工程进度：P1/P2/P3 开发切片
 
-- Rust 世界内核：[crates/world-kernel](./crates/world-kernel/)；类型化 VM：[crates/organism-vm](./crates/organism-vm/)；CI：[rust-kernel.yml](./.github/workflows/rust-kernel.yml)。
-- [P2 端到端 CI Run](https://github.com/iFrankStudio/OCEE/actions/runs/44037592736)：**15 项关键测试通过，0 项失败**，覆盖内核时序/权限/记账、VM 校验/执行/续跑、版本不可变/CAS 回退、隔离执行和程序通过世界动作提交/采用候选版本。
-- P2 工程夹具中的候选代码内容为**预先安排的输入**；测试证明自修改基础设施畅通，不能被解释为自主探索、新能力涌现或 E001 结果。
-- P2 仍是**初始切片**：完整 ISA（CALL/受限循环/更多类型）、隔离 EXEC 的授权只读、真实 S/O 个体、协议服务及 SQLite 事务持久化仍待实现/校准。
-- G0 Engineering GO；G1 Calibration NO-GO；G2 Confirmatory NO-GO。当前没有任何 E001 实验结果。
+- Rust 世界内核：[world-kernel](./crates/world-kernel/)；受限 VM：[organism-vm](./crates/organism-vm/)；协议模拟器：[protocol-sim](./crates/protocol-sim/)。
+- [已验证 CI Run #44040395153](https://github.com/iFrankStudio/OCEE/actions/runs/44040395153)：**21 项关键测试通过，0 项失败**。覆盖时序、权限/资源、状态重放、程序版本与回退、隔离只读、受限循环、三种未知协议的报文处理与 FOLD32 远程服务。
+- [工程检查点与尚未完成的工作](./07-ENGINEERING-CHECKPOINT.md) 区分实现证据与实验结论：端到端样例使用研究者准备的程序及合法协议报文，**不能算作自发探索、真实新能力创造或 E001 成功**。
+- G0 Engineering GO；G1 Calibration **NO-GO**；G2 Confirmatory **NO-GO**。仍缺初始 S/O 个体、真正未知协议学习、工作项和对照、独立校准、事务持久化及安全复核。
+- 运行关键测试：`cargo test --workspace`。仅在实现新核心不变量时增加必要测试，避免测试膨胀。
 
 ## 基本安全与科学诚信约束
 
@@ -71,6 +72,6 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 ## 版本状态
 
 - **v0.1.0**：世界、个体和 E001 的初始草案；未实现。
-- **v0.2.0**：补齐执行 ABI、初始能力边界和字节级协议，记录 8 项设计决定；随后完成 P1 Rust 世界内核与 P2 受限 VM/自修改通路初始切片（CI 15/15 通过），**完整 VM ISA、协议服务尚未实现，E001 未校准且没有确认性实验结果**。
+- **v0.2.0**：冻结执行语义和研究边界；工程已推进到 P1/P2/P3 初始实现（21 项关键测试通过）。**完整 VM ISA、学习个体、对照校准与持久化尚未完成，E001 没有确认性实验结果**。
 
 需要修改 VM 语义、协议语法、先验能力、资源模型、正式门槛时，请先提出明确版本化变更并评估实验可比性。
