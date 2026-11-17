@@ -36,6 +36,10 @@ pub enum Op {
     EqU32(u32,u32), EqBytes(u32,u32),
     Len(u32), ByteAt(u32,u32), Slice(u32,u32,u32), Concat(u32,u32),
     Sha256(u32), HexEncode(u32),
+    /// Read a JSON object's named field; the field must be an array of bytes.
+    JsonFieldBytes(u32,u32),
+    /// Read a JSON object's named string field as UTF-8 bytes.
+    JsonFieldString(u32,u32),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Terminator {
@@ -242,7 +246,9 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
             need(defs,*a,Type::Bytes)?;need(defs,*start,Type::U32)?;
             need(defs,*len,Type::U32)?;Ok(Type::Bytes)
         },
-        Op::Concat(a,b)=>{need(defs,*a,Type::Bytes)?;need(defs,*b,Type::Bytes)?;Ok(Type::Bytes)},
+        Op::Concat(a,b)|Op::JsonFieldBytes(a,b)|Op::JsonFieldString(a,b)=>{
+            need(defs,*a,Type::Bytes)?;need(defs,*b,Type::Bytes)?;Ok(Type::Bytes)
+        },
     }
 }
 fn check_call(call:WorldCall,args:&[u32],defs:&BTreeMap<u32,Type>) -> Result<(),VmError> {
@@ -290,6 +296,15 @@ fn bytes<'a>(regs:&'a BTreeMap<u32,Value>,id:u32)->Result<&'a [u8],VmError>{
 fn bool_value(regs:&BTreeMap<u32,Value>,id:u32)->Result<bool,VmError>{
     if let Value::Bool(v)=get(regs,id)? {Ok(*v)} else {Err(VmError::InvalidInput)}
 }
+fn json_field(regs:&BTreeMap<u32,Value>,source:u32,key:u32)
+    ->Result<serde_json::Value,VmError> {
+    let data=bytes(regs,source)?;
+    let name=std::str::from_utf8(bytes(regs,key)?).map_err(|_|VmError::InvalidInput)?;
+    let object:serde_json::Value=serde_json::from_slice(data).map_err(|_|VmError::InvalidInput)?;
+    object.as_object().and_then(|fields|fields.get(name))
+        .cloned().ok_or(VmError::InvalidInput)
+}
+
 fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
     Ok(match op {
         Op::ConstU32(v)=>Value::U32(*v),
@@ -324,6 +339,22 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             out.extend_from_slice(y);
             Value::Bytes(out)
         },
+        Op::JsonFieldBytes(source,field)=>{
+            let value=json_field(regs,*source,*field)?;
+            let serde_json::Value::Array(items)=value else {return Err(VmError::InvalidInput);};
+            if items.len()>MAX_VALUE_BYTES {return Err(VmError::OutputTooLarge);}
+            let result=items.into_iter().map(|v|{
+                v.as_u64().filter(|n|*n<=255).map(|n|n as u8)
+                    .ok_or(VmError::InvalidInput)
+            }).collect::<Result<Vec<u8>,VmError>>()?;
+            Value::Bytes(result)
+        },
+        Op::JsonFieldString(source,field)=>{
+            let value=json_field(regs,*source,*field)?;
+            let serde_json::Value::String(text)=value else {return Err(VmError::InvalidInput);};
+            if text.len()>MAX_VALUE_BYTES {return Err(VmError::OutputTooLarge);}
+            Value::Bytes(text.into_bytes())
+        },
         Op::Sha256(a)=>Value::Bytes(Sha256::digest(bytes(regs,*a)?).to_vec()),
         Op::HexEncode(a)=>{
             let input=bytes(regs,*a)?;
@@ -341,6 +372,8 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::Slice(_,_,len)=>num(regs,*len)? as usize,
         Op::Sha256(a)=>bytes(regs,*a)?.len(),
         Op::HexEncode(a)=>bytes(regs,*a)?.len().saturating_mul(2),
+        Op::JsonFieldBytes(a,b)|Op::JsonFieldString(a,b)=>
+            bytes(regs,*a)?.len().saturating_add(bytes(regs,*b)?.len()),
         _=>0,
     };
     Ok((if matches!(op,Op::Sha256(_)){10}else{1}) + (len as u64).saturating_add(15)/16)
