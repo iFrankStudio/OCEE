@@ -42,6 +42,8 @@ pub enum Op {
     JsonFieldString(u32,u32),
     /// Extract a non-negative JSON integer within the U32 range.
     JsonFieldU32(u32,u32),
+    /// Return any JSON object's named member as canonical serialized JSON bytes.
+    JsonFieldJson(u32,u32),
     /// Generic array indexing: emits canonical JSON bytes for the selected value.
     JsonIndex(u32,u32),
     /// Copy a byte vector while replacing a single byte at the given index.
@@ -279,7 +281,7 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
         Op::JsonFieldU32(a,b)=>{
             need(defs,*a,Type::Bytes)?;need(defs,*b,Type::Bytes)?;Ok(Type::U32)
         },
-        Op::Concat(a,b)|Op::JsonFieldBytes(a,b)|Op::JsonFieldString(a,b)=>{
+        Op::Concat(a,b)|Op::JsonFieldBytes(a,b)|Op::JsonFieldString(a,b)|Op::JsonFieldJson(a,b)=>{
             need(defs,*a,Type::Bytes)?;need(defs,*b,Type::Bytes)?;Ok(Type::Bytes)
         },
     }
@@ -431,6 +433,10 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             }).collect::<Result<Vec<u8>,VmError>>()?;
             Value::Bytes(result)
         },
+        Op::JsonFieldJson(source,field)=>{
+            let value=json_field(regs,*source,*field)?;
+            Value::Bytes(canonical_bytes(&value))
+        },
         Op::JsonFieldU32(source,field)=>{
             let value=json_field(regs,*source,*field)?;
             let n=value.as_u64().ok_or(VmError::InvalidInput)?;
@@ -464,7 +470,7 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::RewriteOp(a,b,_,d)=>bytes(regs,*a)?.len().saturating_mul(3)
             .saturating_add(bytes(regs,*b)?.len())
             .saturating_add(bytes(regs,*d)?.len()),
-        Op::JsonFieldBytes(a,b)|Op::JsonFieldString(a,b)|Op::JsonFieldU32(a,b)=>
+        Op::JsonFieldBytes(a,b)|Op::JsonFieldString(a,b)|Op::JsonFieldU32(a,b)|Op::JsonFieldJson(a,b)=>
             bytes(regs,*a)?.len().saturating_add(bytes(regs,*b)?.len()),
         _=>0,
     };
