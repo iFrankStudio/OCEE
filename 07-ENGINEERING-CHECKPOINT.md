@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44040395153](https://github.com/iFrankStudio/OCEE/actions/runs/44040395153) — Rust workspace **21 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44040395153](https://github.com/iFrankStudio/OCEE/actions/runs/44040395153) — Rust workspace **22 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -29,6 +29,7 @@
 - C→A 反馈通过定时消息返回，并扣除通信预算；不使用真实网络或宿主命令。
 - 每 256 个逻辑 tick 在 `/public/C/hello` 发布一对合法 HELLO 帧，供个体通过世界 `READ` 观察；不可通过 READ 获得私有协议生成参数。
 - 隐藏协议参数目前存于世界权威状态。协议实验夹具以研究者视角构造合法请求用于验证服务，**还不是个体自学协议**。
+- 新增有限公共反馈探测研究夹具：给定 HELLO 样例、已知 P0/P1 通用分帧规则和可见错误码，能够在有限请求内发现 REMOTE_EVAL opcode；这**不是**从零推断所有协议规则，也不覆盖 P2，不能作为真实 S 型学习结果。
 - **未实现** E001 工作项发布与统计、服务版本变化事件、真实 S/O 初始程序、独立受限参考求解器、真实可学性校准。
 
 ## 已发现且修复的关键问题
