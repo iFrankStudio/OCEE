@@ -110,3 +110,39 @@ pub fn s1_p0_probe()->Program {
         }]
     }
 }
+
+
+/// Mechanism ablation: retain frame generation, probing, message delays and
+/// memory capacity while disabling the use of observed diagnostic labels.
+/// This is a development control, not an A/B/C/D E001 confirmatory group.
+pub fn s1_p0_no_feedback_control()->Program {
+    let mut program=s1_p0_probe();
+    let diagnostic=program.functions[0].blocks.iter_mut()
+        .find(|b|b.id=="diagnostic").expect("diagnostic block");
+    let instruction=diagnostic.instructions.iter_mut()
+        .find(|i|i.id==115).expect("feedback selector");
+    instruction.op=bytes(b"UnknownOperation");
+    program.validate().expect("control must typecheck");
+    program
+}
+
+pub fn s1_manifest()->crate::SeedManifest {
+    crate::SeedManifest{
+        manifest_version:1,kind:"S1-P0-development-probe",
+        program_hash:format!("sha256:{}",s1_p0_probe().content_hash()
+            .expect("probe program must validate")),
+        built_in_modules:vec![
+            "public-hello-read", "generic-json-feedback",
+            "KNOWN-P0-XOR-byte-delta-repair", "bounded-opcode-enumeration",
+            "BAD_BODY-feedback-selector", "fixed-latency-poll",
+            "save-discovered-frame"
+        ],
+        initial_tool_hashes:vec![],
+        known_protocol_families:vec!["P0-XOR-frame-envelope".into()],
+        prohibited_knowledge:vec![
+            "hidden-opcode-values","private-generator-seed",
+            "remote-eval-success-reward","evaluator-score"
+        ],
+        research_status:"DEVELOPMENT_ABLATION_NOT_E001_FULL_NOT_NEW_TOOL",
+    }
+}
