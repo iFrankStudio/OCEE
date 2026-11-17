@@ -163,7 +163,7 @@ fn organism_program_can_create_and_activate_a_candidate_using_world_calls() {
                     params:vec![Param{id:10,ty:Type::Bytes},Param{id:11,ty:Type::Bytes}],
                     instructions:vec![
                         Instruction{id:12,op:Op::ConstBytes{hex:hex(b"/self/active")}},
-                        Instruction{id:13,op:Op::ConstU32(u32::MAX)},
+                        Instruction{id:13,op:Op::ConstU32(0)}, // /self/active exists at version 0
                     ],
                     terminator:Terminator::Yield{call:WorldCall::Write,
                         args:vec![12,10,13],next:"done".into(),next_args:vec![]},
