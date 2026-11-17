@@ -76,7 +76,7 @@ pub fn s2_p0_remote_eval()->Program {
                 instr(100,Op::ByteAt(98,99)), // P0 ACK status
                 instr(101,Op::EqU32(100,95)),
             ],Terminator::Branch{condition:101,
-                if_true:"save_ack".into(),true_args:vec![91,98],
+                if_true:"save_ack".into(),true_args:vec![90,98], // empty-body S1 discovery, not evaluation frame
                 if_false:"fail".into(),false_args:vec![]}),
             block("save_ack",vec![param(110,b),param(111,b)],vec![
                 instr(112,byte_const(b"/self/results/job0/ack")),
