@@ -1,10 +1,12 @@
 # OCEE-0 世界底层规律规范
 
 - **文档编号**：OCEE-WORLD-001
-- **版本**：0.1.0（实验设计基线，尚未实现验证）
-- **状态**：Draft / 待评审
+- **版本**：0.2.0（工程语义已冻结；运行与校准尚未验证）
+- **状态**：Implementation Ready（内核工程）/ Experiment Not Ready（实验）
 - **所属路线**：OCEE（开放式演化赛博生态世界），独立于既有 CL 系列研究
-- **关联文档**：[个体结构与可修改性](./02-ORGANISM-SPEC.md)、[E001 实验协议](./03-E001-PROTOCOL.md)
+- **关联文档**：[个体结构与可修改性](./02-ORGANISM-SPEC.md)、[E001 实验协议](./03-E001-PROTOCOL.md)、[04 工程执行契约](./04-ENGINEERING-CONTRACTS.md)、[08 设计决策](./08-DESIGN-DECISIONS.md)
+
+**规范优先级**：本文件描述世界概念与能力边界；动作调度、执行费用和快照权威状态以 04 的 v0.2 执行契约为唯一准则。
 
 ## 0. 规范约定与目标
 
@@ -23,47 +25,35 @@ OCEE-0 的首要目标：为个体提供一个可观察但不完全可知、可�
 
 ## 1. 世界状态与确定性
 
-世界状态记为 `W_k`，逻辑步 `k` 是成功或失败的**一次世界动作尝试**所占的序号，不等于墙钟时间。
+世界状态记为 `W_k`，逻辑步 `k` 是实验驱动器的一次确定性 tick；每 tick 最多提交一次个体外部动作意图，也允许无动作推进（driver NOOP），不等于墙钟时间。
 
 `W_(k+1) = F(W_k, a_k, e_k)`。其中 `a_k` 是当前动作；`e_k` 是在该步规定阶段触发的环境事件；`F` 是带版本号的确定性转移函数。
 
 **同一内核版本、初始状态、配置、随机种子和有序动作流 MUST 产生相同状态摘要与事件日志。** 不得使用墙钟、系统随机源、未记录的线程竞态、文件系统遍历顺序决定实验行为。
 
-### 1.1 必须纳入状态的字段
+### 1.1 权威世界状态
 
 ```text
 WorldState {
-  schema_version: u32,
-  kernel_version: string,
-  step: u64,
-  rng_state: bytes,
-  epoch_index: u64,
-  nodes: Map<NodeId, NodeState>,
-  message_queue: OrderedList<Message>,
-  organism_registry: Map<OrganismId, OrganismHostState>,
-  object_store: Map<ObjectId, VersionedObject>,
-  event_schedule: OrderedList<ScheduledEvent>,
-  admission_state: HostSecurityState
+  schema_version, kernel_version,
+  step, rng_state, epoch_index, last_granted_epoch,
+  nodes, objects, organisms, mailboxes, pending_deliveries,
+  events, next_sequence, security
 }
 ```
 
-`organism_registry` 记录资源账户、授权、版本指针和运行状态，**不代表内核拥有个体决策权**。宿主的 `admission_state` 与评价数据不可由个体写入。
+`organisms` 内含各个体的活动程序、可变程序存储、记忆、工具、VM continuation、反馈、资源账户与 RNG 状态；**它是唯一权威持久化状态的一部分**。不能建立与世界快照冲突的第二份个体权威数据库。完整字段与原子提交见 [04](./04-ENGINEERING-CONTRACTS.md)。
 
-### 1.2 单步执行顺序
+### 1.2 唯一 tick 处理顺序
 
-每个逻辑步严格按以下顺序进行：
+1. 在 `step=k` **先**应用该步到期的世界事件、投递到期消息；排序键 `(due_step,priority,sequence_no)`。
+2. 如进入新 epoch，则按本步生效资源配置授予额度；初始 `last_granted_epoch=None`，所以 step 0 必须初始化授予。
+3. 宿主恢复活动 VM，执行有界微指令，最多产生一项 `ActionIntent`；内部指令只消耗 gas，不增加世界 step。
+4. 内核校验并原子处理该意图，按预先公开费用规则计费；失败无部分外部提交。
+5. 反馈留给后续 tick 读取；`SEND` 成功只代表消息入队。
+6. 同一事务记录日志与状态，令 `step=k+1`；无自主动作时只有驱动器显式 NOOP 能推进。
 
-1. 校验动作格式、调用者身份、能力授权和当前状态；
-2. 检查预算，预留本次动作的最大允许资源；
-3. 在受限 VM/世界服务中执行动作，产生返回值和状态差量；
-4. 原子提交可见状态差量与实际费用；失败时按失败语义回滚状态差量，只收取可复核的探测/执行费用；
-5. 将动作结果加入可供个体读取的反馈队列；
-6. 执行在该逻辑步触发的环境事件，事件依 `(due_step, priority, sequence_no)` 稳定排序；
-7. 将 `step` 加 1，生成事件日志和状态摘要。
-
-无动作时不自动增加逻辑步；测试驱动器可通过明确记录的 `NOOP` 动作推进世界。`NOOP` 仅用于测试驱动与休眠仿真，不算个体基础能力。
-
-**注意**：上述顺序是 OCEE-0 的唯一规范行为；实现不得在不同模块里采用不同先后顺序。
+活动程序的宿主调度与六原语之一的显式 `EXEC` 不是同一调用；`EXEC` 是受限隔离候选试运行。禁止递归嵌套通过 EXEC/WORLD_CALL 获得额外世界动作。精确定义与验收样例见 [04](./04-ENGINEERING-CONTRACTS.md)。
 
 ## 2. 资源模型
 
@@ -77,7 +67,7 @@ WorldState {
 
 ### 2.1 配额语义
 
-- `epoch_length_steps = 1024`（配置默认）；`epoch_index = floor(step/1024)`。
+- `epoch_length_steps = 1024`（配置默认）；`epoch_index = floor(step/1024)` 为派生值，`last_granted_epoch` 记录最近一次已授予的 epoch；在 tick 开始时授予，而非动作之后。
 - **计算配额是吞吐限制而不是生命值**。每个 epoch 为各节点重新提供 `gas_budget`；结余默认不跨 epoch；执行因额度不足被拒绝，不触发个体“死亡”。
 - 通信采用每 epoch 字节预算；消息传输延迟按逻辑步固定计算，不能靠真实睡眠完成。
 - 存储采用节点容量与账户占用量双重检查；写入原子进行；超额返回 `ERR_QUOTA`，旧数据不损坏。
@@ -135,13 +125,13 @@ Object {
 | `OBSERVE` | 已授权的观察目标 | 目标当前可见属性/变化摘要 | `ERR_DENIED`、`ERR_UNKNOWN` |
 | `READ` | 可访问对象标识/范围 | 字节及对象版本 | `ERR_DENIED`、`ERR_NOT_FOUND` |
 | `WRITE` | 目标、期望版本、字节 | 新版本/占用量 | `ERR_CONFLICT`、`ERR_QUOTA` |
-| `EXEC` | 程序版本、参数、预算、隔离选项 | 结果、资源成本、受限轨迹 | `ERR_INVALID_CODE`、`ERR_GAS` |
+| `EXEC` | 程序版本、参数、预算、`isolated=true` | 纯计算/授权快照只读的候选输出、成本、轨迹 | `ERR_INVALID_CODE`、`ERR_GAS`、`ERR_ISOLATED_SIDE_EFFECT` |
 | `SEND` | 目的节点、字节载荷 | 消息编号/入队结果 | `ERR_BANDWIDTH`、`ERR_DENIED` |
 | `RECEIVE` | 邮箱、最多读取条数 | 已投递消息/空集 | `ERR_DENIED`、`ERR_EMPTY` |
 
 所有失败必须是确定性的，且不泄露未授权的内部状态。失败消息可以帮助个体推断**允许探测的接口**，但不能直接暴露隐藏测试种子或评价目标。
 
-`EXEC` 的隔离选项是**安全执行基础设施**，不是“自动优化”原语；个体需自行构建候选程序、读取试验反馈并决定是否采用。具体自我版本写入规则见文档 02。
+`EXEC` 是**安全执行基础设施**，不是“自动优化”原语；只允许纯计算与授权快照读取，不允许在其中执行真实 SEND/WRITE/RECEIVE 或调用 B/C。要试验远端服务，个体需通过正常 SEND/RECEIVE 执行并付费；具体版本规则见文档 02 和 [04](./04-ENGINEERING-CONTRACTS.md)。
 
 ### 4.1 消息语义
 
@@ -164,7 +154,7 @@ OCEE-0 允许三种事件：
 2. `SERVICE_VERSION_CHANGE(service, protocol_version)`：改变新请求适用的协议，保留可显式查询的版本行为；在测评时可以设定兼容或不兼容。
 3. `NODE_AVAILABILITY(node, availability)`：使某节点暂时不可用；请求按明确错误规则处理，不隐式删除个体。
 
-事件必须事先记录在受版本控制的实验配置中，或由固定 seed 的确定性生成器产生。不得根据个体当前分数暗中调整难度，除非另立“自适应环境”实验并单独标识。
+事件必须事先记录在受版本控制的实验配置中，或由固定 seed 的确定性生成器产生。所有 `due_step=k` 的事件在该 tick 的 VM 调度与额度授予之前执行；具体执行顺序由 04 约束。不得根据个体当前分数暗中调整难度，除非另立“自适应环境”实验并单独标识。
 
 ## 7. 快照、事件日志与重放
 
