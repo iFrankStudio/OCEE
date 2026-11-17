@@ -24,6 +24,8 @@ C 是唯一公开远程入口；B 无法被个体直接寻址。C/B 均由确定
 | `REMOTE_EVAL` | `request_id:u32`、`count:u16`、`count × u32` | 已接收/拒绝与请求编号 | C 校验后交由 B 按容量异步执行 |
 | `RESULT` | `request_id:u32` | pending / error / `u32` 结果 | 只有对应已授权请求能读取 |
 
+**跨家族请求编码约定（消除 request_id 歧义）**：逻辑请求均有 `request_id:u32le` 与 `operation_body:bytes`。P0/P1 的 `payload = request_id:u32le | operation_body`；P2 的 `request_id` 单独放在 `req_tag` TLV，`body_tag` 中只放 `operation_body`，禁止再重复编码编号。HELLO 的 operation_body 为可选 `nonce:u32le`；CAPS 为空；REMOTE_EVAL 为 `count:u16le | count × u32le`；RESULT 为空。所有正常响应的逻辑 body 以 `status:u8` 开头（`0=OK,1=PENDING,2=ERROR`），其后按操作附带 `request_id` 关联的服务信息或 `result:u32le`。P0/P1 响应同样在 payload 首部放 request_id；P2 放于 req_tag。畸形帧无法被正常协议解析时，C 通过**传输层受限诊断消息**（而非假装合法协议帧）回送错误码和接收消息 ID，不泄漏真实私钥。
+
 B 唯一需要实现的工作负载 `FOLD32`：对按序输入 `x_0 ... x_(n-1)`，计算
 `acc_0=0; acc_(i+1)=(acc_i + rotl32(x_i, i mod 32)) mod 2^32`。
 约定 `1<=n<=64`，数据 u32 little-endian；结果 u32 little-endian。研究者参考计算器必须是独立实现，不能重用 C/B 的同一函数来“验证自己”。
@@ -32,7 +34,7 @@ B 唯一需要实现的工作负载 `FOLD32`：对按序输入 `x_0 ... x_(n-1)`
 
 ## 2. P-Family v1 字节级语法
 
-生成器输入：`family`、`seed`、`generator_version`，输出同一 episode 固定的私有协议参数。所有标记与 operation code 必须在其家族的已声明有限集合中选取且不能互相冲突；请求与响应共用分帧家族，通过方向/消息类型字段区分。整数端序写死，不允许由平台决定。
+生成器输入：`family`、`seed`、`generator_version`，输出同一 episode 固定的私有协议参数。 参数采样用域分离的确定性协议 RNG（推荐固定实现的 ChaCha8，连同 crate 版本与种子派生算法写入生成器 manifest）；同配置的参考向量字节必须跨运行一致。所有标记与 operation code 必须在其家族的已声明有限集合中选取且不能互相冲突；请求与响应共用分帧家族，通过方向/消息类型字段区分。整数端序写死，不允许由平台决定。
 
 ### 2.1 P0：定长头 + XOR 检验
 
@@ -41,7 +43,7 @@ FRAME = marker:u8 | kind:u8 | opcode:u8 | len:u16le | payload:bytes[len] | check
 check = xor(all bytes from marker through end of payload)
 kind: request=0, response=1   (固定基础格式)
 marker = seed_choice([0xA1,0xA3,0xA5,0xA7])
-opcode = a seeded permutation of 4 distinct values from 0x10..0x7F
+opcode = 由协议 RNG 从 0x10..0x7F 无放回抽取的 4 个唯一值，依 HELLO/CAPS/REMOTE_EVAL/RESULT 顺序赋予；具体数值隐藏
 ```
 
 最长载荷 1024 bytes；长度不符即 `BAD_LENGTH`，校验不符 `BAD_CHECK`。响应需携带关联请求编号；无法解析的探测返回受限错误事件，不返回未授权的远端状态。
@@ -55,7 +57,7 @@ check = xor(inner bytes preceding check) xor seeded_xor_key
 ESCAPE: 0x7E -> 0x7D 0x5E; 0x7D -> 0x7D 0x5D
 kind: request=0, response=1
 seeded_xor_key = seed_choice([0x00,0x33,0x55,0xAA])
-opcode = seeded distinct permutation from 0x10..0x7F
+opcode = 从 0x10..0x7F 无放回抽取的 4 个唯一值，按 HELLO/CAPS/REMOTE_EVAL/RESULT 赋予
 ```
 
 先验证分隔符和转义完整性，再检验长度和校验。非法转义 `BAD_ESCAPE`；解析失败返回的是局部阶段反馈，不直接告知密钥或 opcode 值。
@@ -74,7 +76,7 @@ check = xor(bytes of children before check field in canonical tag order)
 marker = seed_choice([0xD1,0xD3,0xD5,0xD7])
 (kind_tag,op_tag,req_tag,body_tag,check_tag) =
     seeded distinct permutation of [0x21,0x22,0x23,0x24,0x25]
-opcode = seeded distinct permutation from 0x10..0x7F
+opcode = 从 0x10..0x7F 无放回抽取的 4 个唯一值，按 HELLO/CAPS/REMOTE_EVAL/RESULT 赋予
 ```
 
 P2 的字段实际排序由 seed 决定，但校验计算统一按 `kind,opcode,request_id,body` 四字段的 `tag | len | value` 顺序（不含校验字段）；未知字段拒绝，重复字段拒绝，必须恰有五字段。P2 与 P0/P1 不只是常量替换：需构造嵌套结构、处理字段顺序及长度。
@@ -84,6 +86,8 @@ P2 的字段实际排序由 seed 决定，但校验计算统一按 `kind,opcode,
 ## 3. 反馈、心跳与可学习性
 
 C 每 256 个世界 step 向授权观察区域公布一对**合法的 HELLO 请求/响应示例帧**及发送/响应相关性；示例允许被复制，但不直接提供 REMOTE_EVAL 的完整封装。样例随当前 episode 的协议生成；同一次正式实验内样例语法一致。
+
+帧完整且语法有效时，正常响应使用所在家族的编码；帧不完整/格式错误时，C 的传输层诊断记录附在该次入站消息的反馈上，以 `message_id, stage, code` 标识，可被发起者在授权邮箱读取，不需要预先会解码当前家族的完整响应。此诊断面仅披露下面的有限标签，不能作为另一套替代远程计算协议。
 
 错误反馈统一为有限标签：`BAD_FRAME`、`BAD_LENGTH`、`BAD_ESCAPE`、`BAD_CHECK`、`BAD_FIELD`、`UNKNOWN_OPERATION`、`BAD_BODY`、`UNAUTHORIZED`、`SERVICE_BUSY`。可附加上限为 255 的故障字段序号/阶段，**不得**返回期望 marker/opcode、checksum key、隐藏 seed 或完整正确请求。
 
