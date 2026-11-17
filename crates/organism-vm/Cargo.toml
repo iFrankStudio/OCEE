@@ -1,0 +1,10 @@
+[package]
+name = "ocee-organism-vm"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic typed program interpreter for OCEE-0 P2"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"

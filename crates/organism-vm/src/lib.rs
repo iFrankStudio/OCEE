@@ -1,0 +1,502 @@
+//! OCEE-0 P2: deterministic, capability-free, typed program VM.
+//! The VM emits intents; it never performs a world action or selects a candidate.
+#![forbid(unsafe_code)]
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::{BTreeMap, BTreeSet};
+
+pub const MAX_PROGRAM_BYTES: usize = 64 * 1024;
+pub const MAX_VALUE_BYTES: usize = 64 * 1024;
+pub const MAX_OUTPUT_BYTES: usize = 1024;
+pub const MAX_BLOCKS: usize = 128;
+pub const MAX_INSTRUCTIONS: usize = 4096;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Type { Bool, U32, Bytes }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Value { Bool(bool), U32(u32), Bytes(Vec<u8>) }
+impl Value {
+    fn kind(&self) -> Type {
+        match self { Self::Bool(_) => Type::Bool, Self::U32(_) => Type::U32, Self::Bytes(_) => Type::Bytes }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorldCall { Observe, Read, Write, Send, Receive, Exec }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Param { pub id: u32, pub ty: Type }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Instruction { pub id: u32, pub op: Op }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Op {
+    ConstU32(u32), ConstBool(bool), ConstBytes { hex: String },
+    Add(u32,u32), Sub(u32,u32), Xor(u32,u32), And(u32,u32), Mod(u32,u32),
+    EqU32(u32,u32), EqBytes(u32,u32),
+    Len(u32), ByteAt(u32,u32), Slice(u32,u32,u32), Concat(u32,u32),
+    Sha256(u32),
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Terminator {
+    Return { value: u32 },
+    Jump { target: String, args: Vec<u32> },
+    Branch { condition: u32, if_true: String, true_args: Vec<u32>,
+             if_false: String, false_args: Vec<u32> },
+    // The target block receives next_args followed by one Bytes feedback parameter.
+    Yield { call: WorldCall, args: Vec<u32>, next: String, next_args: Vec<u32> },
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Block {
+    pub id: String,
+    pub params: Vec<Param>,
+    pub instructions: Vec<Instruction>,
+    pub terminator: Terminator,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Function {
+    pub name: String,
+    pub args: Vec<Type>,
+    pub returns: Type,
+    pub blocks: Vec<Block>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Program {
+    pub format_version: u32,
+    pub entry_function: String,
+    pub functions: Vec<Function>,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VmError {
+    InvalidProgram(String), InvalidInput, Arithmetic, Range, Gas,
+    OutputTooLarge, SideEffect, MissingFeedback, Finished,
+}
+
+fn bad(msg: impl Into<String>) -> VmError { VmError::InvalidProgram(msg.into()) }
+
+fn decode_hex(hex: &str) -> Result<Vec<u8>, VmError> {
+    if hex.len() % 2 != 0 || hex.len() > MAX_VALUE_BYTES * 2
+        || !hex.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c)) {
+        return Err(bad("byte literal must be bounded, even-length lowercase hex"));
+    }
+    (0..hex.len()).step_by(2).map(|i| u8::from_str_radix(&hex[i..i+2],16)
+        .map_err(|_|bad("invalid hex"))).collect()
+}
+fn canonical_bytes<T: Serialize>(value: &T) -> Vec<u8> {
+    // serde_json::Value maps sort object keys unless the preserve_order feature is enabled.
+    let val = serde_json::to_value(value).expect("serializable");
+    serde_json::to_vec(&val).expect("serializable")
+}
+fn sha(bytes: &[u8]) -> String {
+    let h=Sha256::digest(bytes);
+    h.iter().map(|v| format!("{v:02x}")).collect::<String>()
+}
+impl Program {
+    pub fn canonical_bytes(&self) -> Vec<u8> { canonical_bytes(self) }
+    pub fn content_hash(&self) -> Result<String,VmError> {
+        self.validate()?;
+        let mut bytes=b"OCEE-PROGRAM-V1\0".to_vec();
+        bytes.extend(self.canonical_bytes());
+        Ok(sha(&bytes))
+    }
+    fn main(&self) -> Result<&Function,VmError> {
+        self.functions.iter().find(|f| f.name==self.entry_function)
+            .ok_or_else(||bad("missing entry function"))
+    }
+    pub fn validate(&self) -> Result<(),VmError> {
+        if self.format_version != 1 {return Err(bad("unknown program format")); }
+        if self.functions.len()!=1 {return Err(bad("P2 supports one function (CALL deferred)")); }
+        let f=self.main()?;
+        if f.args!=vec![Type::Bytes] {return Err(bad("entry expects one Bytes argument")); }
+        if f.blocks.is_empty() || f.blocks.len()>MAX_BLOCKS {return Err(bad("block count")); }
+        if self.canonical_bytes().len()>MAX_PROGRAM_BYTES {return Err(bad("program too large")); }
+        let mut blocks=BTreeMap::new();
+        for b in &f.blocks {
+            if blocks.insert(b.id.as_str(),b).is_some() {return Err(bad("duplicate block id")); }
+        }
+        let entry=f.blocks.first().ok_or_else(||bad("missing entry block"))?;
+        if entry.params.len()!=1 || entry.params[0].ty!=Type::Bytes {return Err(bad("entry block signature")); }
+        let mut edges:BTreeMap<&str,Vec<&str>>=BTreeMap::new();
+        let mut instr_count=0usize;
+        for b in &f.blocks {
+            instr_count+=b.instructions.len();
+            if instr_count>MAX_INSTRUCTIONS {return Err(bad("instruction count")); }
+            let mut defs=BTreeMap::<u32,Type>::new();
+            for p in &b.params {
+                if defs.insert(p.id,p.ty).is_some() {return Err(bad("duplicate parameter")); }
+            }
+            for inst in &b.instructions {
+                if defs.contains_key(&inst.id) {return Err(bad("register redefinition")); }
+                let ty=check_op(&inst.op,&defs)?;
+                defs.insert(inst.id,ty);
+            }
+            let mut outgoing=vec![];
+            let mut check_jump=|target:&str,args:&[u32],feedback:bool| -> Result<(),VmError> {
+                let target_block=blocks.get(target).ok_or_else(||bad("unknown block target"))?;
+                let n=args.len()+usize::from(feedback);
+                if target_block.params.len()!=n {return Err(bad("block parameter arity")); }
+                for (reg,param) in args.iter().zip(&target_block.params) {
+                    if defs.get(reg)!=Some(&param.ty) {return Err(bad("block parameter type")); }
+                }
+                if feedback && target_block.params.last().map(|p|p.ty)!=Some(Type::Bytes) {
+                    return Err(bad("feedback must be Bytes"));
+                }
+                outgoing.push(target);
+                Ok(())
+            };
+            match &b.terminator {
+                Terminator::Return {value} if defs.get(value)==Some(&f.returns) => {},
+                Terminator::Return {..} => return Err(bad("return type")),
+                Terminator::Jump {target,args} => check_jump(target,args,false)?,
+                Terminator::Branch {condition,if_true,true_args,if_false,false_args} => {
+                    if defs.get(condition)!=Some(&Type::Bool) {return Err(bad("branch condition")); }
+                    check_jump(if_true,true_args,false)?;
+                    check_jump(if_false,false_args,false)?;
+                }
+                Terminator::Yield {call,args,next,next_args} => {
+                    check_call(*call,args,&defs)?;
+                    check_jump(next,next_args,true)?;
+                }
+            }
+            edges.insert(b.id.as_str(),outgoing);
+        }
+        // Prevent unbounded cyclic control flow in P2; bounded loops can be added as a separate opcode.
+        fn visit<'a>(n:&'a str,edges:&BTreeMap<&'a str,Vec<&'a str>>,
+            pending:&mut BTreeSet<&'a str>,done:&mut BTreeSet<&'a str>) -> Result<(),VmError> {
+            if done.contains(n) {return Ok(());}
+            if !pending.insert(n) {return Err(bad("unbounded control-flow cycle")); }
+            for &to in edges.get(n).ok_or_else(||bad("missing graph block"))? {
+                visit(to,edges,pending,done)?;
+            }
+            pending.remove(n);
+            done.insert(n);
+            Ok(())
+        }
+        for key in edges.keys() {
+            visit(key,&edges,&mut BTreeSet::new(),&mut BTreeSet::new())?;
+        }
+        Ok(())
+    }
+
+    pub fn mutate_literal(&self, block_id:&str, register:u32, replacement:Literal)
+        -> Result<Program,VmError> {
+        let mut cloned=self.clone();
+        let mut changed=false;
+        for block in &mut cloned.functions[0].blocks {
+            if block.id!=block_id {continue;}
+            for inst in &mut block.instructions {
+                if inst.id!=register {continue;}
+                inst.op=match (&inst.op,replacement.clone()) {
+                    (Op::ConstU32(_),Literal::U32(v))=>Op::ConstU32(v),
+                    (Op::ConstBool(_),Literal::Bool(v))=>Op::ConstBool(v),
+                    (Op::ConstBytes{..},Literal::Bytes(v))=>Op::ConstBytes{hex:v},
+                    _=>return Err(bad("mutation type mismatch or non-literal")),
+                };
+                changed=true;
+                break;
+            }
+        }
+        if !changed {return Err(bad("unknown mutation target")); }
+        cloned.validate()?;
+        Ok(cloned)
+    }
+}
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Literal { U32(u32), Bool(bool), Bytes(String) }
+
+fn need(defs:&BTreeMap<u32,Type>,reg:u32,ty:Type) -> Result<(),VmError> {
+    if defs.get(&reg)!=Some(&ty) {return Err(bad(format!("invalid operand {reg}"))); }
+    Ok(())
+}
+fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
+    match op {
+        Op::ConstU32(_)=>Ok(Type::U32),
+        Op::ConstBool(_)=>Ok(Type::Bool),
+        Op::ConstBytes {hex}=>{decode_hex(hex)?;Ok(Type::Bytes)},
+        Op::Add(a,b)|Op::Sub(a,b)|Op::Xor(a,b)|Op::And(a,b)|Op::Mod(a,b)=>{
+            need(defs,*a,Type::U32)?;need(defs,*b,Type::U32)?;Ok(Type::U32)
+        },
+        Op::EqU32(a,b)=>{need(defs,*a,Type::U32)?;need(defs,*b,Type::U32)?;Ok(Type::Bool)},
+        Op::EqBytes(a,b)=>{need(defs,*a,Type::Bytes)?;need(defs,*b,Type::Bytes)?;Ok(Type::Bool)},
+        Op::Len(a)|Op::Sha256(a)=>{
+            need(defs,*a,Type::Bytes)?;
+            Ok(if matches!(op,Op::Len(_)){Type::U32}else{Type::Bytes})
+        },
+        Op::ByteAt(a,i)=>{
+            need(defs,*a,Type::Bytes)?;need(defs,*i,Type::U32)?;Ok(Type::U32)
+        },
+        Op::Slice(a,start,len)=>{
+            need(defs,*a,Type::Bytes)?;need(defs,*start,Type::U32)?;
+            need(defs,*len,Type::U32)?;Ok(Type::Bytes)
+        },
+        Op::Concat(a,b)=>{need(defs,*a,Type::Bytes)?;need(defs,*b,Type::Bytes)?;Ok(Type::Bytes)},
+    }
+}
+fn check_call(call:WorldCall,args:&[u32],defs:&BTreeMap<u32,Type>) -> Result<(),VmError> {
+    let signature:&[Type]=match call {
+        WorldCall::Observe|WorldCall::Receive=>&[],
+        WorldCall::Read|WorldCall::Send|WorldCall::Exec=>&[Type::Bytes],
+        WorldCall::Write=>&[Type::Bytes,Type::Bytes,Type::U32],
+    };
+    if args.len()!=signature.len() {return Err(bad("world call arity")); }
+    for (reg,ty) in args.iter().zip(signature) {need(defs,*reg,*ty)?;}
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Continuation {
+    pub program_hash: String,
+    pub block: String,
+    pub pc: usize,
+    pub registers: BTreeMap<u32,Value>,
+    pub awaiting: Option<AwaitFeedback>,
+    pub finished: bool,
+}
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AwaitFeedback { pub next: String, pub forwarded: Vec<Value> }
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SliceResult {
+    Returned { output: Value, gas_used: u64 },
+    Yielded { call: WorldCall, args: Vec<Value>, gas_used: u64 },
+    Exhausted { gas_used: u64 },
+}
+
+fn get<'a>(regs:&'a BTreeMap<u32,Value>,id:u32)->Result<&'a Value,VmError>{
+    regs.get(&id).ok_or(VmError::InvalidInput)
+}
+fn num(regs:&BTreeMap<u32,Value>,id:u32)->Result<u32,VmError>{
+    if let Value::U32(v)=get(regs,id)? {Ok(*v)} else {Err(VmError::InvalidInput)}
+}
+fn bytes<'a>(regs:&'a BTreeMap<u32,Value>,id:u32)->Result<&'a [u8],VmError>{
+    if let Value::Bytes(v)=get(regs,id)? {Ok(v)} else {Err(VmError::InvalidInput)}
+}
+fn bool_value(regs:&BTreeMap<u32,Value>,id:u32)->Result<bool,VmError>{
+    if let Value::Bool(v)=get(regs,id)? {Ok(*v)} else {Err(VmError::InvalidInput)}
+}
+fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
+    Ok(match op {
+        Op::ConstU32(v)=>Value::U32(*v),
+        Op::ConstBool(v)=>Value::Bool(*v),
+        Op::ConstBytes{hex}=>Value::Bytes(decode_hex(hex)?),
+        Op::Add(a,b)=>Value::U32(num(regs,*a)?.wrapping_add(num(regs,*b)?)),
+        Op::Sub(a,b)=>Value::U32(num(regs,*a)?.wrapping_sub(num(regs,*b)?)),
+        Op::Xor(a,b)=>Value::U32(num(regs,*a)? ^ num(regs,*b)?),
+        Op::And(a,b)=>Value::U32(num(regs,*a)? & num(regs,*b)?),
+        Op::Mod(a,b)=>{
+            let d=num(regs,*b)?;
+            if d==0 {return Err(VmError::Arithmetic);}
+            Value::U32(num(regs,*a)?%d)
+        },
+        Op::EqU32(a,b)=>Value::Bool(num(regs,*a)?==num(regs,*b)?),
+        Op::EqBytes(a,b)=>Value::Bool(bytes(regs,*a)?==bytes(regs,*b)?),
+        Op::Len(a)=>Value::U32(bytes(regs,*a)?.len() as u32),
+        Op::ByteAt(a,i)=>Value::U32(*bytes(regs,*a)?.get(num(regs,*i)? as usize)
+            .ok_or(VmError::Range)? as u32),
+        Op::Slice(a,start,len)=>{
+            let raw=bytes(regs,*a)?;
+            let s=num(regs,*start)? as usize;
+            let l=num(regs,*len)? as usize;
+            let end=s.checked_add(l).ok_or(VmError::Range)?;
+            Value::Bytes(raw.get(s..end).ok_or(VmError::Range)?.to_vec())
+        },
+        Op::Concat(a,b)=>{
+            let x=bytes(regs,*a)?;
+            let y=bytes(regs,*b)?;
+            if x.len().saturating_add(y.len())>MAX_VALUE_BYTES {return Err(VmError::OutputTooLarge);}
+            let mut out=x.to_vec();
+            out.extend_from_slice(y);
+            Value::Bytes(out)
+        },
+        Op::Sha256(a)=>Value::Bytes(Sha256::digest(bytes(regs,*a)?).to_vec()),
+    })
+}
+fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
+    let len = match op {
+        Op::ConstBytes{hex} => hex.len()/2,
+        Op::Concat(a,b) => bytes(regs,*a)?.len().saturating_add(bytes(regs,*b)?.len()),
+        Op::Slice(_,_,len)=>num(regs,*len)? as usize,
+        Op::Sha256(a)=>bytes(regs,*a)?.len(),
+        _=>0,
+    };
+    Ok((if matches!(op,Op::Sha256(_)){10}else{1}) + (len as u64).saturating_add(15)/16)
+}
+impl Continuation {
+    pub fn start(program:&Program,input:Vec<u8>)->Result<Self,VmError> {
+        program.validate()?;
+        if input.len()>MAX_VALUE_BYTES {return Err(VmError::InvalidInput);}
+        let entry=&program.main()?.blocks[0];
+        let mut registers=BTreeMap::new();
+        registers.insert(entry.params[0].id,Value::Bytes(input));
+        Ok(Self{program_hash:program.content_hash()?,block:entry.id.clone(),
+            pc:0,registers,awaiting:None,finished:false})
+    }
+
+    pub fn resume(&mut self,program:&Program,feedback:Option<Vec<u8>>,limit:u64)
+        ->Result<SliceResult,VmError> {
+        program.validate()?;
+        if self.program_hash!=program.content_hash()? {return Err(VmError::InvalidInput);}
+        if self.finished {return Err(VmError::Finished);}
+        let f=program.main()?;
+        if let Some(awaiting)=self.awaiting.take() {
+            let response=feedback.ok_or(VmError::MissingFeedback)?;
+            if response.len()>MAX_VALUE_BYTES {return Err(VmError::InvalidInput);}
+            let mut incoming=awaiting.forwarded;
+            incoming.push(Value::Bytes(response));
+            self.enter(f,&awaiting.next,incoming)?;
+        } else if feedback.is_some() {return Err(VmError::InvalidInput);}
+        let mut gas=0;
+        loop {
+            let block=f.blocks.iter().find(|b|b.id==self.block).ok_or(VmError::InvalidInput)?;
+            if self.pc<block.instructions.len() {
+                let inst=&block.instructions[self.pc];
+                let fee=gas_cost(&inst.op,&self.registers)?;
+                if gas.saturating_add(fee)>limit {return Ok(SliceResult::Exhausted{gas_used:gas});}
+                let result=execute(&inst.op,&self.registers)?;
+                if let Value::Bytes(v)=&result {
+                    if v.len()>MAX_VALUE_BYTES {return Err(VmError::OutputTooLarge);}
+                }
+                self.registers.insert(inst.id,result);
+                self.pc+=1;
+                gas+=fee;
+                continue;
+            }
+            if gas>=limit {return Ok(SliceResult::Exhausted{gas_used:gas});}
+            // Every block terminator has a fixed cost of one gas.
+            gas+=1;
+            match &block.terminator {
+                Terminator::Return {value}=>{
+                    let output=get(&self.registers,*value)?.clone();
+                    if let Value::Bytes(v)=&output {
+                        if v.len()>MAX_OUTPUT_BYTES {return Err(VmError::OutputTooLarge);}
+                    }
+                    self.finished=true;
+                    return Ok(SliceResult::Returned{output,gas_used:gas});
+                },
+                Terminator::Jump{target,args}=>{
+                    let vals=values(&self.registers,args)?;
+                    self.enter(f,target,vals)?;
+                },
+                Terminator::Branch{condition,if_true,true_args,if_false,false_args}=>{
+                    let (target,args)=if bool_value(&self.registers,*condition)? {
+                        (if_true,true_args)
+                    } else {(if_false,false_args)};
+                    let vals=values(&self.registers,args)?;
+                    self.enter(f,target,vals)?;
+                },
+                Terminator::Yield{call,args,next,next_args}=>{
+                    let provided=values(&self.registers,args)?;
+                    let forwarded=values(&self.registers,next_args)?;
+                    self.awaiting=Some(AwaitFeedback{next:next.clone(),forwarded});
+                    return Ok(SliceResult::Yielded{call:*call,args:provided,gas_used:gas});
+                },
+            }
+        }
+    }
+    fn enter(&mut self,f:&Function,target:&str,values:Vec<Value>)->Result<(),VmError> {
+        let b=f.blocks.iter().find(|b|b.id==target).ok_or(VmError::InvalidInput)?;
+        if b.params.len()!=values.len() ||
+            !b.params.iter().zip(&values).all(|(p,v)|p.ty==v.kind()) {
+            return Err(VmError::InvalidInput);
+        }
+        self.block=target.to_owned();
+        self.pc=0;
+        self.registers=b.params.iter().zip(values)
+            .map(|(p,v)|(p.id,v)).collect();
+        Ok(())
+    }
+}
+fn values(regs:&BTreeMap<u32,Value>,ids:&[u32])->Result<Vec<Value>,VmError>{
+    ids.iter().map(|id|get(regs,*id).cloned()).collect()
+}
+
+/// Explicit isolated EXEC: no world I/O, including READ/SEND/WRITE.
+/// It runs only finite pure programs. Persistent state remains with the caller.
+pub fn run_isolated(program:&Program,input:Vec<u8>,limit:u64)
+    ->Result<(Value,u64),VmError> {
+    let mut cont=Continuation::start(program,input)?;
+    let mut used=0;
+    match cont.resume(program,None,limit)? {
+        SliceResult::Returned{output,gas_used}=>{used+=gas_used;Ok((output,used))},
+        SliceResult::Yielded{..}=>Err(VmError::SideEffect),
+        SliceResult::Exhausted{..}=>Err(VmError::Gas),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn p(instructions:Vec<Instruction>,term:Terminator,returns:Type)->Program {
+        Program{format_version:1,entry_function:"main".into(),functions:vec![
+            Function{name:"main".into(),args:vec![Type::Bytes],returns,
+                blocks:vec![Block{id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+                    instructions,terminator:term}]}]}
+    }
+    #[test]
+    fn pure_vm_runs_and_hash_is_stable() {
+        let program=p(vec![Instruction{id:1,op:Op::Len(0)}],
+            Terminator::Return{value:1},Type::U32);
+        let h=program.content_hash().unwrap();
+        let decoded:Program=serde_json::from_slice(&program.canonical_bytes()).unwrap();
+        assert_eq!(h,decoded.content_hash().unwrap());
+        assert_eq!(run_isolated(&program,vec![1,2,3,4],100),
+            Ok((Value::U32(4),2)));
+    }
+    #[test]
+    fn mutation_creates_a_new_valid_version() {
+        let base=p(vec![Instruction{id:1,op:Op::ConstU32(4)}],
+            Terminator::Return{value:1},Type::U32);
+        let next=base.mutate_literal("entry",1,Literal::U32(8)).unwrap();
+        assert_ne!(base.content_hash().unwrap(),next.content_hash().unwrap());
+        assert_eq!(run_isolated(&next,vec![],100).unwrap().0,Value::U32(8));
+        assert!(base.mutate_literal("entry",1,Literal::Bytes("00".into())).is_err());
+    }
+    #[test]
+    fn type_error_and_unbounded_cycle_rejected() {
+        let invalid=p(vec![Instruction{id:1,op:Op::Add(0,0)}],
+            Terminator::Return{value:1},Type::U32);
+        assert!(invalid.validate().is_err());
+        let cyclic=p(vec![],Terminator::Jump{target:"entry".into(),args:vec![0]},Type::Bytes);
+        assert!(cyclic.validate().is_err());
+    }
+    #[test]
+    fn gas_precheck_and_bounds_are_enforced() {
+        let program=p(vec![Instruction{id:1,op:Op::ConstBytes{hex:"ab".repeat(64)}}],
+            Terminator::Return{value:1},Type::Bytes);
+        assert_eq!(run_isolated(&program,vec![],3),Err(VmError::Gas));
+        assert_eq!(run_isolated(&program,vec![],100).unwrap().0,
+            Value::Bytes(vec![0xab;64]));
+    }
+    #[test]
+    fn yield_retains_continuation_and_uses_next_tick_feedback() {
+        let program=Program{format_version:1,entry_function:"main".into(),
+            functions:vec![Function{name:"main".into(),args:vec![Type::Bytes],
+            returns:Type::U32,blocks:vec![
+                Block{id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+                    instructions:vec![],terminator:Terminator::Yield{
+                        call:WorldCall::Send,args:vec![0],next:"after".into(),next_args:vec![]}},
+                Block{id:"after".into(),params:vec![Param{id:10,ty:Type::Bytes}],
+                    instructions:vec![Instruction{id:11,op:Op::Len(10)}],
+                    terminator:Terminator::Return{value:11}},
+            ]}]};
+        let mut cont=Continuation::start(&program,vec![4]).unwrap();
+        assert_eq!(cont.resume(&program,None,10).unwrap(),
+            SliceResult::Yielded{call:WorldCall::Send,args:vec![Value::Bytes(vec![4])],gas_used:1});
+        assert_eq!(cont.resume(&program,Some(vec![1,2,3]),10).unwrap(),
+            SliceResult::Returned{output:Value::U32(3),gas_used:2});
+        assert_eq!(cont.resume(&program,None,10),Err(VmError::Finished));
+    }
+    #[test]
+    fn isolated_exec_cannot_call_world() {
+        let program=Program{format_version:1,entry_function:"main".into(),
+            functions:vec![Function{name:"main".into(),args:vec![Type::Bytes],
+            returns:Type::Bytes,blocks:vec![
+                Block{id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+                instructions:vec![],terminator:Terminator::Yield{
+                    call:WorldCall::Send,args:vec![0],next:"after".into(),next_args:vec![]}},
+                Block{id:"after".into(),params:vec![Param{id:1,ty:Type::Bytes}],
+                instructions:vec![],terminator:Terminator::Return{value:1}}
+            ]}]};
+        assert_eq!(run_isolated(&program,vec![1],100),Err(VmError::SideEffect));
+    }
+}
