@@ -150,7 +150,7 @@ pub enum Action {
     Send { actor: u64, destination: NodeId, bytes: Vec<u8> },
     Receive { actor: u64, max_count: usize },
     // P2 only: deliberately not implemented as a fake success in P1.
-    Exec { actor: u64, program_hash: String },
+    Exec { actor: u64, program_hash: String, input: Vec<u8> },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -483,7 +483,7 @@ impl World {
                 let read: Vec<Message> = mailbox.drain(..count).collect();
                 ActionResult::ok(serde_json::to_vec(&read).expect("mail"),1,0)
             }
-            Action::Exec {program_hash,..} => program_host::isolated_exec(self,actor,&program_hash),
+            Action::Exec {program_hash,input,..} => program_host::isolated_exec(self,actor,&program_hash,&input),
         }
     }
 
