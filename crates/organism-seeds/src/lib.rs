@@ -115,3 +115,6 @@ pub mod p0_probe;
 
 /// Development-only second-stage P0 remote invocation; explicitly seeded.
 pub mod s2_p0;
+
+/// S4 bounded structural graph repair research seed.
+pub mod s4_structural;
