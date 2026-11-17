@@ -54,6 +54,7 @@ OrganismState {
 
 1. **前置事件**：按 `(due_step, priority, sequence_no)` 稳定排序并应用所有 `due_step == k` 的事件；将 `deliver_step <= k` 的待投递消息移入邮箱。
 2. **epoch 授予**：若 `last_granted_epoch != Some(floor(k / epoch_length))`，按**本 tick 生效的配置**重置各账户本 epoch 可用 gas / 通信吞吐，写入 `last_granted_epoch` 并更新派生字段 `epoch_index`。初始 `last_granted_epoch=None`，所以 `k=0` 必须授予。未使用额度默认不结转。
+2a. **模拟服务阶段（P3 扩展）**：epoch 授予之后、个体 VM 调度之前，C 消费已送达的授权消息（固定每 tick 最多 8 条），调用受限 B 并收取 B gas；响应进入带延迟的消息队列。不能直接访问 B，且服务处理也必须纳入世界快照与因果记录。
 3. **调度**：若个体可运行，用 VM 恢复 `active_program + continuation + latest_feedback`，执行直到：产生一个 `ActionIntent`、显式停止、gas 用尽或指令上限触发。VM 微指令 gas 由 A 计费；这一阶段不改变外部世界状态。
 4. **动作执行**：对一个 `ActionIntent` 验证权限、参数、版本和预算；计算动作世界侧成本。成功则提交其状态差量并计费；失败则无部分外部写入，只计事先公布的实际解析/探测费。若 VM 未发出意图，该 tick 不发生个体外部操作。
 5. **反馈入队**：把结果加入该个体的 `latest_feedback` 或授权邮箱，只有后续 tick 的活动程序可以消费；`SEND` 的成功只代表请求入队，C/B 处理结果由独立确定性服务事件产生。
@@ -80,7 +81,7 @@ OrganismState {
 程序采用**规范化的类型化 SSA 基本块/控制流图**。基础类型：`Bool, U32, Bytes, Unit, Result<T>`；所有操作有显式类型。版本 1 强制：
 
 - 模块含 `format_version, entry_function, functions, blocks, instructions`；函数/块 ID 唯一、引用必须已声明；基本块由 `BRANCH, JUMP, RETURN, YIELD` 之一终止。
-- 调用栈深度最大 32，`REPEAT_BOUNDED` 上限 256，单次活动 VM slice 最大 2000 gas；程序大小默认 64 KiB，结果最大 1024 bytes；**这些数值均为校准前上限**。
+- 调用栈深度最大 32，`REPEAT_BOUNDED` 上限 256（每个受控循环头在一次连续执行期间最多进入循环体 256 次，计数属于持久 VM continuation），单次活动 VM slice 最大 2000 gas；程序大小默认 64 KiB，结果最大 1024 bytes；**这些数值均为校准前上限**。
 - `ADD/SUB` 使用 U32 模 2^32 计算；`SLICE` 和 `BYTE_AT` 越界返回类型化错误，不 panic；`MOD 0` 返回 `ERR_ARITH`；Bytes 连接与内存分配同样受预算。
 - 指令表最小集合沿用 02 文档；新增控制流 `YIELD` 是 `WORLD_CALL` 的规范化终结形式，不是新的世界原语。
 - 规范序列化使用严格 UTF-8 JSON，键按字典序、整型十进制、字节以小写十六进制、无浮点数和未声明字段；程序哈希 `SHA-256("OCEE-PROGRAM-V1\0" || canonical_bytes)`。实现可提供二进制缓存，但**其哈希以规范字节为准**。
