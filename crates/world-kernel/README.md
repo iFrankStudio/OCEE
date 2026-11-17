@@ -1,27 +1,30 @@
-# OCEE-0 P1 — Deterministic World Kernel (first implementation slice)
+# OCEE-0 Rust world kernel — P1 + P2 integration slice
 
-Implements a **deterministic, externally driven** world state transition system using Rust. This is the first engineering slice, **not** a completed OCEE-0, learning organism, protocol service, or scientific experiment.
+This crate implements the deterministic **world host** for OCEE-0. The first P1 core and a P2 **program lifecycle bridge** are running. It is not yet a complete ecosystem, an evolving digital organism, or an E001 result.
 
-Covered:
-- Unified tick: due events and messages → epoch grant → one externally supplied action → state/audit commit.
-- Deterministic gas, storage and C-link bandwidth accounting; resource refusal without implicit "death".
-- Node A local actor, C message endpoint, B direct-access denial; delayed message delivery.
-- Local versioned objects with CAS, atomic quota checks, and stable ordered maps.
-- JSON snapshots, SHA-256 state digests and tamper-evident audit record chain.
-- Five focused tests for timing, permissions/messages, storage/CAS, replay, and gas exhaustion.
+## Implemented and CI-verified
 
-Deliberately **not implemented**:
-- Activity VM/continuations, real organism autonomy or self-modification (P2).
-- C/B protocol service, unknown-protocol P0/P1/P2, workload and reference solver (P3).
-- SQLite transaction durability, multi-actor capabilities, general host security (later P1 hardening).
-- E001 calibration and confirmatory experiments (G1/G2 remain NO-GO).
+- World tick scheduling: due events/messages → epoch grants → at most one external action → audit record.
+- A/B/C host topology, local objects/CAS, quota rejection, delayed C inbox, hash-chained audit and JSON snapshot/restore.
+- Typed program versions stored at `/self/versions/<SHA256>` with canonical byte validation and **immutable versions**.
+- Atomically selected active version via CAS `WRITE /self/active`, with historical rollback possible.
+- `tick_autonomous(actor)` resumes the program VM, bills its microsteps and processes at most one yielded world action; action feedback is delivered on the following tick.
+- Isolated `EXEC` for **pure candidate computation**. A yielded world side effect is rejected and billed.
+- End-to-end engineering fixture showing a program constructing a content-addressed candidate, writing it via world calls, selecting it and executing the adopted version. **The candidate is prearranged in the fixture, not spontaneously invented.**
 
-### Run
+## Intentionally deferred
 
-```bash
-cargo test --manifest-path crates/world-kernel/Cargo.toml
+- Full v0.2 program ISA (`CALL`, `REPEAT_BOUNDED`, `Unit`, `Result<T>`), general authorized snapshot reads during isolated EXEC.
+- S/O initial agents, genuine autonomous candidate search/feedback selection, tool composition, realistic repair/rollback strategy.
+- Protocol C/B service, P0/P1/P2 hidden protocol, workload, four groups, calibration and E001 confirmatory study.
+- SQLite atomic transactions, finalized cost schedule, durable cross-version state encoding, fully generalized capability security.
+
+The current action driver and initial program-selection fixture remain available for testing. No tests should be described as evidence that a life form or self-directed innovation has appeared.
+
+## Run
+
+```sh
+cargo test --workspace
 ```
 
-The P1 runner feeds actions externally. An `Exec` request returns `Unsupported`, rather than pretending the unimplemented VM exists. Failures in this prototype cost zero gas; this cost policy is **provisional** and must be calibrated/versioned before E001. `serde_json` serialization is stable within this version's explicit struct/BTreeMap layout; canonical inter-version state encoding is not yet frozen.
-
-Specification: [04-ENGINEERING-CONTRACTS.md](../../04-ENGINEERING-CONTRACTS.md). 
+Core behavior contract: [04-ENGINEERING-CONTRACTS.md](../../04-ENGINEERING-CONTRACTS.md). Current checkpoint: [README.md](../../README.md).
