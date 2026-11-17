@@ -112,3 +112,6 @@ pub fn s0_manifest()->SeedManifest {
 
 /// Explicitly seeded P0 XOR framing probe; not a general protocol learner.
 pub mod p0_probe;
+
+/// Development-only second-stage P0 remote invocation; explicitly seeded.
+pub mod s2_p0;
