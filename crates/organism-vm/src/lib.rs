@@ -43,6 +43,10 @@ pub enum Terminator {
     Jump { target: String, args: Vec<u32> },
     Branch { condition: u32, if_true: String, true_args: Vec<u32>,
              if_false: String, false_args: Vec<u32> },
+    /// A statically bounded loop header; the counter persists in Continuation.
+    /// Only cycles passing through bounded headers are admitted by the verifier.
+    RepeatBounded { limit: u32, body: String, body_args: Vec<u32>,
+                    done: String, done_args: Vec<u32> },
     // The target block receives next_args followed by one Bytes feedback parameter.
     Yield { call: WorldCall, args: Vec<u32>, next: String, next_args: Vec<u32> },
 }
@@ -153,6 +157,14 @@ impl Program {
                     check_jump(if_true,true_args,false)?;
                     check_jump(if_false,false_args,false)?;
                 }
+                Terminator::RepeatBounded {limit,body,body_args,done,done_args} => {
+                    if *limit>256 {return Err(bad("repeat limit exceeds 256"));}
+                    check_jump(body,body_args,false)?;
+                    check_jump(done,done_args,false)?;
+                    // The bounded header removes its outgoing graph edges from
+                    // the cycle check: every remaining cycle is forbidden.
+                    outgoing.clear();
+                }
                 Terminator::Yield {call,args,next,next_args} => {
                     check_call(*call,args,&defs)?;
                     check_jump(next,next_args,true)?;
@@ -251,6 +263,8 @@ pub struct Continuation {
     pub pc: usize,
     pub registers: BTreeMap<u32,Value>,
     pub awaiting: Option<AwaitFeedback>,
+    #[serde(default)]
+    pub loop_counters: BTreeMap<String,u32>,
     pub finished: bool,
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -339,7 +353,7 @@ impl Continuation {
         let mut registers=BTreeMap::new();
         registers.insert(entry.params[0].id,Value::Bytes(input));
         Ok(Self{program_hash:program.content_hash()?,block:entry.id.clone(),
-            pc:0,registers,awaiting:None,finished:false})
+            pc:0,registers,awaiting:None,loop_counters:BTreeMap::new(),finished:false})
     }
 
     pub fn resume(&mut self,program:&Program,feedback:Option<Vec<u8>>,limit:u64)
@@ -400,6 +414,15 @@ impl Continuation {
                     let (target,args)=if bool_value(&self.registers,*condition)? {
                         (if_true,true_args)
                     } else {(if_false,false_args)};
+                    let vals=values(&self.registers,args)?;
+                    self.enter(f,target,vals)?;
+                },
+                Terminator::RepeatBounded{limit,body,body_args,done,done_args}=>{
+                    let count=self.loop_counters.entry(block.id.clone()).or_insert(0);
+                    let (target,args)=if *count<*limit {
+                        *count+=1;
+                        (body,body_args)
+                    }else{(done,done_args)};
                     let vals=values(&self.registers,args)?;
                     self.enter(f,target,vals)?;
                 },
