@@ -70,6 +70,9 @@ OrganismState {
 
 显式 `EXEC(program_hash,args,gas_limit,isolated=true)` 是一个独立世界动作：
 
+**当前 P2 原型 ABI（待对齐完整规范）**：外部动作为 `Action::Exec {actor, program_hash, input: Vec<u8>}`，活动程序通过 `WORLD_CALL(EXEC, [hash:Bytes,input:Bytes])` 触发；输入字节在隔离 VM 中注入入口块。执行 gas 上限目前是宿主固定 `VM_SLICE_GAS=2000` 与账户剩余额度的较小值，尚未实现规范草案要求的调用者可选 `gas_limit`。这是一处**明确登记的实现差异**，不得隐瞒或误报完整 ABI 已实现。
+
+
 - 仅运行**纯计算及获授权本地快照只读**的候选程序；内部 `WORLD_CALL(OBSERVE|READ)` 可以读取 frozen snapshot 内的授权投影，按指令及读取成本计费但不增加世界 step；`WRITE/SEND/RECEIVE/EXEC` 和任何 B/C 访问一律返回 `ERR_ISOLATED_SIDE_EFFECT`，且不能改变共享世界。
 - 候选的输出、错误和消耗 gas 可被观察。每条候选 VM 指令依旧计费，世界 step 只增加一次。禁止嵌套 `EXEC`。
 - 真实远程协议实验通过活动程序的 `SEND`、`RECEIVE` 进行，按真实通信与资源成本计费；**隔离 EXEC 不能变成免费探测协议的后门**。
