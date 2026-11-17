@@ -542,4 +542,49 @@ mod tests {
             ]}]};
         assert_eq!(run_isolated(&program,vec![1],100),Err(VmError::SideEffect));
     }
+    #[test]
+    fn bounded_loop_uses_persistent_counter_and_resumable_gas_slices() {
+        let program=Program{format_version:1,entry_function:"main".into(),
+            functions:vec![Function{name:"main".into(),args:vec![Type::Bytes],
+                returns:Type::U32,blocks:vec![
+                Block{id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+                    instructions:vec![Instruction{id:1,op:Op::ConstU32(0)}],
+                    terminator:Terminator::Jump{target:"header".into(),args:vec![1]}},
+                Block{id:"header".into(),params:vec![Param{id:10,ty:Type::U32}],
+                    instructions:vec![],
+                    terminator:Terminator::RepeatBounded{limit:3,
+                        body:"body".into(),body_args:vec![10],
+                        done:"done".into(),done_args:vec![10]}},
+                Block{id:"body".into(),params:vec![Param{id:20,ty:Type::U32}],
+                    instructions:vec![Instruction{id:21,op:Op::ConstU32(1)},
+                        Instruction{id:22,op:Op::Add(20,21)}],
+                    terminator:Terminator::Jump{target:"header".into(),args:vec![22]}},
+                Block{id:"done".into(),params:vec![Param{id:30,ty:Type::U32}],
+                    instructions:vec![],terminator:Terminator::Return{value:30}},
+            ]}]
+        };
+        program.validate().expect("bounded loop must validate");
+        let mut cont=Continuation::start(&program,vec![]).unwrap();
+        let mut total_gas=0;
+        let output=loop {
+            match cont.resume(&program,None,4).unwrap() {
+                SliceResult::Exhausted{gas_used}=>{
+                    assert!(gas_used>0);
+                    total_gas+=gas_used;
+                },
+                SliceResult::Returned{output,gas_used}=>{
+                    total_gas+=gas_used;
+                    break output;
+                },
+                other=>panic!("unexpected: {other:?}"),
+            }
+        };
+        assert_eq!(output,Value::U32(3));
+        assert!(total_gas>8);
+        assert_eq!(cont.loop_counters.get("header"),Some(&3));
+        let json=serde_json::to_vec(&cont).unwrap();
+        let restored:Continuation=serde_json::from_slice(&json).unwrap();
+        assert_eq!(restored,cont);
+    }
+
 }
