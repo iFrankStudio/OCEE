@@ -31,3 +31,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Run world and VM invariant tests
         run: cargo test --workspace
+      - name: Print auditable development organism manifests
+        run: cargo run --quiet -p ocee-organism-seeds --example manifest

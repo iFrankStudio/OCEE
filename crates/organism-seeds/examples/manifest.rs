@@ -1,3 +1,7 @@
 fn main() {
-    println!("{}",serde_json::to_string_pretty(&ocee_organism_seeds::s0_manifest()).unwrap());
+    let manifests=[
+        serde_json::to_value(ocee_organism_seeds::s0_manifest()).unwrap(),
+        serde_json::to_value(ocee_organism_seeds::p0_probe::s1_manifest()).unwrap(),
+    ];
+    println!("{}",serde_json::to_string_pretty(&manifests).unwrap());
 }
