@@ -1,0 +1,18 @@
+name: OCEE S4 Development Calibration
+
+# Expensive four-seed resource report: invoke intentionally, not on each push.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  calibration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run reproducible S4 original-vs-development budget report
+        run: cargo run --quiet -p ocee-organism-seeds --example s4_calibration
