@@ -190,6 +190,8 @@ fn organism_program_can_create_and_activate_a_candidate_using_world_calls() {
     let resumed=world.tick_autonomous(ORGANISM_ID);
     assert_eq!(resumed.code,Code::Ok);
     assert_eq!(resumed.vm_gas_charged,2);
+    assert_eq!(world.state.organisms[&ORGANISM_ID].last_return,
+        Some(ocee_organism_vm::Value::U32(42)));
     // Independent functional check of adopted candidate, not just its content hash.
     let evaluated=world.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash}));
     assert_eq!(evaluated.code,Code::Ok);
