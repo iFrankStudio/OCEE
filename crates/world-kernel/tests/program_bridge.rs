@@ -198,3 +198,36 @@ fn organism_program_can_create_and_activate_a_candidate_using_world_calls() {
     assert_eq!(serde_json::from_slice::<ocee_organism_vm::Value>(&evaluated.payload).unwrap(),
         ocee_organism_vm::Value::U32(42));
 }
+
+
+#[test]
+fn isolated_exec_can_read_authorized_snapshot_but_cannot_mutate_it() {
+    let mut world=World::new(Config::default());
+    assert_eq!(world.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:"/self/n".into(),expected_version:None,bytes:vec![1,2,3],
+    })).code,Code::Ok);
+    let program=Program{format_version:1,entry_function:"main".into(),functions:vec![
+        Function{name:"main".into(),args:vec![Type::Bytes],returns:Type::U32,blocks:vec![
+            Block{id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+                instructions:vec![Instruction{id:1,op:Op::ConstBytes{
+                    hex:"2f73656c662f6e".into(), // /self/n
+                }}],
+                terminator:Terminator::Yield{call:WorldCall::Read,args:vec![1],
+                    next:"after".into(),next_args:vec![]}},
+            Block{id:"after".into(),params:vec![Param{id:2,ty:Type::Bytes}],
+                instructions:vec![Instruction{id:3,op:Op::Len(2)}],
+                terminator:Terminator::Return{value:3}},
+        ]}]
+    };
+    let hash=store(&mut world,&program);
+    let before=world.state.objects.clone();
+    let result=world.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash}));
+    assert_eq!(result.code,Code::Ok);
+    assert!(result.gas_charged>4); // VM and snapshot read both charged
+    let observed:ocee_organism_vm::Value=serde_json::from_slice(&result.payload).unwrap();
+    if let ocee_organism_vm::Value::U32(length)=observed {
+        assert!(length>3); // serialized ActionResult includes the actual three bytes
+    }else{panic!("unexpected return value");}
+    assert_eq!(world.state.objects,before);
+    assert!(world.state.pending_deliveries.is_empty());
+}
