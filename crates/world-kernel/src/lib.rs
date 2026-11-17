@@ -142,6 +142,26 @@ pub struct WorkItem {
     pub answer_schema: String,
 }
 
+/// Public input/output examples; hidden rule and held-out answer are excluded.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransformExample { pub input: Vec<u8>, pub output: u32 }
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransformTask {
+    pub task_id: String,
+    pub examples: Vec<TransformExample>,
+    pub held_out_input: Vec<u8>,
+}
+
+/// Researcher-side reference only; never reachable by organism VM world calls.
+/// S5 tests candidate *operator selection*, not discovery of new primitives.
+pub fn hidden_transform(seed:u64,input:&[u8])->u32 {
+    match seed % 3 {
+        0 => input.len() as u32,
+        1 => input.iter().fold(0u32,|acc,&b|acc ^ u32::from(b)),
+        _ => u32::from(*input.first().unwrap_or(&0)),
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     Observe { actor: u64 },
@@ -300,6 +320,25 @@ impl World {
 
     /// At most eight C messages processed in one tick; requests remain ordered.
     /// If reply capacity is unavailable, leave the request in C for a later tick.
+    fn publish_transform_task(&mut self) {
+        const PATH:&str="/public/E001/transform";
+        if self.state.protocol_service.is_none() || self.state.objects.contains_key(PATH){return;}
+        let seed=self.state.config.seed;
+        let x1=vec![17+(seed%19) as u8,3,8];
+        let x2=vec![9+(seed%20) as u8,2,7,4];
+        let held_out=vec![31+(seed%16) as u8,0,9,6,2];
+        let task=TransformTask{
+            task_id:"unary-byte-transform-v1".into(),
+            examples:vec![
+                TransformExample{input:x1.clone(),output:hidden_transform(seed,&x1)},
+                TransformExample{input:x2.clone(),output:hidden_transform(seed,&x2)},
+            ],held_out_input:held_out,
+        };
+        self.state.objects.insert(PATH.into(),Object{
+            owner:0,version:0,bytes:serde_json::to_vec(&task).expect("task"),
+        });
+    }
+
     fn publish_work_item(&mut self) {
         const PATH:&str="/public/E001/job0";
         if self.state.protocol_service.is_none() || self.state.objects.contains_key(PATH){return;}
@@ -411,6 +450,7 @@ impl World {
                     return ActionResult::fail(Code::NotFound);
                 };
                 if key != "/public/C/hello" && key != "/public/E001/job0" &&
+                    key != "/public/E001/transform" &&
                     (obj.owner != actor || !key.starts_with("/self/")) {
                     return ActionResult::fail(Code::Denied);
                 }
@@ -504,6 +544,7 @@ impl World {
         self.grant_epoch_if_needed();
         self.publish_hello_sample();
         self.publish_work_item();
+        self.publish_transform_task();
         self.process_service_inbox(); // deterministic service phase, before VM intent
         let (action, vm_used, no_action_code) = if let Some(actor)=organism {
             let state=self.prepare_organism_action(actor);
