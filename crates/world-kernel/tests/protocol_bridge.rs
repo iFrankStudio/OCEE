@@ -91,3 +91,39 @@ fn malformed_c_messages_get_bounded_diagnostics_without_b_execution() {
     assert_eq!(diag.code,ParseError::BadFrame);
     assert_eq!(world.state.nodes[&NodeId::B].gas_available,50_000);
 }
+
+
+#[test]
+fn public_hello_example_is_discoverable_and_does_not_expose_private_service_state() {
+    let mut world=World::with_protocol(Config::default(),Family::P1,2026);
+    let first=world.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/public/C/hello".into(),
+    }));
+    assert_eq!(first.code,Code::Ok);
+    let sample:ocee_world_kernel::HelloSample=serde_json::from_slice(&first.payload).unwrap();
+    assert_eq!(sample.published_step,0);
+    let protocol=world.state.protocol_service.as_ref().unwrap().protocol.clone();
+    let request=protocol.decode(&sample.request).unwrap();
+    let response=protocol.decode(&sample.response).unwrap();
+    assert_eq!(request.operation,Operation::Hello);
+    assert_eq!(response.operation,Operation::Hello);
+    assert_eq!(request.request_id,response.request_id);
+    assert_eq!(response.body[0],0);
+
+    // Hidden service definition is not addressable with world READ.
+    assert_ne!(world.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/world/protocol_service".into(),
+    })).code,Code::Ok);
+    let mut world_copy=World::from_snapshot(&world.snapshot_json()).unwrap();
+    for _ in 0..254 {world.tick(None);world_copy.tick(None);}
+    assert_eq!(world.state_hash(),world_copy.state_hash());
+    assert_eq!(world.state.step,256);
+    let updated=world.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/public/C/hello".into(),
+    }));
+    assert_eq!(updated.code,Code::Ok);
+    let sample2:ocee_world_kernel::HelloSample=serde_json::from_slice(&updated.payload).unwrap();
+    assert_eq!(sample2.published_step,256);
+    assert_ne!(protocol.decode(&sample.request).unwrap().request_id,
+        protocol.decode(&sample2.request).unwrap().request_id);
+}
