@@ -10,6 +10,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 
+mod program_host;
+
 pub const ORGANISM_ID: u64 = 1;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -59,6 +61,9 @@ pub struct OrganismHostState {
     pub id: u64,
     pub home: NodeId,
     pub storage_used: u64,
+    pub active_program_hash: Option<String>,
+    pub vm_continuation: Option<ocee_organism_vm::Continuation>,
+    pub pending_feedback: Option<Vec<u8>>,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Message {
@@ -114,21 +119,22 @@ pub enum Action {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Code {
     Ok, Denied, NotFound, Conflict, Quota, Gas, Bandwidth,
-    Empty, BadRequest, Unsupported,
+    Empty, BadRequest, Unsupported, InvalidCode, IsolatedSideEffect,
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ActionResult {
     pub code: Code,
     pub payload: Vec<u8>,
     pub gas_charged: u64,
+    pub vm_gas_charged: u64,
     pub bandwidth_charged: u64,
 }
 impl ActionResult {
     fn fail(code: Code) -> Self {
-        Self { code, payload: vec![], gas_charged: 0, bandwidth_charged: 0 }
+        Self { code, payload: vec![], gas_charged: 0, vm_gas_charged: 0, bandwidth_charged: 0 }
     }
     fn ok(payload: Vec<u8>, gas: u64, bandwidth: u64) -> Self {
-        Self { code: Code::Ok, payload, gas_charged: gas, bandwidth_charged: bandwidth }
+        Self { code: Code::Ok, payload, gas_charged: gas, vm_gas_charged: 0, bandwidth_charged: bandwidth }
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -179,6 +185,8 @@ impl World {
         let mut organisms = BTreeMap::new();
         organisms.insert(ORGANISM_ID, OrganismHostState {
             id: ORGANISM_ID, home: NodeId::A, storage_used: 0,
+            active_program_hash: None, vm_continuation: None,
+            pending_feedback: None,
         });
         Self {
             state: WorldState {
@@ -288,6 +296,12 @@ impl World {
                 if let Some(ref object) = old {
                     if object.owner != actor { return ActionResult::fail(Code::Denied); }
                 }
+                let active_switch = match program_host::preflight_write(
+                    &self.state, actor, &key, &bytes, old.as_ref()
+                ) {
+                    Ok(value) => value,
+                    Err(code) => return ActionResult::fail(code),
+                };
                 let old_version = old.as_ref().map(|v| v.version);
                 if old_version != expected_version { return ActionResult::fail(Code::Conflict); }
                 let old_len = old.as_ref().map_or(0,|v|v.bytes.len() as u64);
@@ -303,6 +317,7 @@ impl World {
                 let version = old_version.map_or(0,|v|v+1);
                 self.state.objects.insert(key,Object{owner:actor,version,bytes});
                 self.state.organisms.get_mut(&actor).expect("actor").storage_used = next_used;
+                program_host::after_write(&mut self.state,actor,active_switch);
                 ActionResult::ok(version.to_le_bytes().to_vec(),gas,0)
             }
             Action::Send {destination,bytes,..} => {
@@ -339,20 +354,46 @@ impl World {
                 let read: Vec<Message> = mailbox.drain(..count).collect();
                 ActionResult::ok(serde_json::to_vec(&read).expect("mail"),1,0)
             }
-            Action::Exec {..} => ActionResult::fail(Code::Unsupported),
+            Action::Exec {program_hash,..} => program_host::isolated_exec(self,actor,&program_hash),
         }
     }
 
-    /// One deterministic world tick; with None, only the driver advances the world.
-    /// For P1, Action is externally supplied, not chosen by an organism VM.
+    /// Externally driven P1 action or explicit driver NOOP.
     pub fn tick(&mut self, action: Option<Action>) -> ActionResult {
+        self.tick_mode(action,None)
+    }
+
+    /// P2: execute the active organism program; it may yield at most one action
+    /// and only the world kernel actually commits that action.
+    pub fn tick_autonomous(&mut self, actor:u64) -> ActionResult {
+        self.tick_mode(None,Some(actor))
+    }
+
+    fn tick_mode(&mut self, input:Option<Action>, organism:Option<u64>)->ActionResult {
         let k = self.state.step;
         self.deliver_events();
         self.grant_epoch_if_needed();
-        let result = match action.clone() {
+        let (action, vm_used, no_action_code) = if let Some(actor)=organism {
+            let state=self.prepare_organism_action(actor);
+            (state.action,state.gas_used,state.status)
+        } else {(input,0,Code::Ok)};
+        let mut result = match action.clone() {
             Some(a) => self.apply_action(a),
-            None => ActionResult::ok(vec![],0,0),
+            None if no_action_code==Code::Ok => ActionResult::ok(vec![],0,0),
+            None => ActionResult::fail(no_action_code),
         };
+        result.vm_gas_charged=vm_used;
+        if let Some(actor)=organism {
+            // When switching the active program, the previous continuation has
+            // been invalidated by after_write; never deliver old feedback to it.
+            if let Some(host)=self.state.organisms.get_mut(&actor) {
+                if host.vm_continuation.as_ref().is_some_and(|c| c.awaiting.is_some())
+                    && action.is_some() {
+                    host.pending_feedback=Some(serde_json::to_vec(&result)
+                        .expect("serializable action feedback"));
+                }
+            }
+        }
         self.state.step = self.state.step.checked_add(1).expect("world step overflow");
         let state_hash = self.state_hash();
         let previous_record_hash = self.audit.last()
@@ -366,6 +407,7 @@ impl World {
         });
         result
     }
+
 }
 
 #[cfg(test)]
