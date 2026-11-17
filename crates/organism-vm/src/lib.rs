@@ -116,7 +116,7 @@ impl Program {
         }
         let entry=f.blocks.first().ok_or_else(||bad("missing entry block"))?;
         if entry.params.len()!=1 || entry.params[0].ty!=Type::Bytes {return Err(bad("entry block signature")); }
-        let mut edges:BTreeMap<&str,Vec<&str>>=BTreeMap::new();
+        let mut edges:BTreeMap<String,Vec<String>>=BTreeMap::new();
         let mut instr_count=0usize;
         for b in &f.blocks {
             instr_count+=b.instructions.len();
@@ -130,7 +130,7 @@ impl Program {
                 let ty=check_op(&inst.op,&defs)?;
                 defs.insert(inst.id,ty);
             }
-            let mut outgoing=vec![];
+            let mut outgoing=Vec::<String>::new();
             let mut check_jump=|target:&str,args:&[u32],feedback:bool| -> Result<(),VmError> {
                 let target_block=blocks.get(target).ok_or_else(||bad("unknown block target"))?;
                 let n=args.len()+usize::from(feedback);
@@ -141,7 +141,7 @@ impl Program {
                 if feedback && target_block.params.last().map(|p|p.ty)!=Some(Type::Bytes) {
                     return Err(bad("feedback must be Bytes"));
                 }
-                outgoing.push(target);
+                outgoing.push(target.to_owned());
                 Ok(())
             };
             match &b.terminator {
@@ -158,18 +158,18 @@ impl Program {
                     check_jump(next,next_args,true)?;
                 }
             }
-            edges.insert(b.id.as_str(),outgoing);
+            edges.insert(b.id.clone(),outgoing);
         }
         // Prevent unbounded cyclic control flow in P2; bounded loops can be added as a separate opcode.
-        fn visit<'a>(n:&'a str,edges:&BTreeMap<&'a str,Vec<&'a str>>,
-            pending:&mut BTreeSet<&'a str>,done:&mut BTreeSet<&'a str>) -> Result<(),VmError> {
+        fn visit(n:&str,edges:&BTreeMap<String,Vec<String>>,
+            pending:&mut BTreeSet<String>,done:&mut BTreeSet<String>) -> Result<(),VmError> {
             if done.contains(n) {return Ok(());}
-            if !pending.insert(n) {return Err(bad("unbounded control-flow cycle")); }
-            for &to in edges.get(n).ok_or_else(||bad("missing graph block"))? {
+            if !pending.insert(n.to_owned()) {return Err(bad("unbounded control-flow cycle")); }
+            for to in edges.get(n).ok_or_else(||bad("missing graph block"))? {
                 visit(to,edges,pending,done)?;
             }
             pending.remove(n);
-            done.insert(n);
+            done.insert(n.to_owned());
             Ok(())
         }
         for key in edges.keys() {
@@ -338,14 +338,15 @@ impl Continuation {
         if self.program_hash!=program.content_hash()? {return Err(VmError::InvalidInput);}
         if self.finished {return Err(VmError::Finished);}
         let f=program.main()?;
-        if let Some(awaiting)=self.awaiting.take() {
+        if let Some(awaiting)=self.awaiting.clone() {
             let response=feedback.ok_or(VmError::MissingFeedback)?;
             if response.len()>MAX_VALUE_BYTES {return Err(VmError::InvalidInput);}
             let mut incoming=awaiting.forwarded;
             incoming.push(Value::Bytes(response));
             self.enter(f,&awaiting.next,incoming)?;
+            self.awaiting=None;
         } else if feedback.is_some() {return Err(VmError::InvalidInput);}
-        let mut gas=0;
+        let mut gas: u64=0;
         loop {
             let block=f.blocks.iter().find(|b|b.id==self.block).ok_or(VmError::InvalidInput)?;
             if self.pc<block.instructions.len() {
