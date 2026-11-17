@@ -101,7 +101,7 @@ fn exec_accepts_pure_candidate_but_rejects_world_side_effects() {
     let mut w=World::new(Config::default());
     let pure=base_program();
     let hash=store(&mut w,&pure);
-    let response=w.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash}));
+    let response=w.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash,input:vec![]}));
     assert_eq!(response.code,Code::Ok);
     assert_eq!(response.gas_charged,2);
     let returned:ocee_organism_vm::Value=serde_json::from_slice(&response.payload).unwrap();
@@ -122,7 +122,7 @@ fn exec_accepts_pure_candidate_but_rejects_world_side_effects() {
         }]
     };
     let hash=store(&mut w,&side_effect);
-    let response=w.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash}));
+    let response=w.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash,input:vec![]}));
     assert_eq!(response.code,Code::IsolatedSideEffect);
     assert_eq!(response.gas_charged,1);
     assert!(w.state.pending_deliveries.is_empty());
@@ -193,7 +193,7 @@ fn organism_program_can_create_and_activate_a_candidate_using_world_calls() {
     assert_eq!(world.state.organisms[&ORGANISM_ID].last_return,
         Some(ocee_organism_vm::Value::U32(42)));
     // Independent functional check of adopted candidate, not just its content hash.
-    let evaluated=world.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash}));
+    let evaluated=world.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash,input:vec![]}));
     assert_eq!(evaluated.code,Code::Ok);
     assert_eq!(serde_json::from_slice::<ocee_organism_vm::Value>(&evaluated.payload).unwrap(),
         ocee_organism_vm::Value::U32(42));
@@ -221,7 +221,7 @@ fn isolated_exec_can_read_authorized_snapshot_but_cannot_mutate_it() {
     };
     let hash=store(&mut world,&program);
     let before=world.state.objects.clone();
-    let result=world.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash}));
+    let result=world.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash,input:vec![]}));
     assert_eq!(result.code,Code::Ok);
     assert!(result.gas_charged>4); // VM and snapshot read both charged
     let observed:ocee_organism_vm::Value=serde_json::from_slice(&result.payload).unwrap();
