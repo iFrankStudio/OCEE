@@ -35,7 +35,7 @@ pub enum Op {
     Add(u32,u32), Sub(u32,u32), Xor(u32,u32), And(u32,u32), Mod(u32,u32),
     EqU32(u32,u32), EqBytes(u32,u32),
     Len(u32), ByteAt(u32,u32), Slice(u32,u32,u32), Concat(u32,u32),
-    Sha256(u32),
+    Sha256(u32), HexEncode(u32),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Terminator {
@@ -218,7 +218,7 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
         },
         Op::EqU32(a,b)=>{need(defs,*a,Type::U32)?;need(defs,*b,Type::U32)?;Ok(Type::Bool)},
         Op::EqBytes(a,b)=>{need(defs,*a,Type::Bytes)?;need(defs,*b,Type::Bytes)?;Ok(Type::Bool)},
-        Op::Len(a)|Op::Sha256(a)=>{
+        Op::Len(a)|Op::Sha256(a)|Op::HexEncode(a)=>{
             need(defs,*a,Type::Bytes)?;
             Ok(if matches!(op,Op::Len(_)){Type::U32}else{Type::Bytes})
         },
@@ -260,6 +260,7 @@ pub enum SliceResult {
     Returned { output: Value, gas_used: u64 },
     Yielded { call: WorldCall, args: Vec<Value>, gas_used: u64 },
     Exhausted { gas_used: u64 },
+    Faulted { error: VmError, gas_used: u64 },
 }
 
 fn get<'a>(regs:&'a BTreeMap<u32,Value>,id:u32)->Result<&'a Value,VmError>{
@@ -309,6 +310,13 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             Value::Bytes(out)
         },
         Op::Sha256(a)=>Value::Bytes(Sha256::digest(bytes(regs,*a)?).to_vec()),
+        Op::HexEncode(a)=>{
+            let input=bytes(regs,*a)?;
+            if input.len().saturating_mul(2)>MAX_VALUE_BYTES {return Err(VmError::OutputTooLarge);}
+            let mut out=Vec::with_capacity(input.len()*2);
+            for b in input {out.extend_from_slice(format!("{b:02x}").as_bytes());}
+            Value::Bytes(out)
+        },
     })
 }
 fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
@@ -317,6 +325,7 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::Concat(a,b) => bytes(regs,*a)?.len().saturating_add(bytes(regs,*b)?.len()),
         Op::Slice(_,_,len)=>num(regs,*len)? as usize,
         Op::Sha256(a)=>bytes(regs,*a)?.len(),
+        Op::HexEncode(a)=>bytes(regs,*a)?.len().saturating_mul(2),
         _=>0,
     };
     Ok((if matches!(op,Op::Sha256(_)){10}else{1}) + (len as u64).saturating_add(15)/16)
@@ -353,13 +362,19 @@ impl Continuation {
                 let inst=&block.instructions[self.pc];
                 let fee=gas_cost(&inst.op,&self.registers)?;
                 if gas.saturating_add(fee)>limit {return Ok(SliceResult::Exhausted{gas_used:gas});}
-                let result=execute(&inst.op,&self.registers)?;
+                let result=execute(&inst.op,&self.registers);
+                gas+=fee;
+                let result=match result {
+                    Ok(value)=>value,
+                    Err(error)=>return Ok(SliceResult::Faulted{error,gas_used:gas}),
+                };
                 if let Value::Bytes(v)=&result {
-                    if v.len()>MAX_VALUE_BYTES {return Err(VmError::OutputTooLarge);}
+                    if v.len()>MAX_VALUE_BYTES {
+                        return Ok(SliceResult::Faulted{error:VmError::OutputTooLarge,gas_used:gas});
+                    }
                 }
                 self.registers.insert(inst.id,result);
                 self.pc+=1;
-                gas+=fee;
                 continue;
             }
             if gas>=limit {return Ok(SliceResult::Exhausted{gas_used:gas});}
@@ -369,7 +384,9 @@ impl Continuation {
                 Terminator::Return {value}=>{
                     let output=get(&self.registers,*value)?.clone();
                     if let Value::Bytes(v)=&output {
-                        if v.len()>MAX_OUTPUT_BYTES {return Err(VmError::OutputTooLarge);}
+                        if v.len()>MAX_OUTPUT_BYTES {
+                            return Ok(SliceResult::Faulted{error:VmError::OutputTooLarge,gas_used:gas});
+                        }
                     }
                     self.finished=true;
                     return Ok(SliceResult::Returned{output,gas_used:gas});
@@ -421,6 +438,7 @@ pub fn run_isolated(program:&Program,input:Vec<u8>,limit:u64)
         SliceResult::Returned{output,gas_used}=>{used+=gas_used;Ok((output,used))},
         SliceResult::Yielded{..}=>Err(VmError::SideEffect),
         SliceResult::Exhausted{..}=>Err(VmError::Gas),
+        SliceResult::Faulted{error,..}=>Err(error),
     }
 }
 
