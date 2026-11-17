@@ -48,6 +48,8 @@ pub enum Op {
     XorFold(u32),
     /// Pack the low 8 bits of U32 as a one-byte vector.
     PackByte(u32),
+    /// Pack a bounded integer into two little-endian bytes.
+    PackU16Le(u32),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Terminator {
@@ -247,7 +249,7 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
             need(defs,*a,Type::Bytes)?;
             Ok(if matches!(op,Op::Len(_)|Op::XorFold(_)){Type::U32}else{Type::Bytes})
         },
-        Op::PackByte(a)=>{need(defs,*a,Type::U32)?;Ok(Type::Bytes)},
+        Op::PackByte(a)|Op::PackU16Le(a)=>{need(defs,*a,Type::U32)?;Ok(Type::Bytes)},
         Op::ByteAt(a,i)=>{
             need(defs,*a,Type::Bytes)?;need(defs,*i,Type::U32)?;Ok(Type::U32)
         },
@@ -270,7 +272,8 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
 fn check_call(call:WorldCall,args:&[u32],defs:&BTreeMap<u32,Type>) -> Result<(),VmError> {
     let signature:&[Type]=match call {
         WorldCall::Observe|WorldCall::Receive=>&[],
-        WorldCall::Read|WorldCall::Send|WorldCall::Exec=>&[Type::Bytes],
+        WorldCall::Read|WorldCall::Send=>&[Type::Bytes],
+        WorldCall::Exec=>&[Type::Bytes,Type::Bytes],
         WorldCall::Write=>&[Type::Bytes,Type::Bytes,Type::U32],
     };
     if args.len()!=signature.len() {return Err(bad("world call arity")); }
@@ -356,6 +359,11 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             Value::Bytes(out)
         },
         Op::XorFold(a)=>Value::U32(bytes(regs,*a)?.iter().fold(0u32,|acc,&v|acc ^ u32::from(v))),
+        Op::PackU16Le(a)=>{
+            let value=num(regs,*a)?;
+            if value>u16::MAX as u32 {return Err(VmError::Range);}
+            Value::Bytes((value as u16).to_le_bytes().to_vec())
+        },
         Op::PackByte(a)=>{
             let value=num(regs,*a)?;
             if value>255 {return Err(VmError::Range);}
