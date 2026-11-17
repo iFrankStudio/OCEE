@@ -32,7 +32,7 @@ pub struct Instruction { pub id: u32, pub op: Op }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Op {
     ConstU32(u32), ConstBool(bool), ConstBytes { hex: String },
-    Add(u32,u32), Sub(u32,u32), Xor(u32,u32), And(u32,u32), Mod(u32,u32),
+    Add(u32,u32), Sub(u32,u32), Xor(u32,u32), And(u32,u32), Mod(u32,u32), Div(u32,u32),
     EqU32(u32,u32), EqBytes(u32,u32),
     Len(u32), ByteAt(u32,u32), Slice(u32,u32,u32), Concat(u32,u32),
     Sha256(u32), HexEncode(u32),
@@ -247,7 +247,7 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
         Op::ConstU32(_)=>Ok(Type::U32),
         Op::ConstBool(_)=>Ok(Type::Bool),
         Op::ConstBytes {hex}=>{decode_hex(hex)?;Ok(Type::Bytes)},
-        Op::Add(a,b)|Op::Sub(a,b)|Op::Xor(a,b)|Op::And(a,b)|Op::Mod(a,b)=>{
+        Op::Add(a,b)|Op::Sub(a,b)|Op::Xor(a,b)|Op::And(a,b)|Op::Mod(a,b)|Op::Div(a,b)=>{
             need(defs,*a,Type::U32)?;need(defs,*b,Type::U32)?;Ok(Type::U32)
         },
         Op::EqU32(a,b)=>{need(defs,*a,Type::U32)?;need(defs,*b,Type::U32)?;Ok(Type::Bool)},
@@ -354,6 +354,11 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             let d=num(regs,*b)?;
             if d==0 {return Err(VmError::Arithmetic);}
             Value::U32(num(regs,*a)?%d)
+        },
+        Op::Div(a,b)=>{
+            let d=num(regs,*b)?;
+            if d==0 {return Err(VmError::Arithmetic);}
+            Value::U32(num(regs,*a)?/d)
         },
         Op::EqU32(a,b)=>Value::Bool(num(regs,*a)?==num(regs,*b)?),
         Op::EqBytes(a,b)=>Value::Bool(bytes(regs,*a)?==bytes(regs,*b)?),
