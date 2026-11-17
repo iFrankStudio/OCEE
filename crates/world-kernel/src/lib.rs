@@ -125,6 +125,13 @@ pub struct TransportDiagnostic {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct HelloSample {
+    pub published_step: u64,
+    pub request: Vec<u8>,
+    pub response: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Action {
     Observe { actor: u64 },
     Read { actor: u64, key: String },
@@ -282,6 +289,17 @@ impl World {
 
     /// At most eight C messages processed in one tick; requests remain ordered.
     /// If reply capacity is unavailable, leave the request in C for a later tick.
+    fn publish_hello_sample(&mut self) {
+        if self.state.step % 256 != 0 {return;}
+        let Some(service)=self.state.protocol_service.as_ref() else {return;};
+        let (request,response)=service.public_hello_sample(self.state.step);
+        let sample=HelloSample{published_step:self.state.step,request,response};
+        self.state.objects.insert("/public/C/hello".into(),Object{
+            owner:0,version:self.state.step / 256,
+            bytes:serde_json::to_vec(&sample).expect("sample"),
+        });
+    }
+
     fn process_service_inbox(&mut self) {
         if self.state.protocol_service.is_none() {return;}
         let mut queue:VecDeque<Message>=self.state.mailboxes.remove(&NodeId::C)
@@ -350,7 +368,8 @@ impl World {
             Action::Observe {..} => {
                 if let Err(code) = self.spend_a_gas(1) { return ActionResult::fail(code); }
                 let a = self.state.nodes.get(&NodeId::A).expect("node A");
-                let view = serde_json::to_vec(&(self.state.step,a.gas_available,a.storage_capacity))
+                let endpoint=if self.state.protocol_service.is_some(){Some("/public/C/hello")}else{None};
+                let view = serde_json::to_vec(&(self.state.step,a.gas_available,a.storage_capacity,endpoint))
                     .expect("observable view");
                 ActionResult::ok(view, 1, 0)
             }
@@ -358,7 +377,8 @@ impl World {
                 let Some(obj) = self.state.objects.get(&key) else {
                     return ActionResult::fail(Code::NotFound);
                 };
-                if obj.owner != actor || !key.starts_with("/self/") {
+                if key != "/public/C/hello" &&
+                    (obj.owner != actor || !key.starts_with("/self/")) {
                     return ActionResult::fail(Code::Denied);
                 }
                 let bytes = obj.bytes.clone();
@@ -449,6 +469,7 @@ impl World {
         let k = self.state.step;
         self.deliver_events();
         self.grant_epoch_if_needed();
+        self.publish_hello_sample();
         self.process_service_inbox(); // deterministic service phase, before VM intent
         let (action, vm_used, no_action_code) = if let Some(actor)=organism {
             let state=self.prepare_organism_action(actor);
