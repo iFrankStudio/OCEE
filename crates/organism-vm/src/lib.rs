@@ -50,6 +50,9 @@ pub enum Op {
     PackByte(u32),
     /// Pack a bounded integer into two little-endian bytes.
     PackU16Le(u32),
+    /// Generic validated graph edit: program JSON, block name, register id, new Op JSON.
+    /// It changes executable structure; selection/fitness remain organism decisions.
+    RewriteOp(u32,u32,u32,u32),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Terminator {
@@ -257,6 +260,13 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
             need(defs,*a,Type::Bytes)?;need(defs,*start,Type::U32)?;
             need(defs,*len,Type::U32)?;Ok(Type::Bytes)
         },
+        Op::RewriteOp(program,block,reg,op)=>{
+            need(defs,*program,Type::Bytes)?;
+            need(defs,*block,Type::Bytes)?;
+            need(defs,*reg,Type::U32)?;
+            need(defs,*op,Type::Bytes)?;
+            Ok(Type::Bytes)
+        },
         Op::JsonIndex(a,i)=>{
             need(defs,*a,Type::Bytes)?;need(defs,*i,Type::U32)?;Ok(Type::Bytes)
         },
@@ -369,6 +379,26 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             if value>255 {return Err(VmError::Range);}
             Value::Bytes(vec![value as u8])
         },
+        Op::RewriteOp(source,name,reg,replacement)=>{
+            let original=bytes(regs,*source)?;
+            let block_id=std::str::from_utf8(bytes(regs,*name)?)
+                .map_err(|_|VmError::InvalidInput)?;
+            let reg=num(regs,*reg)?;
+            let next_op:Op=serde_json::from_slice(bytes(regs,*replacement)?)
+                .map_err(|_|VmError::InvalidInput)?;
+            let mut program:Program=serde_json::from_slice(original)
+                .map_err(|_|VmError::InvalidInput)?;
+            if program.canonical_bytes()!=original || program.validate().is_err(){
+                return Err(VmError::InvalidInput);
+            }
+            let block=program.functions[0].blocks.iter_mut()
+                .find(|b|b.id==block_id).ok_or(VmError::InvalidInput)?;
+            let instruction=block.instructions.iter_mut().find(|i|i.id==reg)
+                .ok_or(VmError::InvalidInput)?;
+            instruction.op=next_op;
+            program.validate().map_err(|_|VmError::InvalidInput)?;
+            Value::Bytes(program.canonical_bytes())
+        },
         Op::JsonIndex(source,index)=>{
             let raw=bytes(regs,*source)?;
             let data:serde_json::Value=serde_json::from_slice(raw)
@@ -421,6 +451,9 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::HexEncode(a)=>bytes(regs,*a)?.len().saturating_mul(2),
         Op::XorFold(a)=>bytes(regs,*a)?.len(),
         Op::JsonIndex(a,_)|Op::ReplaceByte(a,_,_)=>bytes(regs,*a)?.len(),
+        Op::RewriteOp(a,b,_,d)=>bytes(regs,*a)?.len().saturating_mul(3)
+            .saturating_add(bytes(regs,*b)?.len())
+            .saturating_add(bytes(regs,*d)?.len()),
         Op::JsonFieldBytes(a,b)|Op::JsonFieldString(a,b)=>
             bytes(regs,*a)?.len().saturating_add(bytes(regs,*b)?.len()),
         _=>0,
