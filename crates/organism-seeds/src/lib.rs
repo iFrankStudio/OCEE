@@ -109,3 +109,6 @@ pub fn s0_manifest()->SeedManifest {
         research_status:"BOOTSTRAP_ONLY_NOT_E001_S_FULL_NOT_SELF_INNOVATION",
     }
 }
+
+/// Explicitly seeded P0 XOR framing probe; not a general protocol learner.
+pub mod p0_probe;
