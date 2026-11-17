@@ -127,3 +127,72 @@ fn exec_accepts_pure_candidate_but_rejects_world_side_effects() {
     assert_eq!(response.gas_charged,1);
     assert!(w.state.pending_deliveries.is_empty());
 }
+
+
+#[test]
+fn organism_program_can_create_and_activate_a_candidate_using_world_calls() {
+    // A deliberately prearranged candidate is embedded as test data.
+    // This verifies the self-edit *mechanism*, not spontaneous invention.
+    fn hex(bytes:&[u8])->String {
+        bytes.iter().map(|b|format!("{b:02x}")).collect::<String>()
+    }
+    let candidate=base_program().mutate_literal("entry",1,Literal::U32(42)).unwrap();
+    let hash=candidate.content_hash().unwrap();
+    let key_prefix="/self/versions/".as_bytes();
+    let p=Program {
+        format_version:1,entry_function:"main".into(),
+        functions:vec![Function{
+            name:"main".into(),args:vec![Type::Bytes],returns:Type::U32,
+            blocks:vec![
+                Block{id:"entry".into(),
+                    params:vec![Param{id:0,ty:Type::Bytes}],
+                    instructions:vec![
+                        Instruction{id:1,op:Op::ConstBytes{hex:hex(&candidate.canonical_bytes())}},
+                        Instruction{id:2,op:Op::ConstBytes{hex:hex(b"OCEE-PROGRAM-V1\0")}},
+                        Instruction{id:3,op:Op::Concat(2,1)},
+                        Instruction{id:4,op:Op::Sha256(3)},
+                        Instruction{id:5,op:Op::HexEncode(4)},
+                        Instruction{id:6,op:Op::ConstBytes{hex:hex(key_prefix)}},
+                        Instruction{id:7,op:Op::Concat(6,5)},
+                        Instruction{id:8,op:Op::ConstU32(u32::MAX)},
+                    ],
+                    terminator:Terminator::Yield{call:WorldCall::Write,
+                        args:vec![7,1,8],next:"activate".into(),next_args:vec![5]},
+                },
+                Block{id:"activate".into(),
+                    params:vec![Param{id:10,ty:Type::Bytes},Param{id:11,ty:Type::Bytes}],
+                    instructions:vec![
+                        Instruction{id:12,op:Op::ConstBytes{hex:hex(b"/self/active")}},
+                        Instruction{id:13,op:Op::ConstU32(u32::MAX)},
+                    ],
+                    terminator:Terminator::Yield{call:WorldCall::Write,
+                        args:vec![12,10,13],next:"done".into(),next_args:vec![]},
+                },
+                Block{id:"done".into(),
+                    params:vec![Param{id:20,ty:Type::Bytes}],
+                    instructions:vec![Instruction{id:21,op:Op::ConstU32(1)}],
+                    terminator:Terminator::Return{value:21},
+                },
+            ],
+        }],
+    };
+    let mut world=World::new(Config::default());
+    let parent=store(&mut world,&p);
+    assert_eq!(select(&mut world,&parent,None),Code::Ok);
+    assert_eq!(world.tick_autonomous(ORGANISM_ID).code,Code::Ok);
+    assert!(world.state.objects.contains_key(&format!("/self/versions/{hash}")));
+    assert_eq!(world.state.organisms[&ORGANISM_ID].active_program_hash.as_deref(),
+        Some(parent.as_str()));
+    assert_eq!(world.tick_autonomous(ORGANISM_ID).code,Code::Ok);
+    assert_eq!(world.state.organisms[&ORGANISM_ID].active_program_hash.as_deref(),
+        Some(hash.as_str()));
+    assert!(world.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+    let resumed=world.tick_autonomous(ORGANISM_ID);
+    assert_eq!(resumed.code,Code::Ok);
+    assert_eq!(resumed.vm_gas_charged,2);
+    // Independent functional check of adopted candidate, not just its content hash.
+    let evaluated=world.tick(Some(Action::Exec{actor:ORGANISM_ID,program_hash:hash}));
+    assert_eq!(evaluated.code,Code::Ok);
+    assert_eq!(serde_json::from_slice::<ocee_organism_vm::Value>(&evaluated.payload).unwrap(),
+        ocee_organism_vm::Value::U32(42));
+}
