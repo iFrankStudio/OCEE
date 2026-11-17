@@ -19,6 +19,11 @@ on:
       - "Cargo.toml"
       - ".github/workflows/rust-kernel.yml"
 
+# A newer push supersedes earlier same-branch Rust checks.
+concurrency:
+  group: ocee-rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
