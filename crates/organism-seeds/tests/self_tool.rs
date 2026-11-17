@@ -3,7 +3,8 @@
 //! self-tests it via metered EXEC, and registers it. No researcher handoff.
 //! The frame algorithm itself is seeded; this does NOT prove invention.
 use ocee_organism_seeds::p0_probe::{
-    s1_p0_tool_builder,s1_p0_tool_builder_no_feedback
+    s1_p0_tool_builder,s1_p0_tool_builder_no_feedback,
+    s1_p0_tool_builder_broken_checksum
 };
 use ocee_organism_vm::{Value,Program};
 use ocee_protocol_sim::{Family,Operation,FrameKind};
@@ -135,4 +136,27 @@ fn diagnostic_blind_control_must_not_synthesize_or_register_a_tool(){
     assert_eq!(world.state.objects.keys().filter(|k|k.starts_with("/self/versions/")).count(),1);
     assert!(!world.state.objects.contains_key("/self/tools/p0-eval-frame"));
     assert_eq!(world.state.organisms[&ORGANISM_ID].active_program_hash,Some(initial));
+}
+
+
+#[test]
+fn syntactically_valid_but_functionally_wrong_tool_is_not_registered() {
+    let mut world=World::with_protocol(Config{
+        seed:7,a_gas_per_epoch:100_000,..Config::default()
+    },Family::P0,7);
+    let parent=bootstrap(&mut world,s1_p0_tool_builder_broken_checksum());
+    run(&mut world,900);
+    assert_eq!(world.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(0)));
+    assert_eq!(world.state.organisms[&ORGANISM_ID].active_program_hash,Some(parent));
+    // The candidate was constructed, validated and successfully executed.
+    assert!(world.audit.iter().any(|entry|
+        matches!(&entry.action,Some(Action::Exec{..})) &&
+            entry.result.code==Code::Ok));
+    assert_eq!(world.state.objects.keys()
+        .filter(|key|key.starts_with("/self/versions/")).count(),2);
+    // Despite the apparent EXEC success, no validated tool is registered
+    // and no real B calculation is accepted.
+    assert!(!world.state.objects.contains_key("/self/tools/p0-eval-frame"));
+    assert_eq!(world.state.service_events.iter()
+        .filter(|event|event.b_gas_charged>0).count(),0);
 }
