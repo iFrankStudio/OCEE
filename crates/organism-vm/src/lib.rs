@@ -354,7 +354,8 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             let raw=bytes(regs,*source)?;
             let data:serde_json::Value=serde_json::from_slice(raw)
                 .map_err(|_|VmError::InvalidInput)?;
-            let item=data.as_array().and_then(|list|list.get(num(regs,*index)? as usize))
+            let index=num(regs,*index)? as usize;
+            let item=data.as_array().and_then(|list|list.get(index))
                 .ok_or(VmError::InvalidInput)?;
             Value::Bytes(canonical_bytes(item))
         },
