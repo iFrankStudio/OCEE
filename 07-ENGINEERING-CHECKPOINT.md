@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44100240900](https://github.com/iFrankStudio/OCEE/actions/runs/44100240900) — Rust workspace **30 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44105387603](https://github.com/iFrankStudio/OCEE/actions/runs/44105387603) — Rust workspace **34 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -53,6 +53,13 @@
 - [研究事实记录](./experiments/E001/DEV-S3-SPECIALIZATION.md)：S1 的扩展个体无需人工阶段切换，自行生成并试运行工具版本、注册工具、使用它构造公开工作项请求，并收到 C/B 回执。
 - P0 三个开发 seed（7、42、99）通过；同一生成工具可处理 1/4 u32 两种不同长度的测试工作负载，B 计费分别 12/24 gas；无诊断反馈时工具不能生成。
 - 生成程序的帧构造结构仍然由研究者作为模板片段提供；**不计为新算法、新能力语义或 M0 达成**。
+
+### S4 — 结构性修复的最小可检验证据
+
+- VM 新增通用 `RewriteOp`：能基于规范化程序 JSON 修改任意指令节点，重新验证类型和控制流，正常计费；不会自动选择任务策略。
+- [S4 开发记录](./experiments/E001/DEV-S4-STRUCTURAL-REPAIR.md)：错误的 Len checksum 候选能合法执行，但功能验证失败，个体才在有界循环内改为 XorFold 后注册并实际调用 B；开发种子 7、42 通过。
+- 关闭结构改写的消融无工具产生；另有 S3 错误校验和负对照确保 `EXEC Ok` 不被误判为工具功能成功。
+- **P0 专用假说、操作符集合、比较规则仍为初始先验**；这是一次有界一节点结构修复，不是开放式程序合成，也不是 M0 达成。
 
 ## 已发现且修复的关键问题
 
