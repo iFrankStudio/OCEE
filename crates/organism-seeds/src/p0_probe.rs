@@ -267,3 +267,29 @@ pub fn s1_p0_tool_builder_no_feedback()->Program {
     program.validate().expect("ablation program must validate");
     program
 }
+
+
+/// Fully disclosed researcher priors for the in-world program specialization
+/// study. The bytecode is generated at startup, then only the VM may act.
+pub fn s1_tool_manifest()->crate::SeedManifest {
+    crate::SeedManifest{
+        manifest_version:1,
+        kind:"S1-P0-in-world-template-specialization",
+        program_hash:format!("sha256:{}",s1_p0_tool_builder()
+            .content_hash().expect("tool-builder program must be valid")),
+        built_in_modules:vec![
+            "KNOWN-P0-XOR-frame-layout", "bounded-opcode-enumeration",
+            "BAD_BODY-diagnostic-selector", "seeded-generic-P0-program-AST-fragments",
+            "learnt-marker-and-opcode-substitution", "in-world-content-hash",
+            "isolated-EXEC-self-test", "self-tool-registration",
+            "seeded-fixed-three-value-workload-invocation"
+        ],
+        initial_tool_hashes:vec![],
+        known_protocol_families:vec!["P0-XOR-frame-envelope".into()],
+        prohibited_knowledge:vec![
+            "hidden-opcode-value","hidden-protocol-seed",
+            "held-out-workload-values","research-evaluator-reward"
+        ],
+        research_status:"VM_DERIVED_EXECUTABLE_FROM_SEEDED_TEMPLATE_NOT_NOVEL_ALGORITHM_NOT_E001",
+    }
+}
