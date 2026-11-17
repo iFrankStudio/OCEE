@@ -2,7 +2,7 @@
 
 - 状态：**开发集验证；不是 E001 正式确认性实验**
 - 代码：[S6 组合个体](../../crates/organism-seeds/src/s6_compose.rs)、[独立测试与消融](../../crates/organism-seeds/tests/s6_compose.rs)
-- 首次通过核心测试的 CI：[GitHub Actions #44118175171](https://github.com/iFrankStudio/OCEE/actions/runs/44118175171)
+- 最终确认 CI：[GitHub Actions #44119126829](https://github.com/iFrankStudio/OCEE/actions/runs/44119126829) — **38 passed / 0 failed**（首次通过核心测试：Run #44118175171）
 - 常规 CI 已增加同分支新提交覆盖旧运行的自动取消机制；最终使用最新完整通过的运行作为证据，**被新提交取消的运行不计失败也不计通过**。
 - **S6 初始程序哈希**：`sha256:43a322685d6db26cf99522887363b146372ef535d4b8d0114366a1d988657190`；由 [CI #44118175171](https://github.com/iFrankStudio/OCEE/actions/runs/44118175171) 自动产生并确认。**仅开发构建指纹，非正式预注册**。
 
