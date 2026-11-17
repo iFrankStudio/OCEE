@@ -4,18 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "crates/world-kernel/**"
-      - "crates/organism-vm/**"
-      - "crates/protocol-sim/**"
-      - "crates/organism-seeds/**"
+      - "crates/**/*.rs"
+      - "crates/**/Cargo.toml"
       - "Cargo.toml"
       - ".github/workflows/rust-kernel.yml"
   pull_request:
     paths:
-      - "crates/world-kernel/**"
-      - "crates/organism-vm/**"
-      - "crates/protocol-sim/**"
-      - "crates/organism-seeds/**"
+      - "crates/**/*.rs"
+      - "crates/**/Cargo.toml"
       - "Cargo.toml"
       - ".github/workflows/rust-kernel.yml"
 
@@ -38,5 +34,3 @@ jobs:
         run: cargo test --workspace
       - name: Print auditable development organism manifests
         run: cargo run --quiet -p ocee-organism-seeds --example manifest
-      - name: Report S4 resource feasibility under original and development budgets
-        run: cargo run --quiet -p ocee-organism-seeds --example s4_calibration
