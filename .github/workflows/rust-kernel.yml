@@ -7,6 +7,7 @@ on:
       - "crates/world-kernel/**"
       - "crates/organism-vm/**"
       - "crates/protocol-sim/**"
+      - "crates/organism-seeds/**"
       - "Cargo.toml"
       - ".github/workflows/rust-kernel.yml"
   pull_request:
@@ -14,6 +15,7 @@ on:
       - "crates/world-kernel/**"
       - "crates/organism-vm/**"
       - "crates/protocol-sim/**"
+      - "crates/organism-seeds/**"
       - "Cargo.toml"
       - ".github/workflows/rust-kernel.yml"
 
