@@ -2,7 +2,7 @@
 //! A program may create world intents; only the kernel commits them.
 use crate::{Action, ActionResult, Code, NodeId, Object, World, WorldState};
 use ocee_organism_vm::{
-    Continuation, Program, SliceResult, Value, VmError, WorldCall, MAX_VALUE_BYTES,
+    Continuation, Program, SliceResult, Value, VmError, WorldCall,
 };
 
 const VM_SLICE_GAS: u64 = 2_000;
@@ -60,6 +60,7 @@ pub(crate) fn after_write(state:&mut WorldState, actor:u64, active:Option<String
             organism.active_program_hash=Some(hash);
             organism.vm_continuation=None;
             organism.pending_feedback=None;
+            organism.last_return=None;
         }
     }
 }
@@ -195,9 +196,8 @@ impl World {
         host.pending_feedback=None;
         match slice {
             SliceResult::Returned{output,..}=>{
-                VmTick{action:None,gas_used:used,status:if matches!(output,Value::Bytes(ref x) if x.len()>MAX_VALUE_BYTES){
-                    Code::Quota
-                }else{Code::Ok}}
+                host.last_return=Some(output);
+                VmTick{action:None,gas_used:used,status:Code::Ok}
             },
             SliceResult::Exhausted{..}=>VmTick{action:None,gas_used:used,status:Code::Gas},
             SliceResult::Faulted{..}=>VmTick{action:None,gas_used:used,status:Code::InvalidCode},
