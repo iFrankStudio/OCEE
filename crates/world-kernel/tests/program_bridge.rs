@@ -82,7 +82,7 @@ fn autonomous_tick_emits_action_then_resumes_with_feedback() {
     assert_eq!(select(&mut w,&hash,None),Code::Ok);
     let first=w.tick_autonomous(ORGANISM_ID);
     assert_eq!(first.code,Code::Ok);
-    assert_eq!(first.vm_gas_charged,2); // const + YIELD
+    assert_eq!(first.vm_gas_charged,3); // byte literal (2) + YIELD (1)
     assert_eq!(w.state.pending_deliveries.len(),1);
     assert_eq!(w.state.pending_deliveries[0].destination,NodeId::C);
     let snapshot=w.snapshot_json();
