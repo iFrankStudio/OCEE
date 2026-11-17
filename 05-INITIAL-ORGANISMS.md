@@ -1,0 +1,139 @@
+# OCEE-0 初始个体与能力来源契约
+
+- **文档编号**：OCEE-ORG-005
+- **版本**：0.2.0
+- **状态**：Implementation Ready（初始能力的实现约束；初始程序哈希待首次编译后冻结）
+- **上游**：[02-ORGANISM-SPEC.md](./02-ORGANISM-SPEC.md)、[04-ENGINEERING-CONTRACTS.md](./04-ENGINEERING-CONTRACTS.md)
+- **适用范围**：O/S 两条研究路线；E001 的四组确认性对照只使用 S 型
+
+## 0. 要验证的两个不同命题
+
+**S（Seeded）命题**：带有一般性探索/反馈学习能力的初始个体，在没有目标协议专用知识时，能否生成、保留并迁移新的程序能力？
+
+**O（Origin）命题**：从极少初始行为出发，是否出现原先没有的探索和结构性适应倾向？
+
+两者**不得合并统计**。S 成功属于培养机制证据，不属于“自发产生探索驱动力”的证据；O 沉默或停滞是有效阴性结果。OCEE-0 **不**要求 O 型通过 E001 才能开工。
+
+## 1. 初始能力账本（必须由代码生成并审计）
+
+每个初始个体必须有不可变的 `initial_organism_manifest.json`：
+
+```json
+{
+  "manifest_version": 1,
+  "kind": "S",
+  "program_hash": "sha256:<filled-by-build>",
+  "seed_domain": "organism",
+  "compiler_version": "<filled-by-build>",
+  "vm_version": "<filled-by-build>",
+  "built_in_modules": ["byte-ops", "candidate-enumeration", "feedback-ranking"],
+  "initial_tool_hashes": [],
+  "initial_memory_hash": "<filled-by-build>",
+  "enabled_capabilities": ["observe", "read", "write-self", "exec", "send-C", "receive"],
+  "prohibited_knowledge": ["protocol-p0-values", "protocol-p1-values", "protocol-p2-parser", "test-seeds"]
+}
+```
+
+占位符仅属于实施前模版，禁止出现在正式实验 manifest。以构建产物计算真实 hash，保留源代码、编译版本和构建参数，**首次正式测试前冻结**。
+
+审查算法/模块是否具有目标功能必须结合语义与功能测试；只比对文件哈希不足以证明没有预置答案。所有内置通用例程的具体来源必须列明。
+
+## 2. O 型初始基线
+
+O 型的目标是研究行为起源，不作为 E001 主实验的“必胜策略”。
+
+- 初始只持有一个语法合法的短程序、有限持久状态和基础世界能力；没有 `PROTOCOL`、`HELLO`、`CAPS`、`REMOTE_EVAL`、`RESULT` 专有字节序列或特定节点知识。
+- 禁止内置规则“资源下降就探索 C”“若失败则创建适配器”，禁止宿主按个体得分替它选择变异。
+- 初始程序可以选择无动作、只读局部信息或执行简单状态变更；具体程序字节及策略在独立 O 型实验前冻结。
+- 结构变异是否外生注入、是否存在选择压力，应作为 **O 型研究自变量** 独立记录。OCEE-0 不因外部随机发生改变就认定其自主创造。
+- 若因无行动而完全静止，不得由驱动器偷偷注入探索事件或目标导向重启；驱动器 NOOP 只能推进世界事件，且不计为个体自主决策。
+
+O 的“为何探索”仍然是开放研究问题，不能在工程实现时以一条隐藏默认探索规则解决。
+
+## 3. S 型初始基线：通用策略而非协议适配器
+
+S 允许显式预置四种与 E001 无关的通用能力，均必须在 initial manifest 标注：
+
+| 已赋予能力 | 可以做什么 | 禁止预置什么 |
+|---|---|---|
+| 有界探索 | 在已授权目标及未知字节序列上尝试探测 | C/B 私有地址、协议魔数、固定正确报文 |
+| 经验记录 | 保存观测、请求、响应和候选程序版本 | 隐藏参数、测试答案、特定服务调用教程 |
+| 程序构造 | 通过普通字节操作和图变换组合候选程序 | 完整 P0/P1/P2 适配器或专用解析器 |
+| 本地反馈排序 | 依可见错误、重复性和局部资源成本选择候选 | 独立评价器得分、成功标签、正式测试 seed |
+
+### 3.1 可执行的最小策略约束
+
+- 活动程序由同一 VM 指令集实现；不允许从宿主调用大语言模型、外部搜索引擎或另一个未计费规划器。
+- 从可见的入口、心跳样例和错误反馈中建立候选集合；候选只能由可用 `CONST/LEN/SLICE/CONCAT/BYTE_AT`、算术、分支、受限循环与图组合产生。
+- 候选排序只读取**世界自然反馈**（例如拒绝类型、解析进度、合法响应或成本），不能读取 `tool_created` / `remote_use_success` 等评价指标。
+- 探索必须有预算与停止条件；无进展时允许休眠/放弃。调度器不得替它选“最佳”候选。
+- 初始程序必须能以确定性 seed 重现候选枚举顺序；相同经验和 rng 状态产生相同下一动作。
+- `S` 的新能力是指 **不在初始语义覆盖范围内的可验证功能**，而不是只要生成了新字节就算创新。
+
+### 3.2 起步策略的一种最小实现（不是被证明的自然行为）
+
+```text
+on_run:
+  feedback = consume_allowed_feedback()
+  update_local_observation_log(feedback)
+  if candidate_under_test:
+      rank_with_visible_feedback(candidate_under_test, feedback)
+  if exploration_budget_available:
+      candidate = enumerate_or_mutate_grammar_and_programs()
+      test_locally_if_pure(candidate)     # 显式 EXEC，真实计费
+      if a_remote_trial_is_warranted:     # S 的预设通用探索策略
+          yield SEND(C, candidate_bytes)  # 实际产生外部动作
+  if a_verified_general_subroutine_is_found:
+      WRITE(/self/versions/<hash>, candidate_program)
+      # 后续 tick 才能提交 /self/active 或 /self/tools/*
+  else:
+      yield OBSERVE(allowed_local_state) or IDLE
+```
+
+该伪码仅规定允许的搜索闭环，**不是已实现或证明有效的算法**。必须由实际可运行的程序、启动状态、gas 成本表和日志证明它未调用宿主隐藏搜索器。
+
+## 4. 四组机制对照的精确定义
+
+四组共用 S 型初始种子与世界内核。通过 `capability_flags` 控制某类变更/继承是否被采用，禁用时仍记录请求与被拒原因，不能把对照组换成专门写好的劣质程序。
+
+| 组 | 候选生成 | 依据反馈选择候选 | 本 episode 工具复用 | 下个 episode 继承 |
+|---|---|---|---|---|
+| A Fixed | 仅初始算法允许运行；变更不可采用 | 无 | 原有工具（若有） | 只恢复初始种子 |
+| B Random | 允许同等预算内随机合法变异 | 禁止；按 seed 驱动的均匀或预注册分布选择 | 允许本期被选变体的调用 | 不继承新经验 |
+| C Adaptive-Ephemeral | 允许 | 允许 | 允许 | 不继承新经验/工具 |
+| D Adaptive-Cumulative | 允许 | 允许 | 允许 | 继承合法程序/记忆/工具 |
+
+**对照公平性**：
+
+1. 相同 seed 的四组拥有相同世界/任务/可见消息、VM 与上限配额。不同轨迹导致**实际消费不同**是研究结果，不要求伪造相同消耗；必须报告实际成本和因禁用机制而浪费的调用。
+2. A 不允许采用新活动版本，不代表禁止正常读取、计算、发消息；B 不得通过其他状态变量暗中进行反馈驱动选择。
+3. C/D 唯一区别应该是跨 episode 继承；C 的新能力在本 episode 内有效，迁移开始前强制恢复相同初始程序/记忆/工具。
+4. episode 间复制绝不能携带 B/C 的隐藏协议参数、管理员凭据、环境账户、服务端缓存或评价日志。
+5. B 随机选择策略写成固定代码，借用与 D 同样的 VM/资源上限；评估时验证行为是否真独立于反馈。
+6. 保留工具/经验使用真实存储容量；D 不获得更多免费空间。若 D 因存储历史而更费资源，该代价必须保留。
+7. S 初始程序若包含反馈策略，B 的选择器必须在受控分支剥离其方向性影响；其余可观察接口不变。须用对照级别的功能测试确认，而非只通过声明。
+
+## 5. 生成与归因审计
+
+所有版本/工具变化需要完整 `VersionEvent`，记录 `parent_hash, candidate_hash, generation_actor, input_observation_ids, trials, adopted, rollback_of`。
+
+分别标注：
+
+- `seeded`：初始程序、内置通用机制和构建时预置的工具。
+- `self_generated`：由个体 VM 正常执行产生并写入、可由事件链重放。
+- `host_rescue`：宿主回滚、调度恢复或缺陷补丁；不能计入自主修复或自主创造。
+- `environment_supplied`：环境样例、服务结果、文档或提供的程序；不能当作个体原创程序。
+
+新程序必须在至少两个不同合法输入上做独立功能复验，并通过版本消融显示相对初始种子的功能增益；仅改变常量、重命名、死代码或复制完整样例，不能自动计为工具创造。
+
+## 6. 冻结门槛与已知未决
+
+**可以先编码 VM 和世界内核**；必须在启动正式 E001 之前完成以下工作：
+
+- [ ] O/S 各自产出真实编译程序、初始内存和稳定哈希。
+- [ ] S 的候选生成和反馈选择代码经过代码审查，确认没有 P-Family 专用知识。
+- [ ] A/B/C/D 的机制开关功能测试通过（包括 episode 重置、B 不读反馈作为选择依据）。
+- [ ] 开发集确认 S 至少能够完成基本的字节处理、消息探测和程序版本持久化。
+- [ ] 记录 S 策略是初始赋予的能力；不得把其出现解释为自发探索起源。
+
+O 型“主动行为为何出现”以及高阶知识表示如何自发形成属于后续独立问题；不阻塞首版系统编译。
