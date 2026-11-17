@@ -702,4 +702,41 @@ mod tests {
         assert_eq!(restored,cont);
     }
 
+    #[test]
+    fn generic_graph_rewrite_changes_opcode_structure_and_revalidates_types() {
+        fn hex(data:&[u8])->String {
+            data.iter().map(|b|format!("{b:02x}")).collect()
+        }
+        let original=p(vec![Instruction{id:1,op:Op::Len(0)}],
+            Terminator::Return{value:1},Type::U32);
+        let src=original.canonical_bytes();
+        let mutator=p(vec![
+            Instruction{id:1,op:Op::ConstBytes{hex:hex(&src)}},
+            Instruction{id:2,op:Op::ConstBytes{hex:hex(b"entry")}},
+            Instruction{id:3,op:Op::ConstU32(1)},
+            Instruction{id:4,op:Op::ConstBytes{
+                hex:hex(&serde_json::to_vec(&Op::XorFold(0)).unwrap())}},
+            Instruction{id:5,op:Op::RewriteOp(1,2,3,4)}
+        ],Terminator::Return{value:5},Type::Bytes);
+        let output=run_isolated(&mutator,vec![],2000).unwrap().0;
+        let Value::Bytes(candidate)=output else {panic!("expected bytes")};
+        let changed:Program=serde_json::from_slice(&candidate).unwrap();
+        assert_eq!(changed.canonical_bytes(),candidate);
+        assert_ne!(original.content_hash().unwrap(),changed.content_hash().unwrap());
+        assert_eq!(run_isolated(&original,vec![1,2,4],100).unwrap().0,
+            Value::U32(3));
+        assert_eq!(run_isolated(&changed,vec![1,2,4],100).unwrap().0,
+            Value::U32(7));
+        let bad=p(vec![
+            Instruction{id:1,op:Op::ConstBytes{hex:hex(&src)}},
+            Instruction{id:2,op:Op::ConstBytes{hex:hex(b"entry")}},
+            Instruction{id:3,op:Op::ConstU32(1)},
+            Instruction{id:4,op:Op::ConstBytes{
+                hex:hex(&serde_json::to_vec(&Op::Sha256(0)).unwrap())}},
+            Instruction{id:5,op:Op::RewriteOp(1,2,3,4)}
+        ],Terminator::Return{value:5},Type::Bytes);
+        assert_eq!(run_isolated(&bad,vec![],2000),
+            Err(VmError::InvalidInput)); // incompatible return type, reject
+    }
+
 }
