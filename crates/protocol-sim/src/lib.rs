@@ -249,6 +249,17 @@ impl Service {
         Self{protocol:Protocol::generate(family,seed),
             jobs:BTreeMap::new(),ready_latency_steps:2}
     }
+    /// Public legal HELLO example frames; no REMOTE_EVAL answer or private seed.
+    pub fn public_hello_sample(&self,step:u64)->(Vec<u8>,Vec<u8>) {
+        let id=(step / 256) as u32;
+        let req=Decoded{kind:FrameKind::Request,operation:Operation::Hello,
+            request_id:id,body:vec![]};
+        let resp=Decoded{kind:FrameKind::Response,operation:Operation::Hello,
+            request_id:id,body:vec![0,GENERATOR_VERSION as u8]};
+        (self.protocol.encode(&req).expect("small hello"),
+            self.protocol.encode(&resp).expect("small hello response"))
+    }
+
     pub fn handle(&mut self,actor:u64,now_step:u64,wire:&[u8],b_gas_available:u64)
         ->ServiceResult {
         let request=match self.protocol.decode(wire) {
