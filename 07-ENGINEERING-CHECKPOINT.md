@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44116388188](https://github.com/iFrankStudio/OCEE/actions/runs/44116388188) — Rust workspace **36 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44118404623](https://github.com/iFrankStudio/OCEE/actions/runs/44118404623) — Rust workspace **38 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -74,6 +74,13 @@
 - 一个不随规则切换的 VM 搜索个体，在 `Len/XorFold/ByteAt` 词表内生成多个类型化可执行候选，用 `EXEC` 与训练样例反馈选择、注册并在保留输入上执行；六个开发种子覆盖三种目标算子，均通过。
 - 对照组只有首个候选：遇到 `Len` 成功，其余两种规则失败。所有测试使用原定每 epoch 12,000 A gas。
 - **词表、骨架、试验次数与样例比较器全部预置；该辅助任务未调用 C/B，也不属于 E001 的协议跨家族适应证据。**
+
+### S6 — 固定语法中的多节点组合（辅助研究）
+
+- [S6 研究记录](./experiments/E001/DEV-S6-COMPOSITION.md)：复用 S5 的 VM 内监督式样例选择路径，将候选从单节点扩大为两个一元节点与一个二元组合节点（18 种候选）。
+- 六个开发 seed 通过隐藏目标函数的保留输入核验；固定第二个一元节点为零的机制消融无法解决需要两种输入特征的组合任务。
+- 新增 `Div(U32,U32)` 用于通用候选索引分解；世界单独发布 /public/E001/compose 的两个标注样例和无答案保留输入。仍不依赖 C/B 服务。
+- **组合节点与候选集合是研究者事先提供的有限语法**，并非新原语创造、策略自发成长或 E001 G1/M0 通过；S6 暂用 100,000 A gas/epoch，还未做标准预算校准。
 
 ## 已发现且修复的关键问题
 

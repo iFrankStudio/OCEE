@@ -7,6 +7,7 @@ A small deterministic interpreter for type-checked, bounded program graphs, deli
 - Versioned `Program -> Function -> Block -> typed instruction/terminator` representation.
 - Static operand/type checking, block-parameter arity checking, control-flow cycle rejection, size limits.
 - Deterministic arithmetic, byte slicing/concatenation, u16 little-endian packing, XOR byte reduction, SHA-256 and hex encoding.
+- U32 division with explicit zero-divisor rejection, used to enumerate Cartesian products in S6's bounded program grammar; no VM-owned choice strategy.
 - Canonical JSON bytes with sorted object keys and domain-separated content hash:
   `SHA-256("OCEE-PROGRAM-V1\\0" || canonical_json)`.
 - Pure isolated evaluation with bounded byte inputs, bounded gas usage and metered runtime faults.

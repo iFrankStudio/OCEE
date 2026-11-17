@@ -6,6 +6,7 @@ This crate provides **explicit, researcher-authored VM programs**. It is not a l
 |---|---|---|
 | S0 | Read public HELLO, send example, observe/persist response | Public paths, JSON extraction, polling |
 | S1 P0 | Probe unknown REMOTE_EVAL opcode via diagnostics | P0 XOR frame layout, opcode range, `BadBody` selector |
+| S6 auxiliary | Finite 3×3×2 multi-node operator composition, trained on labeled I/O examples and validated on held-out input | Human-seeded operator grammar, skeleton, candidate enumeration and feedback selection; not P1/P2 discovery |
 | S5 auxiliary | Search among Len/XorFold/ByteAt via two public I/O examples; create and apply tool to held-out input | Preseeded finite vocabulary, one-node skeleton, bounded enumeration, supervised comparator; **not E001 protocol adaptation** |
 | S4 P0 | Error-driven one-node graph rewrite; validate and register only a functional executable | Pre-seeded Len/XorFold alternatives, P0 framing prior and two-try selection policy |
 | S3 P0 | Derive content-addressed frame-builder executable from discovered opcode; self-test, register and use it | **Pre-seeded P0 frame-building AST fragments**, discovery/selection algorithm, fixed test workload |
@@ -25,3 +26,5 @@ cargo test --workspace
 Evidence: [S0/S1 study](../../experiments/E001/DEV-S0-S1.md) [S2 study](../../experiments/E001/DEV-S2.md) [S3 tool-specialization study](../../experiments/E001/DEV-S3-SPECIALIZATION.md), and [S4 structural repair](../../experiments/E001/DEV-S4-STRUCTURAL-REPAIR.md).
 
 S5 auxiliary evidence: [development operator-search record](../../experiments/E001/DEV-S5-OPERATOR-SEARCH.md). Its per-seed target rule is hidden behind public input/output examples, but the entire candidate vocabulary is a human seed; it is not a newly invented algorithm.
+
+S6 multi-node composition evidence: [development study](../../experiments/E001/DEV-S6-COMPOSITION.md). Its search grammar was explicitly designed; no novel primitive or search-policy origin is claimed.

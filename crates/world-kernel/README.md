@@ -23,9 +23,9 @@ This crate implements the deterministic **world host** for OCEE-0. The first P1 
 
 The current action driver and initial program-selection fixture remain available for testing. No tests should be described as evidence that a life form or self-directed innovation has appeared.
 
-### S5 development-only learning fixture
+### S5/S6 development-only learning fixtures
 
-An optional read-only `/public/E001/transform` object presents two labeled byte-transform examples and one input without an answer. A hidden rule selected from three existing VM primitives is used **only** for researcher-side evaluation. S5 uses this deliberately narrow auxiliary task to verify sample-driven operator selection; it is not part of E001's official protocol families or scoring design.
+Read-only `/public/E001/transform` and `/public/E001/compose` objects presents two labeled byte-transform examples and one input without an answer. A hidden rule selected from three existing VM primitives is used **only** for researcher-side evaluation. S5 tests selection among single-op programs; S6 additionally tests a bounded grammar of two unary nodes and one binary node. Neither is part of E001's official protocol families or scoring design.
 
 ## Run
 
