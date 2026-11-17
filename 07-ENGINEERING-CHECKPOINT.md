@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44105387603](https://github.com/iFrankStudio/OCEE/actions/runs/44105387603) — Rust workspace **34 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44107148906](https://github.com/iFrankStudio/OCEE/actions/runs/44107148906) — Rust workspace **34 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -60,6 +60,13 @@
 - [S4 开发记录](./experiments/E001/DEV-S4-STRUCTURAL-REPAIR.md)：错误的 Len checksum 候选能合法执行，但功能验证失败，个体才在有界循环内改为 XorFold 后注册并实际调用 B；开发种子 7、42 通过。
 - 关闭结构改写的消融无工具产生；另有 S3 错误校验和负对照确保 `EXEC Ok` 不被误判为工具功能成功。
 - **P0 专用假说、操作符集合、比较规则仍为初始先验**；这是一次有界一节点结构修复，不是开放式程序合成，也不是 M0 达成。
+
+### S4 标准资源预算下的可行性诊断（仅开发集）
+
+- [详细数据](./experiments/E001/DEV-S4-RESOURCE-CALIBRATION.md)：种子 7、42、99、2026，在标准 A gas 每 epoch 12,000 和开发 A gas 100,000 两种配置中均完成了 S4 工具生成与 B 任务；均保留失败计数。
+- 标准配额下完成 tick 介于 246～1,237；3 个种子遭遇 666～673 次 gas 拒绝。开发配额下为 246～571 ticks，均无 gas 拒绝。标准实验中的资源停滞主要来自外部 epoch 刷新，不等同个体学会主动资源调度。
+- 初始程序安装成本也占用第一个 epoch 配额，但没有计入自主 tick 的 VM/世界费用统计；经济性评估必须计入完整生命周期。
+- 这些种子全部是开发种子，不能用于 G2 正式集或推断总体成功率。
 
 ## 已发现且修复的关键问题
 
