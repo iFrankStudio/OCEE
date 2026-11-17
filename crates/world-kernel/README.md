@@ -1,4 +1,4 @@
-# OCEE-0 Rust world kernel — P1 + P2 integration slice
+# OCEE-0 Rust world kernel — P1/P2/P3 integration slices
 
 This crate implements the deterministic **world host** for OCEE-0. The first P1 core and a P2 **program lifecycle bridge** are running. It is not yet a complete ecosystem, an evolving digital organism, or an E001 result.
 
@@ -11,6 +11,8 @@ This crate implements the deterministic **world host** for OCEE-0. The first P1 
 - `tick_autonomous(actor)` resumes the program VM, bills its microsteps and processes at most one yielded world action; action feedback is delivered on the following tick.
 - Isolated `EXEC` for **pure candidate computation**. A yielded world side effect is rejected and billed.
 - End-to-end engineering fixture showing a program constructing a content-addressed candidate, writing it via world calls, selecting it and executing the adopted version. **The candidate is prearranged in the fixture, not spontaneously invented.**
+- Optional isolated simulated protocol C/B service: P0/P1/P2 decoder, B's bounded FOLD32 execution and gas billing, delayed response queue and replayable service state.
+- Legal protocol HELLO frame pair published through a read-only world object `/public/C/hello` every 256 ticks for future learning experiments.
 
 ## Intentionally deferred
 
@@ -27,4 +29,4 @@ The current action driver and initial program-selection fixture remain available
 cargo test --workspace
 ```
 
-Core behavior contract: [04-ENGINEERING-CONTRACTS.md](../../04-ENGINEERING-CONTRACTS.md). Current checkpoint: [README.md](../../README.md).
+Core behavior contract: [04-ENGINEERING-CONTRACTS.md](../../04-ENGINEERING-CONTRACTS.md). Current checkpoint: [07-ENGINEERING-CHECKPOINT.md](../../07-ENGINEERING-CHECKPOINT.md).
