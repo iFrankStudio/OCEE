@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - "crates/world-kernel/**"
+      - "crates/organism-vm/**"
+      - "Cargo.toml"
       - ".github/workflows/rust-kernel.yml"
   pull_request:
     paths:
       - "crates/world-kernel/**"
+      - "crates/organism-vm/**"
+      - "Cargo.toml"
       - ".github/workflows/rust-kernel.yml"
 
 permissions:
@@ -21,5 +25,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Run core invariant tests
-        run: cargo test --manifest-path crates/world-kernel/Cargo.toml
+      - name: Run world and VM invariant tests
+        run: cargo test --workspace
