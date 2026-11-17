@@ -315,3 +315,27 @@ pub fn s1_tool_manifest()->crate::SeedManifest {
         research_status:"VM_DERIVED_EXECUTABLE_FROM_SEEDED_TEMPLATE_NOT_NOVEL_ALGORITHM_NOT_E001",
     }
 }
+
+
+/// Negative control for phenotype-based validation: this candidate remains a
+/// well-typed, executable tool, but its checksum node is structurally wrong.
+/// A naive "EXEC returned Ok" gate would incorrectly register it.
+pub fn s1_p0_tool_builder_broken_checksum()->Program {
+    let mut program=s1_p0_tool_builder();
+    let block=program.functions[0].blocks.iter_mut()
+        .find(|b|b.id=="tool_prepare").expect("tool compiler block");
+    let op=&mut block.instructions.iter_mut().find(|i|i.id==514)
+        .expect("tool AST suffix").op;
+    let Op::ConstBytes{hex}=op else {panic!("seeded AST fragment is missing")};
+    let original=(0..hex.len()).step_by(2)
+        .map(|i|u8::from_str_radix(&hex[i..i+2],16).expect("hex fragment"))
+        .collect::<Vec<_>>();
+    let src=String::from_utf8(original).expect("source fragment UTF-8");
+    assert_eq!(src.matches("\"XorFold\":5").count(),1);
+    // The emitted tool now uses Len(frame) instead of XOR checksum.
+    // Both are legal U32-producing VM ops, so type and EXEC checks still pass.
+    let altered=src.replace("\"XorFold\":5","\"Len\":5");
+    *hex=altered.as_bytes().iter().map(|b|format!("{b:02x}")).collect();
+    program.validate().expect("bad-checksum producer must remain valid");
+    program
+}
