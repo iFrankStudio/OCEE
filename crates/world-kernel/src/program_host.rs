@@ -67,12 +67,12 @@ pub(crate) fn after_write(state:&mut WorldState, actor:u64, active:Option<String
 
 /// Isolated candidate EXEC: pure computation plus authorized snapshot reads.
 /// Reads consume gas but neither world steps nor externally visible effects.
-pub(crate) fn isolated_exec(world:&mut World, actor:u64, hash:&str)->ActionResult {
+pub(crate) fn isolated_exec(world:&mut World, actor:u64, hash:&str, input:&[u8])->ActionResult {
     let program=match stored_program(&world.state,actor,hash) {
         Ok(p)=>p,
         Err(code)=>return ActionResult::fail(code),
     };
-    let mut continuation=match Continuation::start(&program,vec![]) {
+    let mut continuation=match Continuation::start(&program,input.to_vec()) {
         Ok(c)=>c,
         Err(_)=>return ActionResult::fail(Code::InvalidCode),
     };
@@ -177,8 +177,8 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
             actor,destination:NodeId::C,bytes:as_bytes(&args[0])?.to_vec()
         },
         WorldCall::Receive if args.is_empty()=>Action::Receive{actor,max_count:1},
-        WorldCall::Exec if args.len()==1=>Action::Exec{
-            actor,program_hash:utf8(&args[0])?
+        WorldCall::Exec if args.len()==2=>Action::Exec{
+            actor,program_hash:utf8(&args[0])?,input:as_bytes(&args[1])?.to_vec()
         },
         _=>return Err(Code::BadRequest),
     };
