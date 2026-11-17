@@ -1,0 +1,14 @@
+[package]
+name = "ocee-organism-seeds"
+version = "0.1.0"
+edition = "2021"
+description = "Auditable protocol-agnostic initial organism programs for OCEE-0"
+
+[dependencies]
+ocee-organism-vm = { path = "../organism-vm" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+ocee-world-kernel = { path = "../world-kernel" }
+ocee-protocol-sim = { path = "../protocol-sim" }
