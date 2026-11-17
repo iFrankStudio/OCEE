@@ -1,0 +1,8 @@
+[package]
+name = "ocee-protocol-sim"
+version = "0.1.0"
+edition = "2021"
+description = "Deterministic hidden-protocol C/B service simulator for OCEE-0 E001 development"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
