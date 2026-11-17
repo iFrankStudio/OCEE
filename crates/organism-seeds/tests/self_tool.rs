@@ -77,6 +77,27 @@ fn vm_specializes_and_registers_reusable_tool_then_runs_two_distinct_workloads()
         )));
 
         let proto=world.state.protocol_service.as_ref().unwrap().protocol.clone();
+        // The active organism itself invoked the new tool with an unseen public
+        // workload, sent its output and stored the service acknowledgement.
+        let ack_record=&world.state.objects["/self/results/generated-tool/ack"].bytes;
+        let ack_action:ocee_world_kernel::ActionResult=
+            serde_json::from_slice(ack_record).expect("recorded Receive feedback");
+        assert_eq!(ack_action.code,Code::Ok);
+        let messages:Vec<ocee_world_kernel::Message>=
+            serde_json::from_slice(&ack_action.payload).unwrap();
+        assert_eq!(messages.len(),1);
+        let ack=proto.decode(&messages[0].bytes).unwrap();
+        assert_eq!(ack.kind,FrameKind::Response);
+        assert_eq!(ack.operation,Operation::RemoteEval);
+        assert_eq!(ack.request_id,100);
+        assert_eq!(ack.body,vec![0]);
+        assert!(world.state.service_events.iter().any(|e|e.b_gas_charged==20));
+        assert!(world.audit.iter().filter_map(|a|{
+            if let Some(Action::Exec{program_hash,..})=&a.action {Some(program_hash)}
+            else {None}
+        }).filter(|hash|*hash==&tool_hash).count()>=2,
+           "organism must self-test and then reuse its generated tool");
+
         let cases=[(77u32,vec![9u32]),(78u32,vec![11u32,12,13,14])];
         let before=world.state.service_events.iter()
             .filter(|x|x.b_gas_charged>0).count();
