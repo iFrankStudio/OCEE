@@ -1,4 +1,4 @@
-use ocee_organism_seeds::p0_probe::s1_p0_probe;
+use ocee_organism_seeds::p0_probe::{s1_p0_probe,s1_p0_no_feedback_control,s1_manifest};
 use ocee_protocol_sim::{Family,Operation};
 use ocee_world_kernel::{Action,Code,Config,World,ORGANISM_ID};
 
@@ -49,5 +49,45 @@ fn seeded_feedback_guided_probe_finds_unknown_p0_opcode_without_hidden_values() 
             |k|k.starts_with("/self/versions/")).count(),1);
         let replay=World::from_snapshot(&world.snapshot_json()).unwrap();
         assert_eq!(world.state_hash(),replay.state_hash());
+    }
+}
+
+
+#[test]
+fn diagnostic_feedback_is_needed_for_p0_candidate_selection_in_development_control() {
+    let seeded=s1_manifest();
+    assert!(seeded.known_protocol_families.iter().any(|x|x.contains("P0")));
+    assert!(seeded.built_in_modules.iter().any(|x|x.contains("BAD_BODY")));
+    assert!(seeded.research_status.contains("NOT_E001"));
+
+    for seed in [7u64,42] {
+        let mut world=World::with_protocol(Config{
+            a_gas_per_epoch:100_000,..Config::default()
+        },Family::P0,seed);
+        let control=s1_p0_no_feedback_control();
+        let hash=control.content_hash().unwrap();
+        assert_eq!(world.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:format!("/self/versions/{hash}"),
+            expected_version:None,bytes:control.canonical_bytes(),
+        })).code,Code::Ok);
+        assert_eq!(world.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:"/self/active".into(),
+            expected_version:None,bytes:hash.as_bytes().to_vec(),
+        })).code,Code::Ok);
+        let mut finished=false;
+        let mut sent=0;
+        for _ in 0..800 {
+            let result=world.tick_autonomous(ORGANISM_ID);
+            assert!(!matches!(result.code,Code::InvalidCode|Code::Denied));
+            if matches!(world.audit.last().unwrap().action,Some(Action::Send{..})){sent+=1;}
+            if world.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
+                .is_some_and(|c|c.finished){finished=true;break;}
+        }
+        assert!(finished);
+        assert_eq!(sent,112); // no early selection
+        assert!(!world.state.objects.contains_key(
+            "/self/discoveries/p0-operation-candidate"));
+        assert_eq!(world.state.organisms[&ORGANISM_ID].last_return,
+            Some(ocee_organism_vm::Value::U32(0)));
     }
 }
