@@ -3,7 +3,8 @@
 - 日期：2026-11-17
 - 状态：**Development Evidence ONLY**；不能视为 E001 M0 通过
 - 源码：[S1 模板派生变体](../../crates/organism-seeds/src/p0_probe.rs)、[端到端与诊断消融](../../crates/organism-seeds/tests/self_tool.rs)
-- 验证：[GitHub Actions #44100240900](https://github.com/iFrankStudio/OCEE/actions/runs/44100240900)；Rust workspace **30 passed / 0 failed**
+- 验证：[最终 GitHub Actions #44100883417](https://github.com/iFrankStudio/OCEE/actions/runs/44100883417)；Rust workspace **30 passed / 0 failed**，初始程序 manifest 输出步骤也成功
+- **本次开发构建的初始 S3 程序哈希**：`sha256:1bc5f3e92b6202c5c9070ad67ab237bd2f35bbede923654187fc4cbf56d2c5a0`；该值来自 CI 运行时生成，并非 E001 正式集封存或预注册
 
 ## 本研究提出的更窄问题
 
