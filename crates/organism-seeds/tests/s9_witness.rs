@@ -23,6 +23,8 @@ fn run(seed:u64,program:Program)->World {
         actor:ORGANISM_ID,key:"/self/active".into(),
         expected_version:None,bytes:hash.as_bytes().to_vec(),
     })).code,Code::Ok);
+    assert!(!w.state.objects.contains_key("/public/E001/boundary-witness"),
+        "external witness must not exist before an actual tool failure");
     for _ in 0..4096 {
         let result=w.tick_autonomous(ORGANISM_ID);
         assert_ne!(result.code,Code::Denied);
@@ -51,16 +53,26 @@ fn witness_guides_repair_or_abstention_under_standard_budget(){
             .unwrap_or_else(||panic!("witness missing after seed {seed}"));
         let witness:ocee_world_kernel::BoundaryWitness=
             serde_json::from_slice(&witness.bytes).unwrap();
-        assert_eq!(witness.observed_after_step+1,
-            w.audit.iter().find(|e|matches!(&e.action,
-                Some(Action::Exec{input,..}) if input.is_empty()
-            ) && e.result.code==Code::InvalidCode).unwrap().step+1);
+        let failed=w.audit.iter().find(|e|matches!(&e.action,
+            Some(Action::Exec{input,..}) if input.is_empty()
+        ) && e.result.code==Code::InvalidCode).expect("real fault required");
+        assert_eq!(witness.observed_after_step,failed.step);
+        let observed_read=w.audit.iter().find(|e|matches!(&e.action,
+            Some(Action::Read{key,..})
+            if key=="/public/E001/boundary-witness"
+        )).expect("organism must actually read the witness");
+        assert!(observed_read.step>failed.step,
+            "external evidence cannot be consumed before failure");
         let version=w.state.objects["/self/tools/transform-v1"].version;
         let return_value=w.state.organisms[&ORGANISM_ID].last_return.clone();
         if expect==3 {
             assert_eq!(return_value,Some(Value::U32(3)));
             assert_eq!(version,0,"insufficient evidence must not adopt");
             assert!(w.state.objects.contains_key("/self/repair/boundary/status"));
+            let expected_reason=if witness.count==0 {b"missing".as_slice()}
+                else {b"conflict".as_slice()};
+            assert_eq!(w.state.objects["/self/repair/boundary/status"].bytes,
+                expected_reason);
         } else {
             assert_eq!(return_value,Some(Value::U32(2)));
             assert_eq!(version,1);
@@ -81,4 +93,21 @@ fn no_witness_means_no_repair_even_if_world_has_an_answer(){
     let w=run(5,s9_no_witness_control());
     assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(3)));
     assert_eq!(w.state.objects["/self/tools/transform-v1"].version,0);
+}
+
+
+#[test]
+fn fault_free_but_semantically_wrong_tool_is_not_detected_by_fault_triggered_witness(){
+    // The finite S6 grammar identifies an always-zero function using a
+    // fault-free equivalent (Xor(Len,Len)). Its output is 0 on [] even though
+    // the environment's boundary semantics require 1 for seed 17.
+    // No runtime fault means no witness, no repair, and a genuine limitation.
+    let w=run(17,s9_external_witness_repair());
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)));
+    assert!(!w.state.objects.contains_key("/public/E001/boundary-witness"));
+    assert_eq!(w.state.objects["/self/tools/transform-v1"].version,0);
+    assert_eq!(run_isolated(&adopted(&w),vec![],2000).unwrap().0,
+        Value::U32(0));
+    assert_eq!(hidden_compose_boundary(17,&[]),1);
 }
