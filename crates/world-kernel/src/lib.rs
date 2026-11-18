@@ -152,6 +152,26 @@ pub struct TransformTask {
     pub held_out_input: Vec<u8>,
 }
 
+/// S9 development-only external witness, emitted after a real faulty tool
+/// execution. Two agreeing labels are informative; absence/disagreement
+/// explicitly represents insufficient evidence. Not an E001 evaluator.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BoundaryWitness {
+    pub task_id: String,
+    pub input: Vec<u8>,
+    pub count: u32,
+    pub first: Option<u32>,
+    pub second: Option<u32>,
+    pub observed_after_step: u64,
+}
+
+/// Reference semantics available to the world fixture/researcher, never to
+/// the running VM. Unlike S6, the empty-input answer varies by world seed.
+pub fn hidden_compose_boundary(seed:u64,input:&[u8])->u32 {
+    if input.is_empty(){((seed/3)%2) as u32}
+    else{hidden_compose(seed,input)}
+}
+
 /// Researcher-side reference only; never reachable by organism VM world calls.
 /// S5 tests candidate *operator selection*, not discovery of new primitives.
 pub fn hidden_transform(seed:u64,input:&[u8])->u32 {
@@ -333,6 +353,35 @@ impl World {
 
     /// At most eight C messages processed in one tick; requests remain ordered.
     /// If reply capacity is unavailable, leave the request in C for a later tick.
+    /// Publish a bounded simulated external witness only after the registered
+    /// tool really failed on empty input. No output is present before failure.
+    /// Witness trust/quality is part of the environment, NOT organism skill.
+    fn publish_boundary_witness(&mut self,actor:u64,hash:&str,input:&[u8],
+        code:Code,observed_step:u64) {
+        const PATH:&str="/public/E001/boundary-witness";
+        if self.state.protocol_service.is_none() || actor!=ORGANISM_ID ||
+            !input.is_empty() || code!=Code::InvalidCode ||
+            self.state.objects.contains_key(PATH) {return;}
+        let Some(registry)=self.state.objects.get("/self/tools/transform-v1") else {return;};
+        if registry.owner!=actor || registry.bytes!=hash.as_bytes() {return;}
+        let seed=self.state.config.seed;
+        let correct=hidden_compose_boundary(seed,&[]);
+        let mode=(seed/3)%4;
+        let (count,first,second)=match mode {
+            0|1=>(2,Some(correct),Some(correct)),
+            2=>(0,None,None),           // missing evidence
+            _=>(2,Some(0),Some(1)),   // conflicting observers
+        };
+        let evidence=BoundaryWitness{
+            task_id:"binary-byte-compose-v1".into(),input:vec![],
+            count,first,second,observed_after_step:observed_step
+        };
+        self.state.objects.insert(PATH.into(),Object{
+            owner:0,version:0,bytes:serde_json::to_vec(&evidence)
+                .expect("witness must serialize"),
+        });
+    }
+
     fn publish_compose_task(&mut self) {
         const PATH:&str="/public/E001/compose";
         if self.state.protocol_service.is_none() || self.state.objects.contains_key(PATH){return;}
@@ -484,6 +533,7 @@ impl World {
                 if key != "/public/C/hello" && key != "/public/E001/job0" &&
                     key != "/public/E001/transform" &&
                     key != "/public/E001/compose" &&
+                    key != "/public/E001/boundary-witness" &&
                     (obj.owner != actor || !key.starts_with("/self/")) {
                     return ActionResult::fail(Code::Denied);
                 }
@@ -590,6 +640,9 @@ impl World {
             None => ActionResult::fail(no_action_code),
         };
         result.vm_gas_charged=vm_used;
+        if let Some(Action::Exec{actor,program_hash,input})=action.as_ref(){
+            self.publish_boundary_witness(*actor,program_hash,input,result.code,k);
+        }
         if let Some(actor)=organism {
             // When switching the active program, the previous continuation has
             // been invalidated by after_write; never deliver old feedback to it.
