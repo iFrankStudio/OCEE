@@ -23,6 +23,16 @@ This crate implements the deterministic **world host** for OCEE-0. The first P1 
 
 The current action driver and initial program-selection fixture remain available for testing. No tests should be described as evidence that a life form or self-directed innovation has appeared.
 
+### S13 exact EXEC receipt (development-only)
+
+The kernel returns optional `ActionResult.exec_step` on Ok/InvalidCode
+isolated EXEC attempts, and not on Gas-refused/non-EXEC actions. S13's active
+VM stores this response and matches both simulated reports'
+`observed_after_step` to the particular tool call, rejecting old
+same-program/same-input reports. The receipt is U32-scoped in this
+experimental implementation and **not** a cryptographic authenticity or
+cross-world trust mechanism. See [S13 study](../../experiments/E001/DEV-S13-EXEC-RECEIPT.md).
+
 ### S12 bound evidence metadata (development-only)
 
 Simulated witness objects now include `source_id` (declared producer role)

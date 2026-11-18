@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44257611715](https://github.com/iFrankStudio/OCEE/actions/runs/44257611715) — Rust workspace **60 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44264595858](https://github.com/iFrankStudio/OCEE/actions/runs/44264595858) — Rust workspace **66 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -144,6 +144,13 @@
 - **元数据声明并非来源签名；所有额外判断和有限修复语法仍由研究者赋予。**这是程序上下文绑定，不是可信认证或 E001 M0。
 
 - **本项尚未通过 CI**，不得将其计入已验证能力。声明式来源不构成密码学认证，同版本重放和共同造假仍未解决。G1/G2 NO-GO。
+
+### S13 — 精确 EXEC 反馈绑定与同版本重放（辅助研究）
+
+- [S13 研究记录](./experiments/E001/DEV-S13-EXEC-RECEIPT.md)：世界对实际 `EXEC` 输出增加可选的 `exec_step`（仅 Ok/InvalidCode，不包括 gas 拒绝）；个体自行保存那次工具执行反馈，然后将两条模拟报告的 `observed_after_step` 与该执行序号比较，失败则记录 `replayed_execution` 且不采用。
+- 开发 seed 5/17 的严格重放控制：**同一已注册程序、相同空输入、第一次真实 EXEC 生成合法旧报告，然后个体第二次真实 EXEC**；S13 拒绝旧报告，S12 机制消融却接受，隔离了新鲜度绑定的因果作用。
+- 正常修复与无效监督的保守拒绝依旧成立；两个模拟报告若由特权测试夹具同时改写成**本次执行编号下的一致假值**仍会诱导错误采用，是必须保留的负面结果。
+- [最终 CI #44264595858](https://github.com/iFrankStudio/OCEE/actions/runs/44264595858) **66 passed / 0 failed**。当前逻辑步回执只在 u32 有效范围发行，报告没有签名；所有挑战策略和修复候选仍由研究者预置，**不能推断独立来源认证或 E001 M0**。
 
 ## 已发现且修复的关键问题
 

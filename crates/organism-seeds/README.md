@@ -6,6 +6,7 @@ This crate provides **explicit, researcher-authored VM programs**. It is not a l
 |---|---|---|
 | S0 | Read public HELLO, send example, observe/persist response | Public paths, JSON extraction, polling |
 | S1 P0 | Probe unknown REMOTE_EVAL opcode via diagnostics | P0 XOR frame layout, opcode range, `BadBody` selector |
+| S13 auxiliary | Persist the world-issued active EXEC receipt; require both simulated reports to match the exact execution step before tool adoption | Step-based freshness comparison, empty-input probe, limited repair grammar, and trusted execution receipt are all researcher-seeded; not cryptographic authentication |
 | S12 auxiliary | Verify declared witness source roles and exact immutable subject-tool hash for both simulated channels before selection | Source role strings and expected program identity supplied by initial code; no signatures, no same-version freshness guarantee |
 | S11 auxiliary | Require a separate simulated environment audit to agree with an existing semantic witness before adopting a repair; reject single-source poisoning | Both code paths controlled by same research world/seed; no provenance authentication or genuinely independent authority |
 | S10 auxiliary | Proactively execute an adopted tool on the seeded empty probe; compare even successful outputs against a simulated semantic witness; repair or abstain | Researcher-selected input, simulated correlated evaluator, finite repair candidates and guarded adoption; **not general semantic-error discovery** |
@@ -46,3 +47,5 @@ S8 measured selection under the original A budget: [bounded repair study](../../
 [S11 corroboration evidence](../../experiments/E001/DEV-S11-CORROBORATION.md): one-source corruption is rejected; simultaneous falsification of both simulated channels causes wrongful adoption. Identical outputs do not establish genuine source independence.
 
 [S12 provenance binding study](../../experiments/E001/DEV-S12-PROVENANCE.md): rejects cross-program replay with a real stored old version and incorrect declared source roles, but cannot prove authenticity of strings or prevent same-version/coordinated forged evidence.
+
+[S13 receipt binding](../../experiments/E001/DEV-S13-EXEC-RECEIPT.md) rejects actual older same-tool/same-input reports where S12 accepts them; a privileged attacker can still co-forge both reports to the correct receipt step.
