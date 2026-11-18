@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44266619063](https://github.com/iFrankStudio/OCEE/actions/runs/44266619063) — Rust workspace **68 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44267334581](https://github.com/iFrankStudio/OCEE/actions/runs/44267334581) — Rust workspace **68 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -160,8 +160,8 @@
 
 - [S14 工程记录](./experiments/E001/DEV-S14-EPISODE-TRANSFER.md)；[已通过 CI #44266619063](https://github.com/iFrankStudio/OCEE/actions/runs/44266619063)，**68 passed / 0 failed**。
 - episode 1 的活动 S14 VM 在 S6 封闭词表内自行生成并注册可运行工具。下一 episode 是全新世界/协议实例与资源账户，研究者的 episode 驱动器通过普通受计费 `WRITE` 只搬运已注册的不可变程序和工具指针，不搬运 continuation、结果、邮件、权限或隐藏世界种子。
-- 两个 episode 语义一致但世界 seed 不同（17→35，均 `seed%18=17`）时，同一初始 VM 在新世界验证两个有标签的公开示例后直接复用旧工具；与新世界从零开始的同程序对照相比，计入新世界初始安装和导入后的 gas/tick 更低。
-- 不同语义（0→17）时，活动 VM 识别已有工具与新公开样例不相容，重新执行受限 S6 搜索，注册新工具并使用 CAS(0) 替换旧工具指针；旧程序仍保留，不等于世界宿主救援。
+- 两个 episode 语义一致但世界 seed 不同（17→35，均 `seed%18=17`）时，同一初始 VM 在新世界验证两个有标签的公开示例后直接复用旧工具；与新世界从零开始的同程序对照相比，计入新世界初始安装和导入后的 gas **1,144 vs 4,691**、tick **9 vs 30**，导入成本 29 gas；新世界末存储 **14,499 vs 17,607 字节**。
+- 不同语义（0→17）时，活动 VM 识别已有工具与新公开样例不相容，重新执行受限 S6 搜索，注册新工具并使用 CAS(0) 替换旧工具指针；成本 **4,884 vs 4,691 gas**、**34 vs 30 tick**，显式记录负迁移而非只挑选胜例。旧程序仍保留，不等于世界宿主救援。
 - **严格边界**：迁移驱动器是研究者编写的；并非 VM 自己决定 world reset；迁移内容仅限两类明确对象，两个公开样例可能无法排除过拟合，所有表达式与回退策略仍为 seeded。既没有跨 P1/P2 未见协议家族，也不是 E001 A/B/C/D 完整实验或 M0。
 
 ## 已发现且修复的关键问题

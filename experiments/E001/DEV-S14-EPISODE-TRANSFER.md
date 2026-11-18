@@ -3,7 +3,7 @@
 - **状态**：开发集 CI 已验证；**不是正式 E001、未达到 G1/G2/M0**。
 - 实现：[S14 初始 VM](../../crates/organism-seeds/src/s14_transfer.rs)；[对照测试](../../crates/organism-seeds/tests/s14_transfer.rs)。
 - [首个完整通过的 CI #44266619063](https://github.com/iFrankStudio/OCEE/actions/runs/44266619063)：Rust workspace **68 passed / 0 failed**，包括新增两项核心迁移测试。
-- S14 initial manifest 在 [构建入口](../../crates/organism-seeds/examples/manifest.rs) 用实际 `Program::content_hash()` 生成；**此开发哈希不是正式 E001 预注册哈希**。
+- S14 initial manifest 在 [构建入口](../../crates/organism-seeds/examples/manifest.rs) 用实际 `Program::content_hash()` 生成；当前 CI 生成的 S14 初始 VM 哈希：`sha256:82d9599c9eba53b062653dcbaf7b3017cbec203b773fa6ae3925709d85869ded`；**此开发哈希不是正式 E001 预注册哈希**。
 
 ## 研究问题
 
@@ -32,6 +32,19 @@ S6–S13 验证了世界内程序构造、修复或证据治理，但先前的�
 |---|---|---|---|
 | seed 17 → seed 35（两个世界不同，均 `seed%18=17`，隐藏变换语义相同） | 新世界初始程序冷启动、无旧工具 | 相同初始程序，仅预导入两项合法工具对象 | 旧工具经过真实两次新样例 EXEC 后可继续复用；继承组在**第二 episode 全生命周期** gas 与 tick 均低于冷启动 |
 | seed 0 → seed 17（规则变化） | 新世界同一初始程序冷启动 | 导入不适合新规则的旧工具 | 观察旧工具失败→重新运行有限搜索→`CAS(0)` 替换旧引用；新版本功能符合当前世界参考结果 |
+
+## CI 原始结果与计费口径
+
+来自 [CI #44267334581](https://github.com/iFrankStudio/OCEE/actions/runs/44267334581) 中 `Report S14 paired-episode inheritance costs (including import)` 步骤（原样标记：`S14 same-rule target35`、`S14 negative transfer`）：
+
+| 指标 | 同规则冷启动 | 同规则继承 | 异规则冷启动 | 异规则继承 |
+|---|---:|---:|---:|---:|
+| 第二 episode 总 gas | 4,691 | **1,144** | 4,691 | **4,884** |
+| 第二 episode 总 tick | 30 | **9** | 30 | **34** |
+| 包含在继承总成本内的导入 gas | 0 | 29 | 0 | 29 |
+| 第二 episode 末个人存储（bytes） | 17,607 | **14,499** | 未单独打印 | 未单独打印 |
+
+同规则继承降低了 **3,547 gas（约 75.6%）** 和 **21 tick（70%）**；规则改变则增加 **193 gas（约 4.1%）** 和 **4 tick**。这使迁移不再只有成功/失败的二元结论，而是呈现**有条件的收益与负迁移成本**。这些数字是单个配对开发任务结果，不构成均值、置信区间或长期成本收益证明。
 
 上述“第二 episode 全生命周期”成本包括新程序安装、导入的世界动作和后续 VM/世界 gas，但**没有把第一 episode 的学习代价算入重复利用收益**；也不等同四组长期演化经济性或总体统计推断。CI 日志单独打印两个案例的 gas、tick、导入成本与存储数值，供继续核查与绘制多 episode 盈亏界限。
 
