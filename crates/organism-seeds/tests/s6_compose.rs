@@ -38,7 +38,8 @@ fn single_seed_program_builds_two_input_compositions_with_held_out_validation() 
     let manifest=s6_manifest();
     assert_eq!(manifest.program_hash,format!("sha256:{hash}"));
     assert!(manifest.research_status.contains("NOT_E001_M0"));
-    for seed in [0u64,1,2,7,10,16] {
+    // Exhaust the whole researcher-defined 3×3×2 grammar, not a selected subset.
+    for seed in 0u64..18 {
         let world=run(seed,p.clone());
         assert_eq!(world.state.organisms[&ORGANISM_ID].active_program_hash,
             Some(hash.clone())); // active program is never installed by researcher
