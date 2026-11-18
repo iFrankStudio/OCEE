@@ -216,6 +216,28 @@ pub fn s7_no_repair_control()->Program {
     p.validate().expect("S7 ablation program must validate");
     p
 }
+/// Phenotype-gate ablation: the proposed new control-flow structure is
+/// statically legal and executes without fault, but returns the wrong value
+/// for the discovered empty-input counterexample. It must NOT be adopted.
+pub fn s7_wrong_guard_control()->Program {
+    let mut p=s7_empty_input_recovery();
+    let construct=p.functions[0].blocks.iter_mut()
+        .find(|bl|bl.id=="construct").expect("construction block");
+    let instruction=construct.instructions.iter_mut()
+        .find(|i|i.id==2064).expect("guard fixture");
+    let Op::ConstBytes{hex}=&mut instruction.op else {panic!("guard bytes missing")};
+    let raw=(0..hex.len()).step_by(2)
+        .map(|i|u8::from_str_radix(&hex[i..i+2],16).expect("hex"))
+        .collect::<Vec<_>>();
+    let mut blocks:Vec<Block>=serde_json::from_slice(&raw).expect("valid blocks");
+    let empty=blocks.iter_mut().find(|bl|bl.id=="empty").unwrap();
+    empty.instructions[0].op=Op::ConstU32(1); // incorrect empty result
+    let new_bytes=serde_json::to_vec(&blocks).unwrap();
+    *hex=new_bytes.iter().map(|v|format!("{v:02x}")).collect();
+    p.validate().expect("bad repair proposal is statically well-typed");
+    p
+}
+
 pub fn s7_manifest()->crate::SeedManifest {
     let p=s7_empty_input_recovery();
     crate::SeedManifest{
