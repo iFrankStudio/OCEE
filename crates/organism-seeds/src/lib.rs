@@ -130,3 +130,6 @@ pub mod s7_recover;
 
 /// S8: bounded feedback-selected repair among two preset guard candidates.
 pub mod s8_repair_search;
+
+/// S9: conditional repair using post-fault public boundary witnesses.
+pub mod s9_witness;
