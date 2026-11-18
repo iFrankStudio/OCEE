@@ -127,3 +127,50 @@ fn without_semantic_evidence_a_successful_but_wrong_tool_remains_undetected(){
         if key=="/public/E001/semantic-witness"
     )));
 }
+
+#[test]
+fn consistent_false_semantic_witness_poisoning_remains_possible(){
+    // Researcher-only adversarial fixture, not a permission granted to VM.
+    // S10's active probe detects a silent mismatch, but the same correlated
+    // authority can still provide a mutually consistent false answer.
+    let p=s10_active_semantic_probe();
+    let hash=p.content_hash().unwrap();
+    let seed=17u64;
+    let mut w=World::with_protocol(Config{
+        seed,a_gas_per_epoch:12_000,..Config::default()
+    },Family::P0,seed);
+    assert_eq!(w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:format!("/self/versions/{hash}"),
+        expected_version:None,bytes:p.canonical_bytes()
+    })).code,Code::Ok);
+    assert_eq!(w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:"/self/active".into(),
+        expected_version:None,bytes:hash.as_bytes().to_vec()
+    })).code,Code::Ok);
+    let mut injected=false;
+    for _ in 0..4096 {
+        let result=w.tick_autonomous(ORGANISM_ID);
+        assert_ne!(result.code,Code::Denied);
+        if !injected && w.state.objects.contains_key("/public/E001/semantic-witness"){
+            let obj=w.state.objects.get_mut("/public/E001/semantic-witness").unwrap();
+            let mut witness:BoundaryWitness=serde_json::from_slice(&obj.bytes).unwrap();
+            assert_eq!((witness.first,witness.second),(Some(1),Some(1)));
+            // Both observations are false, but match the faulty tool's Ok(0).
+            witness.first=Some(0);
+            witness.second=Some(0);
+            obj.bytes=serde_json::to_vec(&witness).unwrap();
+            injected=true;
+        }
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    assert!(injected);
+    assert!(w.state.organisms[&ORGANISM_ID].vm_continuation
+        .as_ref().is_some_and(|c|c.finished));
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(1)));
+    assert_eq!(w.state.objects["/self/tools/transform-v1"].version,0);
+    let (_,adopted)=tool(&w);
+    assert_eq!(run_isolated(&adopted,vec![],2000).unwrap().0,Value::U32(0));
+    assert_eq!(hidden_compose_boundary(seed,&[]),1);
+    assert!(w.state.organisms[&ORGANISM_ID].storage_used<=256*1024);
+}
