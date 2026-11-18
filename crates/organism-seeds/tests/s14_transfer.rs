@@ -148,3 +148,38 @@ fn three_episode_chain_amortizes_initial_learning_without_snapshot_carryover(){
     println!("S14 three-episode same-rule chain: inherited_total_gas={inherited_total} cold_total_gas={cold_total} second_import_gas={} third_import_gas={}",
         second.import_gas,third.import_gas);
 }
+
+#[test]
+fn public_examples_identify_semantic_class_not_unique_graph(){
+    // Research-side identifiability audit, NOT information supplied to VM.
+    // S6's 18 indexed expressions contain commutative aliases. Compare all
+    // nonempty byte strings of length <= 3 over a small distinguishing alphabet.
+    let public_a=[13,7,11];
+    let public_b=[18,9,4,6];
+    let mut collisions=0;
+    let mut distinguishable_collisions=0;
+    for left in 0..18u64 {
+        for right in left+1..18 {
+            if hidden_compose(left,&public_a)!=hidden_compose(right,&public_a)
+                || hidden_compose(left,&public_b)!=hidden_compose(right,&public_b) {
+                continue;
+            }
+            collisions+=1;
+            let mut differs=false;
+            for len in 1..=3u32 {
+                for code in 0..3u32.pow(len) {
+                    let mut n=code;
+                    let mut bytes=vec![0u8;len as usize];
+                    for byte in &mut bytes { *byte=(n%3) as u8; n/=3; }
+                    if hidden_compose(left,&bytes)!=hidden_compose(right,&bytes) {
+                        differs=true;
+                    }
+                }
+            }
+            if differs { distinguishable_collisions+=1; }
+        }
+    }
+    assert_eq!(collisions,9,"fixed public examples have nine colliding pairs");
+    assert_eq!(distinguishable_collisions,0,
+        "a collision with different nonempty semantics needs a separate S14 transfer counterexample");
+}
