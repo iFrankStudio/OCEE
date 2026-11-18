@@ -145,3 +145,6 @@ pub mod s12_provenance;
 
 /// S13: observe-derived freshness challenge for bounded evidence replay detection.
 pub mod s13_challenge;
+
+/// S13: bind environment evidence to the kernel-issued exact EXEC receipt.
+pub mod s13_receipt;
