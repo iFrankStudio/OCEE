@@ -42,6 +42,9 @@ fn run(world_seed:u64,protocol_seed:u64,donor:Option<&World>)->Run{
         assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
         assert!(w.state.organisms[&ORGANISM_ID].pending_feedback.is_none());
         assert!(w.state.service_events.is_empty());
+        assert_eq!(w.state.objects.keys().filter(|key|
+            key.starts_with("/self/")).count(),4,
+            "only the initial seed, active pointer and whitelisted program/hash may cross");
         assert!(!w.state.objects.contains_key("/self/results/p1-job0/value_le"));
     }
     for _ in 0..16_384 {
@@ -79,6 +82,9 @@ fn same_protocol_fresh_world_reuses_only_its_verified_executable(){
     let donor=run(42,42,None);
     assert_correct(&donor.world);
     let cold=run(128,42,None); // fresh world RNG, same P1 protocol instance
+    assert_ne!(donor.world.state.objects["/public/E001/job0"].bytes,
+        cold.world.state.objects["/public/E001/job0"].bytes,
+        "fresh episode must contain new work, not just identical stored answer");
     let reused=run(128,42,Some(&donor.world));
     assert_correct(&cold.world);
     assert_correct(&reused.world);
