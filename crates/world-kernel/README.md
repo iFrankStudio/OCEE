@@ -23,6 +23,17 @@ This crate implements the deterministic **world host** for OCEE-0. The first P1 
 
 The current action driver and initial program-selection fixture remain available for testing. No tests should be described as evidence that a life form or self-directed innovation has appeared.
 
+### S10 development-only active semantic witness
+
+After an isolated `EXEC` of the **currently registered tool** on the
+researcher-chosen empty input, the world publishes
+`/public/E001/semantic-witness` even when the tool returns `Ok`. S10
+compares the old tool's actual numeric result against that fixture and can
+detect a silent wrong answer. The report is NOT emitted on a gas-denied,
+non-executed action. It models simulated correlated supervisory feedback:
+it is neither an independent source of truth nor a general correctness oracle
+for arbitrarily chosen future inputs.
+
 ### S9 development-only post-fault external witness
 
 When a **registered** transform tool fails an isolated empty-input `EXEC`, the
