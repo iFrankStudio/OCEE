@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44311562315](https://github.com/iFrankStudio/OCEE/actions/runs/44311562315) — Rust workspace **80 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44313014356](https://github.com/iFrankStudio/OCEE/actions/runs/44313014356) — Rust workspace **81 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -192,10 +192,13 @@
 
 ### S18 — P1 活动 VM 的完整远端 FOLD32 闭环
 
-- [S18 研究记录](./experiments/E001/DEV-S18-ACTIVE-P1.md)及[CI #44311562315](https://github.com/iFrankStudio/OCEE/actions/runs/44311562315)：80 项 workspace 测试通过。
+- [S18 研究记录](./experiments/E001/DEV-S18-ACTIVE-P1.md)及[CI #44311562315](https://github.com/iFrankStudio/OCEE/actions/runs/44311562315)：81 项 workspace 测试通过。
 - 同一个研究者安装的初始活动 VM 完成 HELLO 观察、P1 样例推导 XOR 键、112 操作码上界试探、真实 C 交互、发现 REMOTE_EVAL、提交公开三元素 FOLD32 工作项、重新发现 RESULT、验证响应与持久化 u32；seed 7/42/99 结果均通过外部独立算式核验，B 仅计费 20 gas。
 - VM 新增通用 `ByteStuffEncode/Decode` 和 `PackU16Be`，操作计入 VM gas。禁用 BadBody 选择时不调用 B；破坏 RESULT 帧识别时 B 仍完成计算，但个体不存结果、不能误报成功。
 - **先验与结论限制**：P1 字节布局、转义、XOR、诊断选择、固定工作项构造、RESULT 形状和有界搜索策略均由研究者直接写入初始程序；未产生新程序版本，不能证明陌生语法发明、P2 活动 VM 学习、跨 episode 迁移或 E001 M0。G1/G2 保持 NO-GO。
+
+
+- **S18 最终全生命周期计量**：[CI #44313014356](https://github.com/iFrankStudio/OCEE/actions/runs/44313014356) 81 项 workspace 全通过；seed 7/42/99 的实际 SEND 数为 177/23/125，世界 tick 2,270/124/1,331，VM gas **29,149/3,779/20,385**，A 总 gas **31,446/4,998/22,318**，B 各 20。默认 A 12,000 gas/epoch，seed 7/99 跨越多个 epoch。与 S17 宿主参考算法没有计入其 CPU 的 A 动作账本不能直接对比；详见 [S18 成本口径](./experiments/E001/DEV-S18-ACTIVE-P1.md)。
 
 ## 已发现且修复的关键问题
 
