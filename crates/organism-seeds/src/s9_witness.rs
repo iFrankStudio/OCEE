@@ -166,9 +166,15 @@ pub fn s9_no_witness_control()->Program {
     let mut p=s9_external_witness_repair();
     let b=p.functions[0].blocks.iter_mut()
         .find(|x|x.id=="read_broken").unwrap();
-    let Terminator::Yield{next,next_args,..}=&mut b.terminator else{unreachable!()};
-    *next="missing_evidence".into();
-    next_args.clear();
+    let Terminator::Yield{next,..}=&mut b.terminator else{unreachable!()};
+    *next="skip_witness".into();
+    // A Yield always appends one feedback argument. Keep the original hash
+    // as the first argument and explicitly discard both in the skip block.
+    p.functions[0].blocks.push(block("skip_witness",vec![
+        p(3090,Type::Bytes),p(3091,Type::Bytes)
+    ],vec![],Terminator::Jump{
+        target:"missing_evidence".into(),args:vec![]
+    }));
     p.validate().expect("S9 no-witness ablation must type-check");
     p
 }
