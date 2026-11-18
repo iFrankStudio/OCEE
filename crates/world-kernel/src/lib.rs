@@ -388,9 +388,10 @@ impl World {
     /// Ok with a semantically incorrect value. No report exists beforehand.
     /// The simulated labels are correlated and are NOT trusted identities.
     fn publish_semantic_witness(&mut self,actor:u64,hash:&str,input:&[u8],
-        observed_step:u64) {
+        code:Code,observed_step:u64) {
         const PATH:&str="/public/E001/semantic-witness";
         if self.state.protocol_service.is_none() || actor!=ORGANISM_ID ||
+            !matches!(code,Code::Ok|Code::InvalidCode) ||
             !input.is_empty() || self.state.objects.contains_key(PATH){return;}
         let Some(registry)=self.state.objects.get("/self/tools/transform-v1") else{return;};
         if registry.owner!=actor || registry.bytes!=hash.as_bytes(){return;}
@@ -672,7 +673,7 @@ impl World {
         result.vm_gas_charged=vm_used;
         if let Some(Action::Exec{actor,program_hash,input})=action.as_ref(){
             self.publish_boundary_witness(*actor,program_hash,input,result.code,k);
-            self.publish_semantic_witness(*actor,program_hash,input,k);
+            self.publish_semantic_witness(*actor,program_hash,input,result.code,k);
         }
         if let Some(actor)=organism {
             // When switching the active program, the previous continuation has
@@ -772,6 +773,38 @@ mod tests {
         assert_eq!(a,restored);
         b.tick(Some(Action::Observe{actor:ORGANISM_ID}));
         assert_ne!(a.state_hash(),b.state_hash());
+    }
+
+    #[test]
+    fn semantic_witness_requires_a_real_executed_tool_not_a_gas_refusal(){
+        use ocee_organism_vm::{
+            Block,Function,Instruction,Op,Param,Program,Terminator,Type,
+        };
+        let pure=Program{format_version:1,entry_function:"main".into(),
+            functions:vec![Function{name:"main".into(),args:vec![Type::Bytes],
+                returns:Type::U32,blocks:vec![Block{id:"entry".into(),
+                    params:vec![Param{id:0,ty:Type::Bytes}],
+                    instructions:vec![Instruction{id:1,op:Op::ConstU32(0)}],
+                    terminator:Terminator::Return{value:1}
+                }]}]};
+        pure.validate().unwrap();
+        let hash=pure.content_hash().unwrap();
+        let mut world=World::with_protocol(Config::default(),Family::P0,5);
+        assert_eq!(world.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:format!("/self/versions/{hash}"),
+            expected_version:None,bytes:pure.canonical_bytes()
+        })).code,Code::Ok);
+        assert_eq!(world.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:"/self/tools/transform-v1".into(),
+            expected_version:None,bytes:hash.as_bytes().to_vec()
+        })).code,Code::Ok);
+        world.state.nodes.get_mut(&NodeId::A).unwrap().gas_available=0;
+        let refused=world.tick(Some(Action::Exec{
+            actor:ORGANISM_ID,program_hash:hash,input:vec![]
+        }));
+        assert_eq!(refused.code,Code::Gas);
+        assert!(!world.state.objects.contains_key("/public/E001/semantic-witness"),
+            "a refused action must not leak the hidden output as a witness");
     }
 
     #[test]
