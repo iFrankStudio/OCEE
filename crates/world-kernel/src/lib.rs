@@ -412,6 +412,32 @@ impl World {
         });
     }
 
+    /// S11 development-only second simulated checker. It uses its own
+    /// reference expression rather than copying the first witness object.
+    /// This is NOT proof of institutional/source independence: both checks
+    /// share the researcher's world seed and execution authority.
+    fn publish_secondary_audit(&mut self,actor:u64,hash:&str,input:&[u8],
+        code:Code,observed_step:u64){
+        const PATH:&str="/public/E001/semantic-audit";
+        if self.state.protocol_service.is_none() || actor!=ORGANISM_ID ||
+            !matches!(code,Code::Ok|Code::InvalidCode) ||
+            !input.is_empty() || self.state.objects.contains_key(PATH){return;}
+        let Some(registry)=self.state.objects.get("/self/tools/transform-v1") else{return;};
+        if registry.owner!=actor || registry.bytes!=hash.as_bytes(){return;}
+        // Independently implemented S11 reference for this fixture's empty
+        // input contract, not derived from /semantic-witness contents.
+        let independent_answer=((self.state.config.seed >> 0)/3 & 1) as u32;
+        let evidence=BoundaryWitness{
+            task_id:"binary-byte-compose-v1".into(),
+            input:input.to_vec(),count:1,first:Some(independent_answer),
+            second:None,observed_after_step:observed_step
+        };
+        self.state.objects.insert(PATH.into(),Object{
+            owner:0,version:0,bytes:serde_json::to_vec(&evidence)
+                .expect("secondary audit must serialize"),
+        });
+    }
+
     fn publish_compose_task(&mut self) {
         const PATH:&str="/public/E001/compose";
         if self.state.protocol_service.is_none() || self.state.objects.contains_key(PATH){return;}
@@ -565,6 +591,7 @@ impl World {
                     key != "/public/E001/compose" &&
                     key != "/public/E001/boundary-witness" &&
                     key != "/public/E001/semantic-witness" &&
+                    key != "/public/E001/semantic-audit" &&
                     (obj.owner != actor || !key.starts_with("/self/")) {
                     return ActionResult::fail(Code::Denied);
                 }
@@ -674,6 +701,7 @@ impl World {
         if let Some(Action::Exec{actor,program_hash,input})=action.as_ref(){
             self.publish_boundary_witness(*actor,program_hash,input,result.code,k);
             self.publish_semantic_witness(*actor,program_hash,input,result.code,k);
+            self.publish_secondary_audit(*actor,program_hash,input,result.code,k);
         }
         if let Some(actor)=organism {
             // When switching the active program, the previous continuation has
