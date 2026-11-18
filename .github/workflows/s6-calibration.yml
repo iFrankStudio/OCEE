@@ -1,0 +1,18 @@
+name: OCEE S6 Development Resource Pilot
+
+# This is an explicit opt-in, non-confirmatory development calibration.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  calibration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Report S6 original versus development A-gas budgets
+        run: cargo run --quiet -p ocee-organism-seeds --example s6_calibration
