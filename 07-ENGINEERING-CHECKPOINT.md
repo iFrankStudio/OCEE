@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44305616253](https://github.com/iFrankStudio/OCEE/actions/runs/44305616253) — Rust workspace **77 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44311562315](https://github.com/iFrankStudio/OCEE/actions/runs/44311562315) — Rust workspace **80 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -190,6 +190,13 @@
 - 旧 `crates/protocol-sim/tests/restricted_probe.rs` 虽有受限探针注释，却通过特权 `b_gas_charged>0` 判断目标是否成功，不符合信息受限口径，已由更严格的独立参考模块及其测试替代。**P0/P1 的旧证据应以 S17 为准。**
 - **严格限制**：没有第四种协议语法生成、没有新原语发明、没有活动 VM 自学、更没有跨 episode 迁移；初始三协议模板、有效 FOLD32 工作负载、响应辨别规则全部 researcher-seeded。仍不足以满足 G1/G2。
 
+### S18 — P1 活动 VM 的完整远端 FOLD32 闭环
+
+- [S18 研究记录](./experiments/E001/DEV-S18-ACTIVE-P1.md)及[CI #44311562315](https://github.com/iFrankStudio/OCEE/actions/runs/44311562315)：80 项 workspace 测试通过。
+- 同一个研究者安装的初始活动 VM 完成 HELLO 观察、P1 样例推导 XOR 键、112 操作码上界试探、真实 C 交互、发现 REMOTE_EVAL、提交公开三元素 FOLD32 工作项、重新发现 RESULT、验证响应与持久化 u32；seed 7/42/99 结果均通过外部独立算式核验，B 仅计费 20 gas。
+- VM 新增通用 `ByteStuffEncode/Decode` 和 `PackU16Be`，操作计入 VM gas。禁用 BadBody 选择时不调用 B；破坏 RESULT 帧识别时 B 仍完成计算，但个体不存结果、不能误报成功。
+- **先验与结论限制**：P1 字节布局、转义、XOR、诊断选择、固定工作项构造、RESULT 形状和有界搜索策略均由研究者直接写入初始程序；未产生新程序版本，不能证明陌生语法发明、P2 活动 VM 学习、跨 episode 迁移或 E001 M0。G1/G2 保持 NO-GO。
+
 ## 已发现且修复的关键问题
 
 - C/B 服务作业表初版使用 `BTreeMap<(actor, request_id), job>`，无法直接序列化为 JSON 对象键，导致世界快照计算失败；已改为稳定编码的字符串键，并通过世界快照重放验证。
@@ -205,6 +212,6 @@
 | G1 允许开发/校准运行 | **NO-GO** | 具有非模板结构创新的初始 S 程序+冻结 hash、独立求解器更广泛协议/任务/预算校准、工作项/资源收益校准、必要持久化和权限审查、对照组实现 |
 | G2 允许正式确认性 E001 | **NO-GO** | G1 通过后冻结 seed、统计功效/门槛及代码，预注册并确保开发/正式集隔离 |
 
-**下一步推荐**：S14 已完成有限任务的迁移闭环；以 S17 的信息受限三协议参考路径为校准下界，优先在**同一活动 S VM** 中实现不靠研究者阶段切换的协议结构探索、任务收益与更广泛信息受限独立校准，并构建正式 C/D 状态重置和对照；继续研究非模板结构创新，再推进正式工作项/统计和 A/B/C/D 四组对照。对完整 ISA、SQLite 与权限模型采用进入 G1 前的必要性审查，避免无关扩张。保持所有结论与来源证据可追溯。
+**下一步推荐**：S14 已完成有限任务的迁移闭环；以 S18 活动 P1 完整闭环为基础，下一步把非专用 P2 结构探索、可复用工具构造和跨 episode 迁移真正放进同一受限活动 S VM、任务收益与更广泛信息受限独立校准，并构建正式 C/D 状态重置和对照；继续研究非模板结构创新，再推进正式工作项/统计和 A/B/C/D 四组对照。对完整 ISA、SQLite 与权限模型采用进入 G1 前的必要性审查，避免无关扩张。保持所有结论与来源证据可追溯。
 
 以上是**工程验收记录，不是数字生命、智能或开放式演化的证据**。

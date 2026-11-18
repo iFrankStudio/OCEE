@@ -889,4 +889,37 @@ mod tests {
             Err(VmError::InvalidInput)); // incompatible return type, reject
     }
 
+
+    #[test]
+    fn byte_stuffing_handles_reserved_bytes_and_rejects_malformed_escape() {
+        let settings=vec![
+            Instruction{id:1,op:Op::ConstU32(0x7e)},
+            Instruction{id:2,op:Op::ConstU32(0x7d)},
+            Instruction{id:3,op:Op::ConstU32(0x20)}
+        ];
+        let mut encoding=settings.clone();
+        encoding.push(Instruction{id:4,op:Op::ByteStuffEncode(0,1,2,3)});
+        let mut decoding=settings;
+        decoding.push(Instruction{id:4,op:Op::ByteStuffDecode(0,1,2,3)});
+        let input=vec![0x7e,0x7d,0,0x5e,0x5d,0xff];
+        let encoded=run_isolated(&p(encoding,Terminator::Return{value:4},
+            Type::Bytes),input.clone(),100).unwrap();
+        assert_eq!(encoded.0,Value::Bytes(
+            vec![0x7d,0x5e,0x7d,0x5d,0,0x5e,0x5d,0xff]));
+        assert!(encoded.1>0,"byte stuffing must consume VM gas");
+        let decoder=p(decoding,Terminator::Return{value:4},Type::Bytes);
+        let Value::Bytes(data)=encoded.0 else {panic!("expected bytes")};
+        assert_eq!(run_isolated(&decoder,data,100).unwrap().0,
+            Value::Bytes(input));
+        assert_eq!(run_isolated(&decoder,vec![0x7d],100),
+            Err(VmError::InvalidInput));
+        assert_eq!(run_isolated(&decoder,vec![0x7d,0x7f],100),
+            Err(VmError::InvalidInput));
+        let big_endian=p(vec![
+            Instruction{id:1,op:Op::ConstU32(0x1234)},
+            Instruction{id:2,op:Op::PackU16Be(1)}
+        ],Terminator::Return{value:2},Type::Bytes);
+        assert_eq!(run_isolated(&big_endian,vec![],100).unwrap().0,
+            Value::Bytes(vec![0x12,0x34]));
+    }
 }

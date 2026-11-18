@@ -185,3 +185,7 @@ S14 的独立两项测试对比“无继承”和“仅继承合法工具”且�
 [S16](./experiments/E001/DEV-S16-DIAGNOSTIC-FREE.md) 将 FOLD32 合法请求、成功 ACK 形状、可取回 u32 的 RESULT 响应以及两个 112 上界循环作为**研究者预置的参考策略**。所有错误诊断标签被屏蔽仍然成功，是合法帧反馈足够的证据，**不是** S15 原个体在诊断突然消失后自主修复策略。
 
 [S17](./experiments/E001/DEV-S17-THREE-FAMILY.md) 将 P0/P1/P2 的有限语法假说表写在独立的参考库，输入不包含家族标识；公开 HELLO 仅用于在预置模板间选择。原 P0/P1 参考测试的候选接受判断误用了只有研究者可读的 `b_gas_charged`，已删除，S17 使用合法响应帧替代。**这些解析模板和探测策略既不是 S/O 正式 manifest 的 seeded 模块，也不是由活动 VM 新产生的工具。**要迁入 VM 必须另立实验，按活动 VM 的指令和 gas/存储/通信计费，且不得直接引入研究端的 `Family`、`Protocol`、答案或参考求解器源码。
+
+## S18 开发个体的预置能力审计（非正式 S）
+
+[S18 活动 P1 闭环](./experiments/E001/DEV-S18-ACTIVE-P1.md) 的候选、试探、发送、诊断选择、持久化及 RESULT 读取实际发生在受限 VM 内，费用按世界/VM 账本承担。但研究者**直接写入初始程序**的 P1 转义与帧布局、XOR 检查规则、112 候选策略、`BadBody` 选择、三 u32 的 FOLD32 请求结构、ACK/RESULT 形状和状态字段仍是 seeded，不是个体自主产生的解析器或工具。初始 VM 实际哈希以 [manifest](./crates/organism-seeds/examples/manifest.rs) 自动生成为准；不能把 S18 特定 P1 程序作为正式未知家族通用 S 基线。
