@@ -195,3 +195,11 @@ S14 的独立两项测试对比“无继承”和“仅继承合法工具”且�
 S19 的**可执行**编码器由活动 VM 依真实 P1 HELLO/C 诊断发现的 opcode 与校验键填入，但编码算法的完整 AST、两处目标参数位、供自检的公开形状固定样例、VM 内独立参照字节算法、`BadBody` 判据、工具 registry 名称、RESULT 搜索结构以及失效回退策略全是**研究者已赋予的先验**，不是个体自行发明。继承测试的驱动器只搬运两种已注册对象（immutable tool program 和 registry ref），并只通过受计费 `WRITE`，它不是个体自行发起的迁移。新世界验证使用一个空请求的 `BadBody` 兼容性证据，不足以证明工具在任意输入域正确，也不构成 P1→P2 能力。
 
 真实程序初始哈希由 `crates/organism-seeds/examples/manifest.rs` 输出，对应 [S19 研究记录](./experiments/E001/DEV-S19-ACTIVE-TOOL.md)；这些开发程序均非 E001 正式冻结的通用 S，也不满足“初始个体不得预置完整 P-family 适配器”的更严格目标。最终 [CI #44335557937](https://github.com/iFrankStudio/OCEE/actions/runs/44335557937) 通过，结论仅限 P1 已列明语法内的**参数特化 + 本地自检 + 同族跨 episode 复用与负迁移**。
+
+## S20 双 P1 可执行工具的能力来源和对照边界（开发）
+
+[完整 S20 记录](./experiments/E001/DEV-S20-DUAL-TOOL.md)，[最终 CI #44340938612](https://github.com/iFrankStudio/OCEE/actions/runs/44340938612)：93 项工作空间测试通过。S20 的活动 VM 可将实际新发现的 REMOTE_EVAL 和 RESULT opcode 分别写进不可变的程序版本，隔离 EXEC 自检、注册两个独立工具，并在其它新世界通过真实 C 消息分别验证复用。新的记录包含只继承一个工具的因果对照、两工具失效和仅 RESULT 失效的负迁移，以及总共三个 episode 的累计资源结算与快照中断。
+
+**此版本依然全面研究者播种**：预置 P1 定界/转义、XOR/长度布局、固定 opcode 候选与扫描策略、合法 ACK/RESULT 的形状和诊断含义、FOLD32 三 u32 工作项、两份完整的通用编码器 AST、`RewriteOp` 目标寄存器、独立期望帧生成、使用与回退策略。被探索的是各实例的*参数*，不是从全新数据自行发明的 P1/P2 通用语法。当前跨 episode 迁移驱动器属于模拟实验主持者，只导入工具版本字节和已注册哈希，不代表个体自行决定何时换世界。
+
+S20 初始程序开发哈希：`sha256:24d67e17ff371a29ef3c74189c3442699db73a7f94c311e768efed37c6a03a7e`。**它不是正式 E001 S 的冻结基线，更不能与旧 S18/S19 程序组合成“一个更全能个体”。** G1/G2 仍 NO-GO。
