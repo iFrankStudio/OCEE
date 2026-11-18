@@ -58,6 +58,8 @@ pub enum Op {
     /// with an XOR mask; all four operands are explicit VM values.
     ByteStuffEncode(u32,u32,u32,u32), ByteStuffDecode(u32,u32,u32,u32),
     PackU16Be(u32),
+    /// Generic big-endian length-tag-value codecs, not protocol role inference.
+    TlvEncode(u32,u32), TlvDecode(u32),
     /// Generic validated graph edit: program JSON, block name, register id, new Op JSON.
     /// It changes executable structure; selection/fitness remain organism decisions.
     RewriteOp(u32,u32,u32,u32),
@@ -263,6 +265,11 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
             need(defs,*a,Type::Bytes)?;
             Ok(if matches!(op,Op::Len(_)|Op::XorFold(_)){Type::U32}else{Type::Bytes})
         },
+        Op::TlvDecode(a)=>{need(defs,*a,Type::Bytes)?;Ok(Type::Bytes)},
+        Op::TlvEncode(tag,value)=>{
+            need(defs,*tag,Type::U32)?;need(defs,*value,Type::Bytes)?;
+            Ok(Type::Bytes)
+        },
         Op::PackByte(a)|Op::PackU16Le(a)|Op::PackU16Be(a)=>{
             need(defs,*a,Type::U32)?;Ok(Type::Bytes)
         },
@@ -410,6 +417,40 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             if value>u16::MAX as u32 {return Err(VmError::Range);}
             Value::Bytes((value as u16).to_be_bytes().to_vec())
         },
+        Op::TlvEncode(tag,payload)=>{
+            let t=num(regs,*tag)?;
+            let value=bytes(regs,*payload)?;
+            if t>255 || value.len()>u16::MAX as usize ||
+                value.len().saturating_add(3)>MAX_VALUE_BYTES {
+                return Err(VmError::Range);
+            }
+            let mut out=Vec::with_capacity(value.len()+3);
+            out.push(t as u8);
+            out.extend_from_slice(&(value.len() as u16).to_be_bytes());
+            out.extend_from_slice(value);
+            Value::Bytes(out)
+        },
+        Op::TlvDecode(source)=>{
+            let wire=bytes(regs,*source)?;
+            let mut at=0usize;
+            let mut fields=Vec::<serde_json::Value>::new();
+            while at<wire.len(){
+                if wire.len()-at<3 {return Err(VmError::InvalidInput);}
+                let length=u16::from_be_bytes([wire[at+1],wire[at+2]]) as usize;
+                let start=at+3;
+                let end=start.checked_add(length).ok_or(VmError::Range)?;
+                if end>wire.len() || fields.len()>=256 {
+                    return Err(VmError::InvalidInput);
+                }
+                fields.push(serde_json::json!({
+                    "tag":wire[at] as u32, "value":wire[start..end]
+                }));
+                at=end;
+            }
+            let encoded=canonical_bytes(&fields);
+            if encoded.len()>MAX_VALUE_BYTES {return Err(VmError::OutputTooLarge);}
+            Value::Bytes(encoded)
+        },
         Op::ByteStuffEncode(a,marker,escape,mask)=>{
             let m=num(regs,*marker)?;
             let e=num(regs,*escape)?;
@@ -551,6 +592,8 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::HexEncode(a)=>bytes(regs,*a)?.len().saturating_mul(2),
         Op::XorFold(a)=>bytes(regs,*a)?.len(),
         Op::JsonIndex(a,_)|Op::ReplaceByte(a,_,_)=>bytes(regs,*a)?.len(),
+        Op::TlvDecode(a)=>bytes(regs,*a)?.len().saturating_mul(8),
+        Op::TlvEncode(_,a)=>bytes(regs,*a)?.len().saturating_add(3),
         Op::ByteStuffEncode(a,_,_,_)=>bytes(regs,*a)?.len().saturating_mul(2),
         Op::ByteStuffDecode(a,_,_,_)=>bytes(regs,*a)?.len(),
         Op::PrependBlocks(a,b)=>bytes(regs,*a)?.len().saturating_mul(3)
@@ -921,5 +964,36 @@ mod tests {
         ],Terminator::Return{value:2},Type::Bytes);
         assert_eq!(run_isolated(&big_endian,vec![],100).unwrap().0,
             Value::Bytes(vec![0x12,0x34]));
+    }
+
+    #[test]
+    fn generic_tlv_codec_is_metered_and_rejects_truncated_or_oversized_fields(){
+        let encoder=p(vec![
+            Instruction{id:1,op:Op::ConstU32(0xa9)},
+            Instruction{id:2,op:Op::TlvEncode(1,0)}
+        ],Terminator::Return{value:2},Type::Bytes);
+        let input=vec![0x00,0x7e,0x99];
+        let (wire,gas)=run_isolated(&encoder,input.clone(),100).unwrap();
+        assert!(gas>1);
+        assert_eq!(wire,Value::Bytes(vec![0xa9,0,3,0,0x7e,0x99]));
+        let decoder=p(vec![Instruction{id:1,op:Op::TlvDecode(0)}],
+            Terminator::Return{value:1},Type::Bytes);
+        let Value::Bytes(wire)=wire else {panic!("bytes required")};
+        let decoded=run_isolated(&decoder,wire,100).unwrap();
+        assert!(decoded.1>1);
+        let Value::Bytes(json)=decoded.0 else {panic!("json bytes required")};
+        let fields:serde_json::Value=serde_json::from_slice(&json).unwrap();
+        assert_eq!(fields[0]["tag"],0xa9);
+        assert_eq!(fields[0]["value"],serde_json::json!([0,0x7e,0x99]));
+        for invalid in [vec![0x20],vec![0x20,0,2,0x12],
+            vec![0x20,0,0,0x21,0,1]] {
+            assert_eq!(run_isolated(&decoder,invalid,100),
+                Err(VmError::InvalidInput));
+        }
+        let bad_tag=p(vec![
+            Instruction{id:1,op:Op::ConstU32(256)},
+            Instruction{id:2,op:Op::TlvEncode(1,0)}
+        ],Terminator::Return{value:2},Type::Bytes);
+        assert_eq!(run_isolated(&bad_tag,input,100),Err(VmError::Range));
     }
 }
