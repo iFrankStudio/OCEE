@@ -167,6 +167,10 @@ pub struct BoundaryWitness {
     pub source_id: String,
     /// Bound to the exact registered immutable tool version that was probed.
     pub subject_program_hash: String,
+    /// Client-proposed per-probe challenge; only a freshness binding,
+    /// not an authenticated statement about origin or correctness.
+    #[serde(default)]
+    pub probe_challenge: Option<String>,
 }
 
 /// Reference semantics available to the world fixture/researcher, never to
@@ -379,7 +383,10 @@ impl World {
         let evidence=BoundaryWitness{
             task_id:"binary-byte-compose-v1".into(),input:vec![],
             count,first,second,observed_after_step:observed_step,
-            source_id:"sim-boundary/v1".into(),subject_program_hash:hash.into()
+            source_id:"sim-boundary/v1".into(),subject_program_hash:hash.into(),
+            probe_challenge:self.state.objects.get("/self/repair/probe-nonce")
+                .filter(|obj|obj.owner==actor)
+                .and_then(|obj|String::from_utf8(obj.bytes.clone()).ok())
         };
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&evidence)
@@ -411,6 +418,9 @@ impl World {
             task_id:"binary-byte-compose-v1".into(),input:input.to_vec(),
             count,first,second,observed_after_step:observed_step,
             source_id:"sim-primary/v1".into(),subject_program_hash:hash.into(),
+            probe_challenge:self.state.objects.get("/self/repair/probe-nonce")
+                .filter(|obj|obj.owner==actor)
+                .and_then(|obj|String::from_utf8(obj.bytes.clone()).ok()),
         };
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&evidence)
@@ -437,7 +447,10 @@ impl World {
             task_id:"binary-byte-compose-v1".into(),
             input:input.to_vec(),count:1,first:Some(independent_answer),
             second:None,observed_after_step:observed_step,
-            source_id:"sim-secondary/v1".into(),subject_program_hash:hash.into()
+            source_id:"sim-secondary/v1".into(),subject_program_hash:hash.into(),
+            probe_challenge:self.state.objects.get("/self/repair/probe-nonce")
+                .filter(|obj|obj.owner==actor)
+                .and_then(|obj|String::from_utf8(obj.bytes.clone()).ok())
         };
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&evidence)
