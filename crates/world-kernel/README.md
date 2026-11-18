@@ -23,6 +23,16 @@ This crate implements the deterministic **world host** for OCEE-0. The first P1 
 
 The current action driver and initial program-selection fixture remain available for testing. No tests should be described as evidence that a life form or self-directed innovation has appeared.
 
+### S9 development-only post-fault external witness
+
+When a **registered** transform tool fails an isolated empty-input `EXEC`, the
+world publishes read-only `/public/E001/boundary-witness`. Its two labels can
+agree on 0 or 1, be absent, or conflict depending on the development seed.
+No witness exists before the failure. This deterministic supervised fixture
+models environmental feedback, not independent trustworthy observers; it
+provides no general semantic-error detector. A fault-free tool producing a
+wrong output may never trigger the witness (S9 seed 17).
+
 ### S5/S6 development-only learning fixtures
 
 Read-only `/public/E001/transform` and `/public/E001/compose` objects presents two labeled byte-transform examples and one input without an answer. A hidden rule selected from three existing VM primitives is used **only** for researcher-side evaluation. S5 tests selection among single-op programs; S6 additionally tests a bounded grammar of two unary nodes and one binary node. Neither is part of E001's official protocol families or scoring design.
