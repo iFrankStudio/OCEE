@@ -38,11 +38,11 @@ pub fn s12_program_bound_provenance()->Program{
     // original report JSON (previously discarded after scope validation).
     *true_args=vec![3050,3051,3053,3052];
 
-    let secondary=f.blocks.iter_mut().find(|x|x.id=="audit_scope").unwrap();
+    let secondary=f.blocks.iter_mut().find(|x|x.id=="audit_status").unwrap();
     let Terminator::Branch{if_true,true_args,..}=&mut secondary.terminator
-        else{panic!("audit scope expected")};
+        else{panic!("audit status expected")};
     *if_true="secondary_identity".into();
-    *true_args=vec![4500,4501,4502,4503];
+    *true_args=vec![4100,4101,4102,4103];
     f.blocks.extend([
         block("primary_identity",vec![
             p(5000,b),p(5001,b),p(5002,u),p(5003,b),
@@ -85,8 +85,8 @@ pub fn s12_program_bound_provenance()->Program{
             i(5305,Op::JsonFieldString(5303,5304)),
             i(5306,Op::EqBytes(5305,5300)),
         ],Terminator::Branch{condition:5306,
-            if_true:"semantic_verify_original".into(),
-                true_args:vec![5300,5301,5302],
+            if_true:"audit_payload".into(),
+                true_args:vec![5300,5301,5302,5303],
             if_false:"provenance_stale".into(),false_args:vec![],
         }),
         abstain("provenance_source",b"source_mismatch"),
