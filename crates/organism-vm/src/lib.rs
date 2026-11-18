@@ -748,6 +748,52 @@ mod tests {
     }
 
     #[test]
+    fn generic_block_insertion_guards_faults_but_rejects_unbounded_cycles(){
+        fn literal(data:&[u8])->Op {
+            Op::ConstBytes{hex:data.iter().map(|v|format!("{v:02x}")).collect()}
+        }
+        let base=p(vec![
+            Instruction{id:1,op:Op::ConstU32(0)},
+            Instruction{id:2,op:Op::ByteAt(0,1)},
+        ],Terminator::Return{value:2},Type::U32);
+        assert_eq!(run_isolated(&base,vec![],500),Err(VmError::Range));
+        let guard=Block{
+            id:"guard".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+            instructions:vec![
+                Instruction{id:10,op:Op::Len(0)},
+                Instruction{id:11,op:Op::ConstU32(0)},
+                Instruction{id:12,op:Op::EqU32(10,11)},
+            ],
+            terminator:Terminator::Branch{condition:12,
+                if_true:"empty".into(),true_args:vec![],
+                if_false:"entry".into(),false_args:vec![0]},
+        };
+        let empty=Block{id:"empty".into(),params:vec![],
+            instructions:vec![Instruction{id:20,op:Op::ConstU32(0)}],
+            terminator:Terminator::Return{value:20}};
+        let editor=|blocks:Vec<Block>|p(vec![
+            Instruction{id:1,op:literal(&base.canonical_bytes())},
+            Instruction{id:2,op:literal(&serde_json::to_vec(&blocks).unwrap())},
+            Instruction{id:3,op:Op::PrependBlocks(1,2)},
+        ],Terminator::Return{value:3},Type::Bytes);
+
+        let (out,_gas)=run_isolated(&editor(vec![guard,empty]),vec![],2000).unwrap();
+        let Value::Bytes(raw)=out else {panic!("expected canonical program")};
+        let patched:Program=serde_json::from_slice(&raw).unwrap();
+        assert_eq!(patched.canonical_bytes(),raw);
+        assert_ne!(patched.content_hash().unwrap(),base.content_hash().unwrap());
+        assert_eq!(run_isolated(&patched,vec![],500).unwrap().0,Value::U32(0));
+        assert_eq!(run_isolated(&patched,vec![5],500).unwrap().0,Value::U32(5));
+
+        let bad=Block{id:"guard".into(),
+            params:vec![Param{id:0,ty:Type::Bytes}],
+            instructions:vec![],
+            terminator:Terminator::Jump{target:"guard".into(),args:vec![0]}};
+        assert_eq!(run_isolated(&editor(vec![bad]),vec![],2000),
+            Err(VmError::InvalidInput));
+    }
+
+    #[test]
     fn generic_graph_rewrite_changes_opcode_structure_and_revalidates_types() {
         fn hex(data:&[u8])->String {
             data.iter().map(|b|format!("{b:02x}")).collect()
