@@ -142,3 +142,6 @@ pub mod s11_audit;
 
 /// S12: source labels and content-hash binding for simulated evidence.
 pub mod s12_provenance;
+
+/// S13: observe-derived freshness challenge for bounded evidence replay detection.
+pub mod s13_challenge;

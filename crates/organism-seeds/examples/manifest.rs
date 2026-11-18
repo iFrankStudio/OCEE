@@ -13,6 +13,7 @@ fn main() {
         serde_json::to_value(ocee_organism_seeds::s10_semantic::s10_manifest()).unwrap(),
         serde_json::to_value(ocee_organism_seeds::s11_audit::s11_manifest()).unwrap(),
         serde_json::to_value(ocee_organism_seeds::s12_provenance::s12_manifest()).unwrap(),
+        serde_json::to_value(ocee_organism_seeds::s13_challenge::s13_manifest()).unwrap(),
     ];
     println!("{}",serde_json::to_string_pretty(&manifests).unwrap());
 }
