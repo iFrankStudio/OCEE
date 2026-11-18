@@ -40,5 +40,7 @@ jobs:
         run: |
           cargo test -p ocee-calibration-solver --test p2_restricted_calibration -- --nocapture
           cargo test -p ocee-calibration-solver --test p2_restricted_world_oracle -- --nocapture
+      - name: Report S17 three-family restricted reference costs
+        run: cargo test -p ocee-calibration-solver --test three_family_reference -- --nocapture
       - name: Print auditable development organism manifests
         run: cargo run --quiet -p ocee-organism-seeds --example manifest
