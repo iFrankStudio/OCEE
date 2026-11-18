@@ -154,3 +154,6 @@ pub mod s14_transfer;
 
 /// S18: metered active P1 VM discovery and real C->B submission.
 pub mod s18_p1_vm;
+
+/// S19: an active P1 organism specializes and validates an executable tool.
+pub mod s19_p1_tool;
