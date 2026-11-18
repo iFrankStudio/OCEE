@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-18
 - **实现**：[restricted_families.rs](../../crates/calibration-solver/src/restricted_families.rs)；[成对实验](../../crates/calibration-solver/tests/three_family_reference.rs)
-- **已验证 CI**：[GitHub Actions #44304851025](https://github.com/iFrankStudio/OCEE/actions/runs/44304851025)，Rust workspace **77 passed / 0 failed**；三协议两项测试均通过。
+- **已验证 CI**：[GitHub Actions #44305616253](https://github.com/iFrankStudio/OCEE/actions/runs/44305616253)，Rust workspace **77 passed / 0 failed**；三协议两项测试均通过。
 - **研究性质**：独立校准程序，非 S/O 活动 VM，非 E001 正式集。
 
 ## 被验证的问题
@@ -32,3 +32,18 @@
 4. 下一重要研究闸门应让**同一受限活动 S VM** 经公开可见反馈构造/组合新的协议工具，核验代码来源、实际 VM gas、负迁移与 A/B/C/D 对照；不得将参考求解器当作零成本的内置 helper。
 
 **研究状态：G0 GO；G1/G2 NO-GO；全部是开发集可学性下界证据。**
+
+## 实际世界传输与资源计量（成功 CI #44305616253）
+
+本次 Actions 明确运行 `cargo test -p ocee-calibration-solver --test three_family_reference -- --nocapture`，以下均为**真实模拟世界动作账本**而非估算。协议级 18 个 seed/family 开发例全部成功，查询次数在 21～193 次之间（该组开发配置）；世界级 6 个案例如下。
+
+| 识别出的语法假说 | 开发 seed | 查询次数 | 世界 tick | A gas | B gas | A→C 发送字节 |
+|---|---:|---:|---:|---:|---:|---:|
+| LengthXor（P0） | 7 | 151 | 1,058 | 607 | 20 | 2,476 |
+| LengthXor（P0） | 42 | 170 | 1,191 | 683 | 20 | 3,254 |
+| EscapedDelimiter（P1） | 7 | 176 | 1,233 | 707 | 20 | 3,476 |
+| EscapedDelimiter（P1） | 42 | 21 | 148 | 87 | 20 | 247 |
+| NestedTlv（P2） | 7 | 95 | 666 | 384 | 20 | 3,598 |
+| NestedTlv（P2） | 42 | 38 | 267 | 156 | 20 | 1,232 |
+
+**解读**：B gas 稳定为 20 仅因每例固定提交一次三 u32 FOLD32；A gas 包含该世界的读、发、收动作计费，**不包括外部 Rust 参考求解器的算法执行成本**。查询次数由实例隐藏 opcode 的位置显著影响，不能泛化为固定 21～193 次，也不能等价为任意协议的可学性。
