@@ -194,3 +194,80 @@ fn only_stale_result_tool_falls_back_without_relearning_remote(){
     println!("S20 result-only stale: both_valid={} only_result_stale={} import={}",
         good_dual.total_gas,mixed.total_gas,mixed.import_gas);
 }
+
+#[test]
+fn three_fresh_episodes_accumulate_both_tools_without_state_clone(){
+    let first=run(42,42,None,None);
+    let second_cold=run(128,42,None,None);
+    let third_cold=run(129,42,None,None);
+    let second=run(128,42,Some(&first.world),Some(&first.world));
+    let third=run(129,42,Some(&second.world),Some(&second.world));
+    for episode in [&first,&second,&third,&second_cold,&third_cold]{
+        correct(&episode.world);
+    }
+    let first_work=&first.world.state.objects["/public/E001/job0"].bytes;
+    assert_ne!(*first_work,second.world.state.objects["/public/E001/job0"].bytes);
+    assert_ne!(second.world.state.objects["/public/E001/job0"].bytes,
+        third.world.state.objects["/public/E001/job0"].bytes);
+    for name in ["p1-eval-frame","p1-result-frame"]{
+        let hash=tool(&first.world,name).0;
+        assert_eq!(tool(&second.world,name).0,hash);
+        assert_eq!(tool(&third.world,name).0,hash);
+    }
+    assert!(second.import_gas>0 && third.import_gas>0);
+    let cumulative_inherited=first.total_gas+second.total_gas+third.total_gas;
+    let cumulative_cold=first.total_gas+second_cold.total_gas+third_cold.total_gas;
+    assert!(cumulative_inherited<cumulative_cold);
+    assert!(third.world.state.step<third_cold.world.state.step);
+    println!("S20 3-world P1 cumulative: inherited={} all_cold={} second_import={} third_import={} second_dual={} third_dual={} second_cold={} third_cold={}",
+        cumulative_inherited,cumulative_cold,
+        second.import_gas,third.import_gas,
+        second.total_gas,third.total_gas,
+        second_cold.total_gas,third_cold.total_gas);
+}
+
+#[test]
+fn snapshot_after_result_program_write_before_result_registry_is_exact(){
+    let initial_program=s20_p1_dual_tool_transfer();
+    let hash=initial_program.content_hash().unwrap();
+    let mut baseline=World::with_protocol(Config{
+        seed:42,a_gas_per_epoch:12_000,..Config::default()
+    },Family::P1,42);
+    write(&mut baseline,format!("/self/versions/{hash}"),
+        initial_program.canonical_bytes());
+    write(&mut baseline,"/self/active".into(),hash.into_bytes());
+    let mut found_milestone=false;
+    for _ in 0..2048{
+        let reply=baseline.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(reply.code,Code::InvalidCode|Code::Denied));
+        let program_count=baseline.state.objects.keys()
+            .filter(|k|k.starts_with("/self/versions/")).count();
+        if program_count==3 &&
+            !baseline.state.objects.contains_key("/self/tools/p1-result-frame"){
+            found_milestone=true;
+            break;
+        }
+    }
+    assert!(found_milestone,
+        "capture exact unregistered second executable rather than arbitrary tick");
+    assert!(baseline.state.objects.contains_key("/self/tools/p1-eval-frame"));
+    let snapshot=baseline.snapshot_json();
+    let mut restarted=World::from_snapshot(&snapshot).unwrap();
+    assert_eq!(baseline.state_hash(),restarted.state_hash());
+    for world in [&mut baseline,&mut restarted]{
+        for _ in 0..2048{
+            let reply=world.tick_autonomous(ORGANISM_ID);
+            assert!(!matches!(reply.code,Code::InvalidCode|Code::Denied));
+            if world.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
+                .is_some_and(|c|c.finished){break;}
+        }
+        assert!(world.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
+            .is_some_and(|c|c.finished));
+        correct(world);
+    }
+    assert_eq!(baseline.state_hash(),restarted.state_hash());
+    assert_eq!(tool(&baseline,"p1-result-frame").0,
+        tool(&restarted,"p1-result-frame").0);
+    println!("S20 exact result-registration restart step={} terminal_hash={} B_gas=20",
+        baseline.state.step,baseline.state_hash());
+}
