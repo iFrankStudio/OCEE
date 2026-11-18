@@ -186,6 +186,17 @@ impl P2ObservedGrammar {
             _=>Err("unexpected result response body"),
         }
     }
+    /// A successful FOLD32 submission returns a legal P2 response carrying
+    /// only status=0. Recognition uses the observable frame, not B billing.
+    pub fn accepted_eval(&self,wire:&[u8],opcode:u8,id:u32)->bool {
+        let Ok((marker,parsed))=fields(wire) else {return false;};
+        marker==self.marker && check_value(&parsed,self.check_tag)
+            && value(&parsed,self.kind_tag)==Ok(&[1][..])
+            && value(&parsed,self.opcode_tag)==Ok(&[opcode][..])
+            && value(&parsed,self.id_tag)==Ok(&id.to_le_bytes()[..])
+            && value(&parsed,self.body_tag)==Ok(&[0][..])
+    }
+
 }
 
 #[derive(Clone,Debug,Eq,PartialEq)]
@@ -246,4 +257,62 @@ where F:FnMut(&[u8])->OracleFeedback {
         }else{return Err("result request not recognized");}
     }
     Err("result not ready in bounded polls")
+}
+
+
+/// S16: the diagnostic-**free** counterexample to claiming that error labels
+/// are required to discover P2 operations. The oracle may erase or coarsen
+/// *all error diagnostics* but must deliver actual valid response frames.
+/// The algorithm gets a public HELLO-derived grammar and a known workload.
+/// It does not read the private opcode mapping, gas counters or result truth.
+///
+/// Compared with S15, this spends larger, structurally valid FOLD32 probes
+/// rather than scanning empty, intentionally malformed requests. A valid
+/// REMOTE_EVAL produces a status=0 ACK frame; then a RESULT opcode reveals
+/// a status=0 + u32 frame. All other errors are completely ignored.
+///
+/// Each opcode range is scanned at most once; RESULT pending is polled at
+/// most three times. Upper bound is 112 + 112 + 2 = 226 oracle queries.
+pub fn solve_p2_frame_only<F>(grammar:&P2ObservedGrammar,request_id:u32,
+    values:[u32;3],mut oracle:F)->Result<P2ProbeReport,&'static str>
+where F:FnMut(&[u8])->OracleFeedback {
+    let mut calls=0usize;
+    let mut body=3u16.to_le_bytes().to_vec();
+    for value in values {body.extend(value.to_le_bytes());}
+
+    let mut eval=None;
+    for opcode in 0x10..=0x7f {
+        let probe=grammar.request(opcode,request_id,&body)?;
+        let feedback=oracle(&probe);
+        calls+=1;
+        if let OracleFeedback::Frame(frame)=feedback {
+            if grammar.accepted_eval(&frame,opcode,request_id) {
+                eval=Some(opcode);
+                break;
+            }
+        }
+    }
+    let eval=eval.ok_or("no accepted remote evaluation frame")?;
+    for opcode in 0x10..=0x7f {
+        if opcode==eval {continue;}
+        let probe=grammar.request(opcode,request_id,&[])?;
+        for attempt in 0..3 {
+            let feedback=oracle(&probe);
+            calls+=1;
+            match feedback {
+                OracleFeedback::Frame(frame)=>match grammar.result_value(
+                    &frame,opcode,request_id
+                ) {
+                    Ok(Some(result))=>return Ok(P2ProbeReport {
+                        query_count:calls,remote_opcode:eval,
+                        result_opcode:opcode,result,
+                    }),
+                    Ok(None) if attempt<2=>continue,
+                    _=>break,
+                },
+                OracleFeedback::Diagnostic(_)=>break,
+            }
+        }
+    }
+    Err("no completed result frame in bounded probe")
 }

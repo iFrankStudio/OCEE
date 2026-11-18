@@ -2,7 +2,7 @@
 //! Solver receives public HELLO pair and a metered-count oracle ONLY.
 use ocee_protocol_sim::{Family,Service,ServiceOutput,ParseError};
 use ocee_calibration_solver::restricted_p2::{
-    P2ObservedGrammar,solve_p2,OracleFeedback,Diagnostic
+    P2ObservedGrammar,solve_p2,solve_p2_frame_only,OracleFeedback,Diagnostic
 };
 fn visible(output:ServiceOutput)->OracleFeedback {
     match output {
@@ -77,4 +77,36 @@ fn diagnostic_blinding_prevents_opcode_discovery_without_exposing_hidden_answers
     });
     assert_eq!(outcome,Err("no evaluable operation"));
     assert_eq!(queries,112);
+}
+
+
+#[test]
+fn s16_preserved_frames_allow_p2_learning_with_every_error_diagnostic_blinded(){
+    for seed in [0u64,1,2,3,4,5,7,17,42,99,2026,65535] {
+        let mut service=Service::new(Family::P2,seed);
+        let (request,response)=service.public_hello_sample(0);
+        let grammar=P2ObservedGrammar::infer(&request,&response).unwrap();
+        let values=[0x7e7d_1234,seed as u32,0xdead_beef];
+        let mut step=1u64;
+        let mut b_gas=0u64;
+        let mut hidden_diagnostics=0usize;
+        let outcome=solve_p2_frame_only(&grammar,17,values,|wire|{
+            let reply=service.handle(1,step,wire,50_000);
+            step+=1;
+            b_gas+=reply.b_gas_charged;
+            match reply.output {
+                ServiceOutput::Frame(frame)=>OracleFeedback::Frame(frame),
+                ServiceOutput::Diagnostic(_)=>{
+                    hidden_diagnostics+=1;
+                    OracleFeedback::Diagnostic(Diagnostic::Other)
+                },
+            }
+        }).expect("valid frames alone identify operations after diagnostic masking");
+        assert!(hidden_diagnostics>0,"real invalid probes occurred");
+        assert_eq!(b_gas,20,"exactly one actual remote FOLD32 billed");
+        assert_eq!(outcome.result,independently_fold(values));
+        assert!(outcome.query_count<=226);
+        println!("S16 P2 no-diagnostic seed={seed} queries={} hidden_diagnostics={} B_gas={b_gas}",
+            outcome.query_count,hidden_diagnostics);
+    }
 }
