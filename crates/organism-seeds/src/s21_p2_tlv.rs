@@ -257,3 +257,207 @@ pub fn s21_manifest()->crate::SeedManifest{
         research_status:"DEVELOPMENT_VM_P2_PAIRED_HELLO_ROLE_INFERENCE_NOT_REMOTE_WORK_NOT_E001",
     }
 }
+
+
+/// S21B: after discovering P2 roles, the SAME active VM composes a non-replay
+/// HELLO request with request_id=73, using ONLY tags/order and HELLO opcode
+/// observed in public data; sends it to real C and saves a checked reply.
+/// Unlike E001, this uses a researcher-known P2 TLV envelope hypothesis and
+/// already-known HELLO semantics. It does not search REMOTE_EVAL/RESULT yet.
+pub fn s21_p2_infer_and_validate_new_hello()->Program {
+    let mut program=build(false);
+    let f=&mut program.functions[0];
+    let b=Type::Bytes;
+    let u=Type::U32;
+    let save=f.blocks.iter_mut().find(|node|node.id=="save_roles").unwrap();
+    save.terminator=y(WorldCall::Write,vec![1232,1231,1233],
+        "probe_read",vec![1231]);
+    f.blocks.extend([
+        blk("probe_read",vec![param(2000,b),param(2001,b)],vec![
+            instr(2002,lit(b"/public/C/hello")),
+        ],y(WorldCall::Read,vec![2002],"probe_sample",vec![2000])),
+        blk("probe_sample",vec![param(2010,b),param(2011,b)],vec![
+            instr(2012,lit(b"payload")),
+            instr(2013,Op::JsonFieldBytes(2011,2012)),
+            instr(2014,lit(b"request")),
+            instr(2015,Op::JsonFieldBytes(2013,2014)),
+            instr(2016,Op::Len(2015)),
+            instr(2017,Op::ConstU32(6)),
+            instr(2018,Op::Sub(2016,2017)),
+            instr(2019,Op::Slice(2015,2017,2018)), // known P2 outer TLV structure
+            instr(2020,Op::ConstU32(0)),
+            instr(2021,Op::ConstU32(1)),
+            instr(2022,Op::ConstU32(2)),
+            instr(2023,Op::ConstU32(3)),
+            instr(2024,Op::ConstU32(4)),
+            instr(2025,Op::ConstU32(5)),
+            instr(2026,Op::ConstU32(6)),
+            instr(2027,Op::ByteAt(2010,2020)), // observed marker
+            instr(2028,Op::ByteAt(2010,2021)), // inferred kind tag
+            instr(2029,Op::ByteAt(2010,2022)), // inferred opcode tag
+            instr(2030,Op::ByteAt(2010,2023)), // inferred id tag
+            instr(2031,Op::ByteAt(2010,2024)), // inferred body tag
+            instr(2032,Op::ByteAt(2010,2025)), // inferred checksum tag
+            instr(2033,Op::Slice(2010,2026,2025)), // 5B original physical order
+            instr(2034,Op::TlvLookup(2019,2029)), // HELLO opcode value from public sample
+            instr(2035,lit(&[0])),
+            instr(2036,Op::TlvEncode(2028,2035)),
+            instr(2037,Op::TlvEncode(2029,2034)),
+            instr(2038,lit(&[73,0,0,0])),
+            instr(2039,Op::TlvEncode(2030,2038)),
+            instr(2040,lit(b"")),
+            instr(2041,Op::TlvEncode(2031,2040)),
+            instr(2042,Op::Concat(2036,2037)),
+            instr(2043,Op::Concat(2042,2039)),
+            instr(2044,Op::Concat(2043,2041)),
+            instr(2045,Op::XorFold(2044)),
+            instr(2046,Op::PackByte(2045)),
+            instr(2047,Op::TlvEncode(2032,2046)),
+            instr(2048,Op::Concat(2044,2047)),
+            instr(2049,Op::TlvReorder(2048,2033)), // physical order inferred by VM
+            instr(2050,Op::ConstU32(0x10)), // researcher-seeded outer TLV hypothesis
+            instr(2051,Op::TlvEncode(2050,2049)),
+            instr(2052,Op::Len(2051)),
+            instr(2053,Op::PackU16Be(2052)),
+            instr(2054,Op::PackByte(2027)),
+            instr(2055,Op::Concat(2054,2053)),
+            instr(2056,Op::Concat(2055,2051)),
+        ],y(WorldCall::Send,vec![2056],"probe_wait1",vec![2010,2034])),
+        blk("probe_wait1",vec![param(2060,b),param(2061,b),param(2062,b)],
+            vec![],y(WorldCall::Observe,vec![],"probe_wait2",vec![2060,2061])),
+        blk("probe_wait2",vec![param(2070,b),param(2071,b),param(2072,b)],
+            vec![],y(WorldCall::Observe,vec![],"probe_wait3",vec![2070,2071])),
+        blk("probe_wait3",vec![param(2080,b),param(2081,b),param(2082,b)],
+            vec![],y(WorldCall::Observe,vec![],"probe_recv",vec![2080,2081])),
+        blk("probe_recv",vec![param(2090,b),param(2091,b),param(2092,b)],
+            vec![],y(WorldCall::Receive,vec![],"probe_reply",vec![2090,2091])),
+        blk("probe_reply",vec![param(2100,b),param(2101,b),param(2102,b)],vec![
+            instr(2103,lit(b"payload")),
+            instr(2104,Op::JsonFieldBytes(2102,2103)),
+            instr(2105,Op::ConstU32(0)),
+            instr(2106,Op::JsonIndex(2104,2105)),
+            instr(2107,lit(b"bytes")),
+            instr(2108,Op::JsonFieldBytes(2106,2107)),
+            instr(2109,Op::ByteAt(2108,2105)),
+            instr(2110,Op::ByteAt(2100,2105)),
+            instr(2111,Op::EqU32(2109,2110)),
+        ],br(2111,"probe_outer",vec![2100,2101,2108],
+            "failed",vec![])),
+        blk("probe_outer",vec![
+            param(2120,b),param(2121,b),param(2122,b)
+        ],vec![
+            instr(2123,Op::ConstU32(3)),
+            instr(2124,Op::Len(2122)),
+            instr(2125,Op::Sub(2124,2123)),
+            instr(2126,Op::Slice(2122,2123,2125)),
+            instr(2127,Op::PackU16Be(2125)),
+            instr(2128,Op::ConstU32(1)),
+            instr(2129,Op::ConstU32(2)),
+            instr(2130,Op::Slice(2122,2128,2129)),
+            instr(2131,Op::EqBytes(2127,2130)),
+        ],br(2131,"probe_tlv_outer",vec![2120,2121,2122,2126],
+            "failed",vec![])),
+        blk("probe_tlv_outer",vec![
+            param(2140,b),param(2141,b),param(2142,b),param(2143,b)
+        ],vec![
+            instr(2144,Op::TlvDecode(2143)),
+            instr(2145,Op::ConstU32(0)),
+            instr(2146,Op::JsonIndex(2144,2145)),
+            instr(2147,lit(b"tag")),
+            instr(2148,Op::JsonFieldU32(2146,2147)),
+            instr(2149,Op::ConstU32(0x10)),
+            instr(2150,Op::EqU32(2148,2149)),
+        ],br(2150,"probe_kind",vec![2140,2141,2142,2146],
+            "failed",vec![])),
+        blk("probe_kind",vec![
+            param(2160,b),param(2161,b),param(2162,b),param(2163,b)
+        ],vec![
+            instr(2164,lit(b"value")),
+            instr(2165,Op::JsonFieldBytes(2163,2164)),
+            instr(2166,Op::ConstU32(1)),
+            instr(2167,Op::ByteAt(2160,2166)),
+            instr(2168,Op::TlvLookup(2165,2167)),
+            instr(2169,lit(&[1])),
+            instr(2170,Op::EqBytes(2168,2169)),
+        ],br(2170,"probe_opcode",vec![2160,2161,2162,2165],
+            "failed",vec![])),
+        blk("probe_opcode",vec![
+            param(2180,b),param(2181,b),param(2182,b),param(2183,b)
+        ],vec![
+            instr(2184,Op::ConstU32(2)),
+            instr(2185,Op::ByteAt(2180,2184)),
+            instr(2186,Op::TlvLookup(2183,2185)),
+            instr(2187,Op::EqBytes(2186,2181)),
+        ],br(2187,"probe_id",vec![2180,2181,2182,2183],
+            "failed",vec![])),
+        blk("probe_id",vec![
+            param(2190,b),param(2191,b),param(2192,b),param(2193,b)
+        ],vec![
+            instr(2194,Op::ConstU32(3)),
+            instr(2195,Op::ByteAt(2190,2194)),
+            instr(2196,Op::TlvLookup(2193,2195)),
+            instr(2197,lit(&[73,0,0,0])),
+            instr(2198,Op::EqBytes(2196,2197)),
+        ],br(2198,"probe_body",vec![2190,2191,2192,2193],
+            "failed",vec![])),
+        blk("probe_body",vec![
+            param(2200,b),param(2201,b),param(2202,b),param(2203,b)
+        ],vec![
+            instr(2204,Op::ConstU32(4)),
+            instr(2205,Op::ByteAt(2200,2204)),
+            instr(2206,Op::TlvLookup(2203,2205)),
+            instr(2207,lit(&[0,1])), // seeded HELLO response status/version
+            instr(2208,Op::EqBytes(2206,2207)),
+        ],br(2208,"probe_checksum",vec![2200,2202,2203],
+            "failed",vec![])),
+        blk("probe_checksum",vec![
+            param(2210,b),param(2211,b),param(2212,b)
+        ],vec![
+            instr(2213,Op::ConstU32(5)),
+            instr(2214,Op::ByteAt(2210,2213)),
+            instr(2215,Op::XorFold(2212)),
+            instr(2216,Op::ConstU32(1)),
+            instr(2217,Op::Xor(2214,2216)),
+            instr(2218,Op::EqU32(2215,2217)),
+        ],br(2218,"probe_save",vec![2211],"failed",vec![])),
+        blk("probe_save",vec![param(2220,b)],vec![
+            instr(2221,lit(b"/self/observations/p2-hello-nonreplay")),
+            instr(2222,Op::ConstU32(u32::MAX)),
+        ],y(WorldCall::Write,vec![2221,2220,2222],"success",vec![])),
+    ]);
+    program.validate().expect("S21B observed-role new HELLO VM must typecheck");
+    program
+}
+pub fn s21_p2_new_hello_no_live_check_ablation()->Program {
+    let mut p=s21_p2_infer_and_validate_new_hello();
+    let verify=p.functions[0].blocks.iter_mut()
+        .find(|b|b.id=="probe_body").unwrap();
+    verify.instructions.iter_mut().find(|i|i.id==2207).unwrap().op=
+        lit(&[0,7]); // wrong observed response; cannot accept a real C reply
+    p.validate().expect("S21B wrong-reply control must remain well-typed");
+    p
+}
+pub fn s21b_manifest()->crate::SeedManifest {
+    let program=s21_p2_infer_and_validate_new_hello();
+    crate::SeedManifest{
+        manifest_version:1,
+        kind:"S21B-active-P2-inferred-roles-valid-new-HELLO",
+        program_hash:format!("sha256:{}",program.content_hash().unwrap()),
+        built_in_modules:vec![
+            "S21A-metered-public-P2-role-and-physical-order-inference",
+            "generic-TlvLookup-TlvEncode-TlvReorder",
+            "construct-nonreplayed-request-id73-HELLO-with-observed-opcode",
+            "live-A-to-C-SEND-OBSERVE-RECEIVE",
+            "verify-response-marker-envelope-kind-op-id-body-and-xor",
+            "persist-only-verified-new-C-response",
+        ],
+        initial_tool_hashes:vec![],
+        known_protocol_families:vec!["researcher-hypothesis-five-TLV-fields".into()],
+        prohibited_knowledge:vec![
+            "private-P2-role-tags","private-P2-tag-order","protocol-seed",
+            "private-REMOTE_EVAL-opcode","private-RESULT-opcode",
+            "B-gas-ledger","held-out-FOLD32-answer",
+        ],
+        research_status:"DEVELOPMENT_P2_NEW_HELLO_VM_NO_REMOTE_EVAL_NO_NEW_GRAMMAR_NOT_E001",
+    }
+}
