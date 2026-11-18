@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44313014356](https://github.com/iFrankStudio/OCEE/actions/runs/44313014356) — Rust workspace **81 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44335557937](https://github.com/iFrankStudio/OCEE/actions/runs/44335557937) — Rust workspace **87 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -192,7 +192,7 @@
 
 ### S18 — P1 活动 VM 的完整远端 FOLD32 闭环
 
-- [S18 研究记录](./experiments/E001/DEV-S18-ACTIVE-P1.md)及[CI #44311562315](https://github.com/iFrankStudio/OCEE/actions/runs/44311562315)：81 项 workspace 测试通过。
+- [S18 研究记录](./experiments/E001/DEV-S18-ACTIVE-P1.md)及[CI #44313014356](https://github.com/iFrankStudio/OCEE/actions/runs/44313014356)：81 项 workspace 测试通过。
 - 同一个研究者安装的初始活动 VM 完成 HELLO 观察、P1 样例推导 XOR 键、112 操作码上界试探、真实 C 交互、发现 REMOTE_EVAL、提交公开三元素 FOLD32 工作项、重新发现 RESULT、验证响应与持久化 u32；seed 7/42/99 结果均通过外部独立算式核验，B 仅计费 20 gas。
 - VM 新增通用 `ByteStuffEncode/Decode` 和 `PackU16Be`，操作计入 VM gas。禁用 BadBody 选择时不调用 B；破坏 RESULT 帧识别时 B 仍完成计算，但个体不存结果、不能误报成功。
 - **先验与结论限制**：P1 字节布局、转义、XOR、诊断选择、固定工作项构造、RESULT 形状和有界搜索策略均由研究者直接写入初始程序；未产生新程序版本，不能证明陌生语法发明、P2 活动 VM 学习、跨 episode 迁移或 E001 M0。G1/G2 保持 NO-GO。
@@ -205,7 +205,7 @@
 - [详细实验与先验审计](./experiments/E001/DEV-S19-ACTIVE-TOOL.md)；[S19 首轮 CI #44330835759](https://github.com/iFrankStudio/OCEE/actions/runs/44330835759) 成功，工作空间 **84 passed / 0 failed**。
 - 活动 VM 从 P1 HELLO 和 BadBody 反馈中发现 checksum key 与 REMOTE_EVAL opcode 后，用两次受计费的 `RewriteOp` 特化预置编码器，计算不可变内容哈希，保存版本；只有 `EXEC` 输出匹配独立构造的预期报文，才写入工具指针并实际调用生成 B 工作项，最终 FOLD32 结果经过研究端公式审计。三 seed 7/42/99 均通过。
 - 有效类型、`EXEC` 返回 Ok 但分隔符错误的反例会拒绝注册与远端执行，不能把“可运行”误判成“有用工具”。
-- 跨世界 P1 工具继承与新世界合法 `BadBody` 探针验证、不兼容回退及 CAS 替换已提交，[CI #44332968604](https://github.com/iFrankStudio/OCEE/actions/runs/44332968604) 当前待核验。**不应先写出继承节约结果或声称完成跨语法迁移。**
+- 跨世界 P1 工具继承、新世界真实 C 的 `BadBody` 探针验证、不兼容回退及 CAS(0) 替换，均由活动 VM 实施。[最终 CI #44335557937](https://github.com/iFrankStudio/OCEE/actions/runs/44335557937) **87 项 workspace 全通过**；在第二 episode 同一 S19 初始程序的比较中，兼容继承 **A gas 6,046 vs 冷启动 6,669**、tick 129 vs 130；不兼容继承回退 **A gas 7,070 vs 冷启动 6,669**、tick 139 vs 130；两组都包含 62 gas 的导入，所有实际 B 工作计费 20 且取得正确结果。对照新世界使用不同的 world seed 和公开工作项；兼容组 P1 protocol seed 保持不变，不是跨协议泛化。已验证 S19 在特化产生不可变工具版本而尚未注册之时进行快照恢复，终态与不间断执行一致，B 仅计费一次。
 - **限制**：工具完整算法与特化结构被研究者预置；S19 是受限的代码特化和实用能力证据，不是陌生协议语法自动发现、原创算法或 E001 M0。G1/G2 NO-GO。
 
 ## 已发现且修复的关键问题
@@ -223,6 +223,6 @@
 | G1 允许开发/校准运行 | **NO-GO** | 具有非模板结构创新的初始 S 程序+冻结 hash、独立求解器更广泛协议/任务/预算校准、工作项/资源收益校准、必要持久化和权限审查、对照组实现 |
 | G2 允许正式确认性 E001 | **NO-GO** | G1 通过后冻结 seed、统计功效/门槛及代码，预注册并确保开发/正式集隔离 |
 
-**下一步推荐**：S14 已完成有限任务的迁移闭环；以 S18 活动 P1 完整闭环为基础，下一步把非专用 P2 结构探索、可复用工具构造和跨 episode 迁移真正放进同一受限活动 S VM、任务收益与更广泛信息受限独立校准，并构建正式 C/D 状态重置和对照；继续研究非模板结构创新，再推进正式工作项/统计和 A/B/C/D 四组对照。对完整 ISA、SQLite 与权限模型采用进入 G1 前的必要性审查，避免无关扩张。保持所有结论与来源证据可追溯。
+**下一步推荐**：S14 已完成有限任务的迁移闭环；以 S18 活动 P1 完整闭环为基础，下一步以 S19 的同族工具继承闭环为基础，将非专用 P2 结构探索与跨家族迁移放进活动 VM，并校准多 episode 的工具收益与负迁移成本、推进更广泛信息受限独立校准，并构建正式 C/D 状态重置和对照；继续研究非模板结构创新，再推进正式工作项/统计和 A/B/C/D 四组对照。对完整 ISA、SQLite 与权限模型采用进入 G1 前的必要性审查，避免无关扩张。保持所有结论与来源证据可追溯。
 
 以上是**工程验收记录，不是数字生命、智能或开放式演化的证据**。

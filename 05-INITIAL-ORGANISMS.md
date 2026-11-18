@@ -189,3 +189,9 @@ S14 的独立两项测试对比“无继承”和“仅继承合法工具”且�
 ## S18 开发个体的预置能力审计（非正式 S）
 
 [S18 活动 P1 闭环](./experiments/E001/DEV-S18-ACTIVE-P1.md) 的候选、试探、发送、诊断选择、持久化及 RESULT 读取实际发生在受限 VM 内，费用按世界/VM 账本承担。但研究者**直接写入初始程序**的 P1 转义与帧布局、XOR 检查规则、112 候选策略、`BadBody` 选择、三 u32 的 FOLD32 请求结构、ACK/RESULT 形状和状态字段仍是 seeded，不是个体自主产生的解析器或工具。初始 VM 实际哈希以 [manifest](./crates/organism-seeds/examples/manifest.rs) 自动生成为准；不能把 S18 特定 P1 程序作为正式未知家族通用 S 基线。
+
+## S19 P1 模板特化与跨世界复用的初始能力审计（开发）
+
+S19 的**可执行**编码器由活动 VM 依真实 P1 HELLO/C 诊断发现的 opcode 与校验键填入，但编码算法的完整 AST、两处目标参数位、供自检的公开形状固定样例、VM 内独立参照字节算法、`BadBody` 判据、工具 registry 名称、RESULT 搜索结构以及失效回退策略全是**研究者已赋予的先验**，不是个体自行发明。继承测试的驱动器只搬运两种已注册对象（immutable tool program 和 registry ref），并只通过受计费 `WRITE`，它不是个体自行发起的迁移。新世界验证使用一个空请求的 `BadBody` 兼容性证据，不足以证明工具在任意输入域正确，也不构成 P1→P2 能力。
+
+真实程序初始哈希由 `crates/organism-seeds/examples/manifest.rs` 输出，对应 [S19 研究记录](./experiments/E001/DEV-S19-ACTIVE-TOOL.md)；这些开发程序均非 E001 正式冻结的通用 S，也不满足“初始个体不得预置完整 P-family 适配器”的更严格目标。最终 [CI #44335557937](https://github.com/iFrankStudio/OCEE/actions/runs/44335557937) 通过，结论仅限 P1 已列明语法内的**参数特化 + 本地自检 + 同族跨 episode 复用与负迁移**。
