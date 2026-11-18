@@ -166,8 +166,9 @@ pub fn s9_no_witness_control()->Program {
     let mut p=s9_external_witness_repair();
     let b=p.functions[0].blocks.iter_mut()
         .find(|x|x.id=="read_broken").unwrap();
-    let Terminator::Yield{next,..}=&mut b.terminator else{unreachable!()};
+    let Terminator::Yield{next,next_args,..}=&mut b.terminator else{unreachable!()};
     *next="missing_evidence".into();
+    next_args.clear();
     p.validate().expect("S9 no-witness ablation must type-check");
     p
 }
