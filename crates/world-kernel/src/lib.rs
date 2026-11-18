@@ -833,6 +833,8 @@ mod tests {
         assert_eq!(refused.code,Code::Gas);
         assert!(!world.state.objects.contains_key("/public/E001/semantic-witness"),
             "a refused action must not leak the hidden output as a witness");
+        assert!(!world.state.objects.contains_key("/public/E001/semantic-audit"),
+            "a refused action must not leak the secondary simulated answer");
     }
 
     #[test]
