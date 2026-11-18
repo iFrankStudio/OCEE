@@ -34,5 +34,7 @@ jobs:
         run: cargo test --workspace
       - name: Report S8 lifecycle costs under original A quota
         run: cargo run --quiet -p ocee-organism-seeds --example s8_cost
+      - name: Report S14 paired-episode inheritance costs (including import)
+        run: cargo test -p ocee-organism-seeds --test s14_transfer -- --nocapture
       - name: Print auditable development organism manifests
         run: cargo run --quiet -p ocee-organism-seeds --example manifest
