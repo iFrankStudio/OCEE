@@ -203,3 +203,11 @@ S19 的**可执行**编码器由活动 VM 依真实 P1 HELLO/C 诊断发现的 o
 **此版本依然全面研究者播种**：预置 P1 定界/转义、XOR/长度布局、固定 opcode 候选与扫描策略、合法 ACK/RESULT 的形状和诊断含义、FOLD32 三 u32 工作项、两份完整的通用编码器 AST、`RewriteOp` 目标寄存器、独立期望帧生成、使用与回退策略。被探索的是各实例的*参数*，不是从全新数据自行发明的 P1/P2 通用语法。当前跨 episode 迁移驱动器属于模拟实验主持者，只导入工具版本字节和已注册哈希，不代表个体自行决定何时换世界。
 
 S20 初始程序开发哈希：`sha256:24d67e17ff371a29ef3c74189c3442699db73a7f94c311e768efed37c6a03a7e`。**它不是正式 E001 S 的冻结基线，更不能与旧 S18/S19 程序组合成“一个更全能个体”。** G1/G2 仍 NO-GO。
+
+## S21 活动 P2 TLV 初始能力来源账本（开发）
+
+[S21 报告](./experiments/E001/DEV-S21-P2-TLV.md)，[CI #44355391031](https://github.com/iFrankStudio/OCEE/actions/runs/44355391031)：99 项 workspace 测试通过。S21A/B 活动 VM 从公开 HELLO 配对信息推断了**私有五角色 tag 与物理字段顺序**，S21B 使用这些观察结果制作新 request ID73 HELLO，并用真实 C 响应复验。没有向 VM 注入私有 tag/order/opcode/seed/B gas/目标答案。
+
+**预置先验**：1B marker、2B BE envelope、外层 tag=0x10、五个内层 TLV、tag+BE length+value 布局、role 的数量与请求/响应值变化模板、kind0/1、4B ID、XOR 校验、固定 HELLO 的空请求和成功响应 [0,1]、分类/构造/验收算法、研究者给予的 TlvDecode/TlvEncode/TlvLookup/TlvReorder VM 算子。学习的是一个预设格式下的实例 tag/order，而非普适未知语法结构。S21A、S21B 是**两份不同的研究者构建初始程序**，没有证据显示 S20 P1 个体自迁移到 P2。
+
+初始哈希由 CI manifest 自动生成：S21A sha256:bcc84858fafa3682a921a4b1e9a20bdd5d884d410b3f7857ff81dd9f7859d123；S21B sha256:1095b67c907aad889999fa0e469803a7fabc42fb1c3060facce1b6dd19b13a14。均非 E001 确认性 S 初始基线，G1/G2 NO-GO。
