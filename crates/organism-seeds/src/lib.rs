@@ -136,3 +136,6 @@ pub mod s9_witness;
 
 /// S10: active semantic validation even for successful tool executions.
 pub mod s10_semantic;
+
+/// S11: simulated secondary evaluator and corroboration before adoption.
+pub mod s11_audit;

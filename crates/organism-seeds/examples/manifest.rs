@@ -11,6 +11,7 @@ fn main() {
         serde_json::to_value(ocee_organism_seeds::s8_repair_search::s8_manifest()).unwrap(),
         serde_json::to_value(ocee_organism_seeds::s9_witness::s9_manifest()).unwrap(),
         serde_json::to_value(ocee_organism_seeds::s10_semantic::s10_manifest()).unwrap(),
+        serde_json::to_value(ocee_organism_seeds::s11_audit::s11_manifest()).unwrap(),
     ];
     println!("{}",serde_json::to_string_pretty(&manifests).unwrap());
 }
