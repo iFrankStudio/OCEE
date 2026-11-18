@@ -16,7 +16,7 @@ struct Record {
     completed:bool,
     success:bool,
     program_versions:usize,
-    attempts:usize,
+    exec_world_actions:usize,
     gas_refusals:u64,
     other_failures:u64,
     vm_gas:u64,
@@ -69,7 +69,7 @@ fn one(seed:u64,limit:u64,cap:u64)->Record{
         success:completed&&organism.last_return==Some(Value::U32(1)),
         program_versions:world.state.objects.keys()
             .filter(|key|key.starts_with("/self/versions/")).count(),
-        attempts:world.audit.iter().filter(|r|matches!(r.action,Some(Action::Exec{..}))).count(),
+        exec_world_actions:world.audit.iter().filter(|r|matches!(r.action,Some(Action::Exec{..}))).count(),
         gas_refusals,other_failures,vm_gas,world_action_gas,initial_setup_gas,
         tool_registered:world.state.objects.contains_key("/self/tools/transform-v1"),
         result_persisted:world.state.objects.contains_key("/self/results/transform-held-out"),

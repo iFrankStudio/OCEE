@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44119126829](https://github.com/iFrankStudio/OCEE/actions/runs/44119126829) — Rust workspace **38 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44219065880](https://github.com/iFrankStudio/OCEE/actions/runs/44219065880) — Rust workspace **39 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -81,6 +81,12 @@
 - 六个开发 seed 通过隐藏目标函数的保留输入核验；固定第二个一元节点为零的机制消融无法解决需要两种输入特征的组合任务。
 - 新增 `Div(U32,U32)` 用于通用候选索引分解；世界单独发布 /public/E001/compose 的两个标注样例和无答案保留输入。仍不依赖 C/B 服务。
 - **组合节点与候选集合是研究者事先提供的有限语法**，并非新原语创造、策略自发成长或 E001 G1/M0 通过；S6 暂用 100,000 A gas/epoch，还未做标准预算校准。
+
+### S6 标准配额校准与边界反例
+
+- [研究记录](./experiments/E001/DEV-S6-COMPOSITION.md)：三组公开开发种子（0、7、16）在每 epoch 12,000 与 100,000 A gas 配置下均完成，tick 8 / 18 / 36，全部无 gas 拒绝。原定配额尚未成为本次小型组合搜索的瓶颈。
+- 每个成功工具又经独立的四组非空未见输入验证；但空输入违反部分生成工具的隐含前置条件，触发 `VmError::Range`，虽参考函数对空输入存在定义。已以负面测试封存，不得宣称全类型域泛化。
+- `EXEC` 动作次数包含候选试验、第二样例验证和保留输入，不可直接作为候选数量报告；[S6 资源报告](./crates/organism-seeds/examples/s6_calibration.rs)已按真实计数语义更名，较重校准转为[按需运行](./.github/workflows/s6-calibration.yml)。
 
 ## 已发现且修复的关键问题
 
