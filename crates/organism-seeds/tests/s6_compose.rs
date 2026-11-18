@@ -3,7 +3,7 @@
 use ocee_organism_seeds::s6_compose::{
     s6_composition_search,s6_single_operand_control,s6_manifest
 };
-use ocee_organism_vm::{Op,Program,Value,run_isolated};
+use ocee_organism_vm::{Op,Program,Value,VmError,run_isolated};
 use ocee_protocol_sim::Family;
 use ocee_world_kernel::{
     Action,ActionResult,Code,Config,World,TransformTask,ORGANISM_ID,hidden_compose
@@ -98,4 +98,23 @@ fn disabling_second_operand_prevents_solving_a_genuine_composition(){
         Some(Value::U32(0)));
     assert!(!world.state.objects.contains_key("/self/tools/transform-v1"));
     assert!(!world.state.objects.contains_key("/self/results/transform-held-out"));
+}
+
+
+#[test]
+fn empty_input_exposes_unhandled_boundary_in_s6_first_byte_grammar(){
+    // Negative result, not a failing build: the published TransformTask has
+    // no minimum-input-size contract, while ByteAt(0,0) faults on empty data.
+    // The independent world reference currently defines first(empty)=0.
+    let seed=2u64; // hidden task includes first-byte contribution
+    let world=run(seed,s6_composition_search());
+    let selected=String::from_utf8(
+        world.state.objects["/self/tools/transform-v1"].bytes.clone()).unwrap();
+    let candidate:Program=serde_json::from_slice(
+        &world.state.objects[&format!("/self/versions/{selected}")].bytes).unwrap();
+    assert_eq!(hidden_compose(seed,&[]),0);
+    assert_eq!(run_isolated(&candidate,vec![],2000),
+        Err(VmError::Range));
+    // Report this as a counterexample to *full Bytes-domain* generality;
+    // the six seeded positive tests only cover non-empty inputs.
 }
