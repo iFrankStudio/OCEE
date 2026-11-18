@@ -3,3 +3,6 @@
 //! The only bridge to these systems is in development-only test adapters.
 #![forbid(unsafe_code)]
 pub mod restricted_p2;
+
+/// S17: finite-family, public-frame-only reference hypotheses.
+pub mod restricted_families;
