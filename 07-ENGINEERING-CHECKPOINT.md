@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44267334581](https://github.com/iFrankStudio/OCEE/actions/runs/44267334581) — Rust workspace **68 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44298207558](https://github.com/iFrankStudio/OCEE/actions/runs/44298207558) — Rust workspace **73 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -167,6 +167,14 @@
 
 - **S14 三 episode 追加 CI 复核（2026-11-18）**：[提交 b981a09b](https://github.com/iFrankStudio/OCEE/commit/b981a09b464a52676b96b5b8e3b7ed97e1fc892d) 对应 [Actions #44274013758](https://github.com/iFrankStudio/OCEE/actions/runs/44274013758) 已完成成功；S14 三项测试通过。17→35→53 同规则链，**包含首轮学习的累计 gas 为继承 6,979 / 全冷启动 14,073**，两次导入各 29 gas；约节省 50.4%。详见 [S14 记录](./experiments/E001/DEV-S14-EPISODE-TRANSFER.md)。此为开发集特选同语义路径，不抵消异规则负迁移，G1/G2 仍 NO-GO。
 
+### S15 — 公开 HELLO 推断 P2 字段角色与操作码（研究端有限可学习性校准）
+
+- [S15 详细记录](./experiments/E001/DEV-S15-P2-RESTRICTED-CALIBRATION.md)；[成功 CI #44298207558](https://github.com/iFrankStudio/OCEE/actions/runs/44298207558)：Rust workspace **73 passed / 0 failed**。
+- 独立的 `ocee-calibration-solver` 库本身**没有生产依赖**；权威协议模拟器与世界内核只能在测试适配层作为 dev-dependencies 使用。参考求解器仅接收公开 HELLO 字节对和 `Frame` / `BadBody` / `Unauthorized` / `Other` 可见反馈，不能调用隐藏种子、生成器、服务内部对象、B gas 或外部参考答案。
+- 12 个公开开发 seed，在 P2 基础 TLV/XOR 结构先验和有界 opcode 范围下，通过样例推断实例 tag 的角色和排列，经有限反馈查到 REMOTE_EVAL 与 RESULT，调用 B 的三元素 FOLD32 并正确取回数值。
+- seed 7、42 的 world-level 测试从合法 `READ(/public/C/hello)` 开始，通过 A→C 的真实 `SEND` / 有延迟的 `RECEIVE` 调用，单 epoch 12,000 A gas 内完成；研究者在结束后审计 B 计费均为 20 gas、独立参考数值相等、世界快照回放一致。
+- 负面样例（截断、marker 不符、错误 HELLO 配对）被拒绝。**未知 TLV 字节边界自身、诊断含义、三 u32 负载格式、以及诊断扫描策略均属于研究者先验**。这只是 G1 独立受限校准求解器的一个必要子能力，**不是活动 VM 自主推断协议、正式跨家族迁移或 M0 达成**。
+
 ## 已发现且修复的关键问题
 
 - C/B 服务作业表初版使用 `BTreeMap<(actor, request_id), job>`，无法直接序列化为 JSON 对象键，导致世界快照计算失败；已改为稳定编码的字符串键，并通过世界快照重放验证。
@@ -179,9 +187,9 @@
 | 闸门 | 状态 | 剩余必要工作 |
 |---|---|---|
 | G0 工程开工 | GO | 当前已在实施 |
-| G1 允许开发/校准运行 | **NO-GO** | 具有非模板结构创新的初始 S 程序+冻结 hash、独立受限求解器、工作项/资源收益校准、必要持久化和权限审查、对照组实现 |
+| G1 允许开发/校准运行 | **NO-GO** | 具有非模板结构创新的初始 S 程序+冻结 hash、独立求解器更广泛协议/任务/预算校准、工作项/资源收益校准、必要持久化和权限审查、对照组实现 |
 | G2 允许正式确认性 E001 | **NO-GO** | G1 通过后冻结 seed、统计功效/门槛及代码，预注册并确保开发/正式集隔离 |
 
-**下一步推荐**：S14 已完成有限任务的迁移闭环；优先验证未知 P1/P2 语法的可学习性、实际任务收益与信息受限独立求解器，并构建正式 C/D 状态重置和对照；继续研究非模板结构创新，再推进正式工作项/统计和 A/B/C/D 四组对照。对完整 ISA、SQLite 与权限模型采用进入 G1 前的必要性审查，避免无关扩张。保持所有结论与来源证据可追溯。
+**下一步推荐**：S14 已完成有限任务的迁移闭环；利用 S15 的 P2 有限可学性下界，优先开展真实活动 S VM 的跨 P1/P2 结构探索、任务收益与更广泛信息受限独立校准，并构建正式 C/D 状态重置和对照；继续研究非模板结构创新，再推进正式工作项/统计和 A/B/C/D 四组对照。对完整 ISA、SQLite 与权限模型采用进入 G1 前的必要性审查，避免无关扩张。保持所有结论与来源证据可追溯。
 
 以上是**工程验收记录，不是数字生命、智能或开放式演化的证据**。

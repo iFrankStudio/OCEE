@@ -3,7 +3,7 @@
 - **日期**：2026-11-18
 - **定位**：独立的研究端参考求解器（`ocee-calibration-solver`），**不是** OCEE S/O 活动 VM 个体；非正式 E001，G1/G2 未通过。
 - **首轮实测成功**：[GitHub Actions #44297484423](https://github.com/iFrankStudio/OCEE/actions/runs/44297484423)（隔离 crate 前的协议与世界交互验证）。
-- **当前独立 crate 版**：[源代码](../../crates/calibration-solver/src/restricted_p2.rs)、[协议测试](../../crates/calibration-solver/tests/p2_restricted_calibration.rs)、[世界交互测试](../../crates/calibration-solver/tests/p2_restricted_world_oracle.rs)；重构后的 CI 需单独核实。
+- **当前独立 crate 版**：[源代码](../../crates/calibration-solver/src/restricted_p2.rs)、[协议测试](../../crates/calibration-solver/tests/p2_restricted_calibration.rs)、[世界交互测试](../../crates/calibration-solver/tests/p2_restricted_world_oracle.rs)；[独立 crate 回归 CI #44298207558](https://github.com/iFrankStudio/OCEE/actions/runs/44298207558) 已通过全部 73 项 workspace 测试。
 
 ## 核心命题与关键区别
 
