@@ -27,8 +27,13 @@ fn run(seed:u64,program:Program)->World {
     })).code,Code::Ok);
     for _ in 0..1500 {
         let r=world.tick_autonomous(ORGANISM_ID);
-        assert!(!matches!(r.code,Code::InvalidCode|Code::Denied),
-            "host VM itself failed at step {}: {:?}",world.state.step,r.code);
+        if r.code==Code::InvalidCode {
+            assert!(matches!(world.audit.last().and_then(|entry|entry.action.as_ref()),
+                Some(Action::Exec{..})),
+                "only a failed isolated tool EXEC may emit InvalidCode at step {}",world.state.step);
+        }
+        assert_ne!(r.code,Code::Denied,
+            "unexpected permission failure at step {}",world.state.step);
         if world.state.organisms[&ORGANISM_ID].vm_continuation
             .as_ref().is_some_and(|v|v.finished) {return world;}
     }
