@@ -5,7 +5,7 @@ use ocee_organism_seeds::s18_p1_vm::{
 };
 use ocee_organism_vm::Value;
 use ocee_protocol_sim::{Family,Operation,FrameKind};
-use ocee_world_kernel::{Action,Code,Config,World,ORGANISM_ID};
+use ocee_world_kernel::{Action,Code,Config,World,WorkItem,ORGANISM_ID};
 
 fn run(seed:u64,diagnostics:bool)->World {
     let program=if diagnostics{
@@ -63,6 +63,18 @@ fn active_vm_learns_p1_remote_opcode_then_submits_actual_b_job(){
         assert_eq!(decoded_ack.kind,FrameKind::Response);
         assert_eq!(decoded_ack.operation,Operation::RemoteEval);
         assert_eq!(decoded_ack.body,vec![0]);
+        let result=&w.state.objects["/self/results/p1-job0/value_le"].bytes;
+        assert_eq!(result.len(),4);
+        let value=u32::from_le_bytes(result.as_slice().try_into().unwrap());
+        let work:WorkItem=serde_json::from_slice(
+            &w.state.objects["/public/E001/job0"].bytes
+        ).unwrap();
+        let reference=work.values.iter().enumerate().fold(0u32,|acc,(i,&v)|
+            acc.wrapping_add(v.rotate_left((i%32) as u32)));
+        assert_eq!(value,reference,"result must be actual B-computed u32");
+        assert!(w.audit.iter().any(|item|matches!(
+            &item.action,Some(Action::Send{..})
+        )),"real protocol messages must exist");
         assert_eq!(w.state.service_events.iter()
             .map(|event|event.b_gas_charged).sum::<u64>(),20,
             "only actual C->B FOLD32 invocation may charge B once");
@@ -72,7 +84,7 @@ fn active_vm_learns_p1_remote_opcode_then_submits_actual_b_job(){
         let sends=w.audit.iter().filter(|event|matches!(
             event.action,Some(Action::Send{..})
         )).count();
-        assert!(sends>1 && sends<=113);
+        assert!(sends>1 && sends<=225);
         assert!(vm_cost>0,"VM decision work cannot be free host side search");
         println!("S18 active P1 seed={seed} scans={sends} ticks={} VM_gas={vm_cost} A_gas={a_cost} B_gas=20",
             w.state.step);
@@ -84,6 +96,7 @@ fn disabling_vm_diagnostic_selection_prevents_b_invocation(){
     assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(0)));
     assert!(!w.state.objects.contains_key("/self/discoveries/p1-operation-candidate"));
     assert!(!w.state.objects.contains_key("/self/results/p1-remote-eval-ack"));
+    assert!(!w.state.objects.contains_key("/self/results/p1-job0/value_le"));
     assert_eq!(w.state.service_events.iter().map(|e|e.b_gas_charged).sum::<u64>(),0);
     assert!(w.audit.iter().filter(|event|
         matches!(event.action,Some(Action::Send{..}))).count()>0);

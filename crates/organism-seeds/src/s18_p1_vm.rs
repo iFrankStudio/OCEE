@@ -1,13 +1,13 @@
 //! S18: an ACTUAL active OCEE VM program that learns a P1 REMOTE_EVAL
 //! opcode from public HELLO and C diagnostics, persists its discovery, then
-//! invokes a real bounded C->B task. No host oracle selects any opcode.
+//! invokes a real bounded C->B task and discovers RESULT for the actual value. No host oracle selects any opcode.
 //!
 //! IMPORTANT SEEDS: P1 delimiter/escape rules (0x7e,0x7d,^0x20), P1 inner
 //! layout, checksum derived from public HELLO, BadBody selector, 112 opcode
 //! candidates, fixed three-u32 FOLD32 payload, and ACK shape are prewritten.
 //! Unknown: private seed, XOR key value, marker-derived frame contents,
 //! hidden REMOTE_EVAL opcode, and workload values. This is NOT open grammar
-//! discovery, new tool invention, RESULT polling, or E001 confirmation.
+//! discovery, new tool invention, or E001 confirmation.
 use ocee_organism_vm::{Block,Function,Instruction,Op,Param,Program,Terminator,Type,WorldCall};
 
 fn literal(v:&[u8])->Op {
@@ -189,7 +189,132 @@ pub fn s18_p1_discover_and_invoke()->Program {
         block("record",vec![a(290,b)],vec![
             i(291,literal(b"/self/results/p1-remote-eval-ack")),
             i(292,Op::ConstU32(u32::MAX)),
-        ],yield_to(WorldCall::Write,vec![291,290,292],"success",vec![])),
+        ],yield_to(WorldCall::Write,vec![291,290,292],"result_read",vec![])),
+        // Stage 3: same active VM discovers an UNKNOWN RESULT opcode.
+        // The work item was already accepted; test only legitimate result
+        // response structure, not B gas or externally supplied answers.
+        block("result_read",vec![a(320,b)],vec![
+            i(321,literal(b"/public/C/hello")),
+        ],yield_to(WorldCall::Read,vec![321],"result_sample",vec![])),
+        block("result_sample",vec![a(330,b)],vec![
+            i(331,literal(b"payload")),
+            i(332,Op::JsonFieldBytes(330,331)),
+            i(333,literal(b"request")),
+            i(334,Op::JsonFieldBytes(332,333)),
+            i(335,Op::ConstU32(1)),
+            i(336,Op::ConstU32(2)),
+            i(337,Op::Len(334)),
+            i(338,Op::Sub(337,336)),
+            i(339,Op::Slice(334,335,338)),
+            i(340,Op::ConstU32(0x7e)),
+            i(341,Op::ConstU32(0x7d)),
+            i(342,Op::ConstU32(0x20)),
+            i(343,Op::ByteStuffDecode(339,340,341,342)),
+            i(344,Op::XorFold(343)),
+            i(345,Op::ConstU32(0x10)),
+        ],jump("result_scan",vec![343,344,345])),
+        block("result_scan",vec![a(350,b),a(351,u),a(352,u)],vec![],
+            Terminator::RepeatBounded{limit:112,
+                body:"result_probe".into(),body_args:vec![350,351,352],
+                done:"failure".into(),done_args:vec![]}),
+        block("result_probe",vec![a(360,b),a(361,u),a(362,u)],vec![
+            i(363,Op::ConstU32(0)),
+            i(364,Op::ConstU32(4)),
+            i(365,Op::Slice(360,363,364)), // kind0 + observed opcode + len4
+            i(366,Op::ConstU32(1)),
+            i(367,Op::ReplaceByte(365,366,362)),
+            i(368,literal(&[17,0,0,0])),
+            i(369,Op::Concat(367,368)),     // same request_id as REMOTE_EVAL
+            i(370,Op::XorFold(369)),
+            i(371,Op::Xor(370,361)),
+            i(372,Op::PackByte(371)),
+            i(373,Op::Concat(369,372)),
+            i(374,Op::ConstU32(0x7e)),
+            i(375,Op::ConstU32(0x7d)),
+            i(376,Op::ConstU32(0x20)),
+            i(377,Op::ByteStuffEncode(373,374,375,376)),
+            i(378,literal(&[0x7e])),
+            i(379,Op::Concat(378,377)),
+            i(380,Op::Concat(379,378)),
+        ],yield_to(WorldCall::Send,vec![380],"result_wait1",vec![360,361,362])),
+        block("result_wait1",vec![a(390,b),a(391,u),a(392,u),a(393,b)],vec![],
+            yield_to(WorldCall::Observe,vec![],"result_wait2",vec![390,391,392])),
+        block("result_wait2",vec![a(400,b),a(401,u),a(402,u),a(403,b)],vec![],
+            yield_to(WorldCall::Observe,vec![],"result_wait3",vec![400,401,402])),
+        block("result_wait3",vec![a(410,b),a(411,u),a(412,u),a(413,b)],vec![],
+            yield_to(WorldCall::Observe,vec![],"result_receive",vec![410,411,412])),
+        block("result_receive",vec![a(420,b),a(421,u),a(422,u),a(423,b)],vec![],
+            yield_to(WorldCall::Receive,vec![],"result_decode",vec![420,421,422])),
+        block("result_decode",vec![a(430,b),a(431,u),a(432,u),a(433,b)],vec![
+            i(434,literal(b"payload")),
+            i(435,Op::JsonFieldBytes(433,434)),
+            i(436,Op::ConstU32(0)),
+            i(437,Op::JsonIndex(435,436)),
+            i(438,literal(b"bytes")),
+            i(439,Op::JsonFieldBytes(437,438)),
+            i(440,Op::ByteAt(439,436)),
+            i(441,Op::ConstU32(0x7e)),
+            i(442,Op::EqU32(440,441)),
+        ],branch(442,"result_wire",vec![430,431,432,439],
+            "result_increment",vec![430,431,432])),
+        block("result_wire",vec![a(450,b),a(451,u),a(452,u),a(453,b)],vec![
+            i(454,Op::Len(453)),
+            i(455,Op::ConstU32(2)),
+            i(456,Op::Sub(454,455)),
+            i(457,Op::ConstU32(1)),
+            i(458,Op::Slice(453,457,456)),
+            i(459,Op::ConstU32(0x7e)),
+            i(460,Op::ConstU32(0x7d)),
+            i(461,Op::ConstU32(0x20)),
+            i(462,Op::ByteStuffDecode(458,459,460,461)),
+            i(463,Op::Len(462)),
+            i(464,Op::ConstU32(14)), // P1: header4+request_id4+status1+result4+check1
+            i(465,Op::EqU32(463,464)),
+        ],branch(465,"result_kind",vec![450,451,452,462],
+            "result_increment",vec![450,451,452])),
+        block("result_kind",vec![a(470,b),a(471,u),a(472,u),a(473,b)],vec![
+            i(474,Op::ConstU32(0)),
+            i(475,Op::ByteAt(473,474)),
+            i(476,Op::ConstU32(1)),
+            i(477,Op::EqU32(475,476)),
+        ],branch(477,"result_opcode",vec![470,471,472,473],
+            "result_increment",vec![470,471,472])),
+        block("result_opcode",vec![a(480,b),a(481,u),a(482,u),a(483,b)],vec![
+            i(484,Op::ConstU32(1)),
+            i(485,Op::ByteAt(483,484)),
+            i(486,Op::EqU32(485,482)),
+        ],branch(486,"result_status",vec![480,481,482,483],
+            "result_increment",vec![480,481,482])),
+        block("result_status",vec![a(490,b),a(491,u),a(492,u),a(493,b)],vec![
+            i(494,Op::ConstU32(8)),
+            i(495,Op::ByteAt(493,494)),
+            i(496,Op::ConstU32(0)),
+            i(497,Op::EqU32(495,496)),
+        ],branch(497,"result_check",vec![490,491,492,493],
+            "result_increment",vec![490,491,492])),
+        block("result_check",vec![a(500,b),a(501,u),a(502,u),a(503,b)],vec![
+            i(504,Op::XorFold(503)),
+            i(505,Op::EqU32(504,501)),
+        ],branch(505,"result_id",vec![500,501,502,503],
+            "result_increment",vec![500,501,502])),
+        block("result_id",vec![a(510,b),a(511,u),a(512,u),a(513,b)],vec![
+            i(514,Op::ConstU32(4)),
+            i(515,Op::Slice(513,514,514)),
+            i(516,literal(&[17,0,0,0])),
+            i(517,Op::EqBytes(515,516)),
+        ],branch(517,"result_save",vec![513],
+            "result_increment",vec![510,511,512])),
+        block("result_save",vec![a(520,b)],vec![
+            i(521,Op::ConstU32(9)),
+            i(522,Op::ConstU32(4)),
+            i(523,Op::Slice(520,521,522)),
+            i(524,literal(b"/self/results/p1-job0/value_le")),
+            i(525,Op::ConstU32(u32::MAX)),
+        ],yield_to(WorldCall::Write,vec![524,523,525],"success",vec![])),
+        block("result_increment",vec![a(530,b),a(531,u),a(532,u)],vec![
+            i(533,Op::ConstU32(1)),
+            i(534,Op::Add(532,533)),
+        ],jump("result_scan",vec![530,531,534])),
         block("success",vec![a(300,b)],vec![
             i(301,Op::ConstU32(1)),
         ],Terminator::Return{value:301}),
@@ -228,6 +353,8 @@ pub fn s18_manifest()->crate::SeedManifest {
             "BadBody-diagnostic-selection",
             "fixed-three-u32-FOLD32-workload-shape",
             "P1-ACK-shape-and-success-status-comparison",
+            "bounded-112-RESULT-opcode-search-by-valid-output-shape",
+            "persist-and-verify-real-returned-FOLD32-u32",
             "ordinary-SEND-RECEIVE-WRITE-actions",
         ],
         initial_tool_hashes:vec![],
