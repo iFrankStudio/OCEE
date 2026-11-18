@@ -20,6 +20,8 @@ fn main() {
         serde_json::to_value(ocee_organism_seeds::s19_p1_tool::s19_manifest()).unwrap(),
         serde_json::to_value(ocee_organism_seeds::s19_p1_transfer::s19_transfer_manifest()).unwrap(),
         serde_json::to_value(ocee_organism_seeds::s20_p1_transfer::s20_manifest()).unwrap(),
+        serde_json::to_value(ocee_organism_seeds::s21_p2_tlv::s21_manifest()).unwrap(),
+        serde_json::to_value(ocee_organism_seeds::s21_p2_tlv::s21b_manifest()).unwrap(),
         serde_json::to_value(ocee_organism_seeds::s18_p1_vm::s18_manifest()).unwrap(),
     ];
     println!("{}",serde_json::to_string_pretty(&manifests).unwrap());
