@@ -226,13 +226,18 @@ pub struct ActionResult {
     pub gas_charged: u64,
     pub vm_gas_charged: u64,
     pub bandwidth_charged: u64,
+    /// Kernel-issued execution step of an attempted isolated EXEC. Absent for
+    /// non-executed/gas-refused actions. U32-scoped development receipt;
+    /// organisms must abstain if the logical step cannot be represented.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exec_step: Option<u32>,
 }
 impl ActionResult {
     fn fail(code: Code) -> Self {
-        Self { code, payload: vec![], gas_charged: 0, vm_gas_charged: 0, bandwidth_charged: 0 }
+        Self { code, payload: vec![], gas_charged: 0, vm_gas_charged: 0, bandwidth_charged: 0, exec_step: None }
     }
     fn ok(payload: Vec<u8>, gas: u64, bandwidth: u64) -> Self {
-        Self { code: Code::Ok, payload, gas_charged: gas, vm_gas_charged: 0, bandwidth_charged: bandwidth }
+        Self { code: Code::Ok, payload, gas_charged: gas, vm_gas_charged: 0, bandwidth_charged: bandwidth, exec_step: None }
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -718,6 +723,10 @@ impl World {
             None => ActionResult::fail(no_action_code),
         };
         result.vm_gas_charged=vm_used;
+        if matches!(action.as_ref(),Some(Action::Exec{..})) &&
+            matches!(result.code,Code::Ok|Code::InvalidCode){
+            result.exec_step=u32::try_from(k).ok();
+        }
         if let Some(Action::Exec{actor,program_hash,input})=action.as_ref(){
             self.publish_boundary_witness(*actor,program_hash,input,result.code,k);
             self.publish_semantic_witness(*actor,program_hash,input,result.code,k);
