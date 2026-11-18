@@ -203,6 +203,7 @@ pub fn s7_empty_input_recovery()->Program {
 /// generic graph-repair branch. Original tool must remain unchanged.
 pub fn s7_no_repair_control()->Program {
     let mut p=s7_empty_input_recovery();
+    let b=Type::Bytes;
     let f=&mut p.functions[0];
     let after=f.blocks.iter_mut().find(|bl|bl.id=="record_fault").unwrap();
     after.terminator=Terminator::Yield{
