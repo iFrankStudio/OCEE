@@ -148,3 +148,6 @@ pub mod s13_challenge;
 
 /// S13: bind environment evidence to the kernel-issued exact EXEC receipt.
 pub mod s13_receipt;
+
+/// S14: audited cross-episode tool inheritance and runtime validation.
+pub mod s14_transfer;
