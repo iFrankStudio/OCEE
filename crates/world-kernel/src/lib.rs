@@ -382,6 +382,35 @@ impl World {
         });
     }
 
+    /// S10: an explicit actively requested semantic check. Unlike S9's
+    /// fault-only witness, this fixture publishes following *any* isolated
+    /// empty-input EXEC of the currently registered tool, even if it returned
+    /// Ok with a semantically incorrect value. No report exists beforehand.
+    /// The simulated labels are correlated and are NOT trusted identities.
+    fn publish_semantic_witness(&mut self,actor:u64,hash:&str,input:&[u8],
+        observed_step:u64) {
+        const PATH:&str="/public/E001/semantic-witness";
+        if self.state.protocol_service.is_none() || actor!=ORGANISM_ID ||
+            !input.is_empty() || self.state.objects.contains_key(PATH){return;}
+        let Some(registry)=self.state.objects.get("/self/tools/transform-v1") else{return;};
+        if registry.owner!=actor || registry.bytes!=hash.as_bytes(){return;}
+        let seed=self.state.config.seed;
+        let correct=hidden_compose_boundary(seed,input);
+        let (count,first,second)=match (seed/3)%4 {
+            0|1=>(2,Some(correct),Some(correct)),
+            2=>(0,None,None),
+            _=>(2,Some(0),Some(1)),
+        };
+        let evidence=BoundaryWitness{
+            task_id:"binary-byte-compose-v1".into(),input:input.to_vec(),
+            count,first,second,observed_after_step:observed_step,
+        };
+        self.state.objects.insert(PATH.into(),Object{
+            owner:0,version:0,bytes:serde_json::to_vec(&evidence)
+                .expect("semantic witness must serialize"),
+        });
+    }
+
     fn publish_compose_task(&mut self) {
         const PATH:&str="/public/E001/compose";
         if self.state.protocol_service.is_none() || self.state.objects.contains_key(PATH){return;}
@@ -534,6 +563,7 @@ impl World {
                     key != "/public/E001/transform" &&
                     key != "/public/E001/compose" &&
                     key != "/public/E001/boundary-witness" &&
+                    key != "/public/E001/semantic-witness" &&
                     (obj.owner != actor || !key.starts_with("/self/")) {
                     return ActionResult::fail(Code::Denied);
                 }
@@ -642,6 +672,7 @@ impl World {
         result.vm_gas_charged=vm_used;
         if let Some(Action::Exec{actor,program_hash,input})=action.as_ref(){
             self.publish_boundary_witness(*actor,program_hash,input,result.code,k);
+            self.publish_semantic_witness(*actor,program_hash,input,k);
         }
         if let Some(actor)=organism {
             // When switching the active program, the previous continuation has
