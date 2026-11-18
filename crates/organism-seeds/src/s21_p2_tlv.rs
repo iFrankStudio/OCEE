@@ -366,7 +366,17 @@ pub fn s21_p2_infer_and_validate_new_hello()->Program {
             instr(2148,Op::JsonFieldU32(2146,2147)),
             instr(2149,Op::ConstU32(0x10)),
             instr(2150,Op::EqU32(2148,2149)),
-        ],br(2150,"probe_kind",vec![2140,2141,2142,2146],
+            // Reject trailing outer TLVs by requiring exact reconstruction.
+            instr(2151,lit(b"value")),
+            instr(2152,Op::JsonFieldBytes(2146,2151)),
+            instr(2153,Op::TlvEncode(2148,2152)),
+            instr(2154,Op::EqBytes(2153,2143)),
+        ],br(2150,"probe_outer_exact",vec![2140,2141,2142,2146,2154],
+            "failed",vec![])),
+        blk("probe_outer_exact",vec![
+            param(2155,b),param(2156,b),param(2157,b),
+            param(2158,b),param(2159,Type::Bool)
+        ],vec![],br(2159,"probe_kind",vec![2155,2156,2157,2158],
             "failed",vec![])),
         blk("probe_kind",vec![
             param(2160,b),param(2161,b),param(2162,b),param(2163,b)
@@ -418,7 +428,17 @@ pub fn s21_p2_infer_and_validate_new_hello()->Program {
             instr(2216,Op::ConstU32(1)),
             instr(2217,Op::Xor(2214,2216)),
             instr(2218,Op::EqU32(2215,2217)),
-        ],br(2218,"probe_save",vec![2211],"failed",vec![])),
+            // Reorder only the five observed tags and require byte equality.
+            // Extra/duplicate inner TLVs cannot be silently ignored.
+            instr(2219,Op::ConstU32(6)),
+            instr(2223,Op::ConstU32(5)),
+            instr(2224,Op::Slice(2210,2219,2223)),
+            instr(2225,Op::TlvReorder(2212,2224)),
+            instr(2226,Op::EqBytes(2225,2212)),
+        ],br(2218,"probe_inner_exact",vec![2211,2226],
+            "failed",vec![])),
+        blk("probe_inner_exact",vec![param(2230,b),param(2231,Type::Bool)],
+            vec![],br(2231,"probe_save",vec![2230],"failed",vec![])),
         blk("probe_save",vec![param(2220,b)],vec![
             instr(2221,lit(b"/self/observations/p2-hello-nonreplay")),
             instr(2222,Op::ConstU32(u32::MAX)),
