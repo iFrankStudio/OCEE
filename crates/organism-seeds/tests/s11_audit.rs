@@ -86,7 +86,7 @@ fn separate_simulated_auditor_enables_repairs_and_preserves_abstention(){
         let raw=&w.state.objects["/public/E001/semantic-audit"].bytes;
         let audit:BoundaryWitness=serde_json::from_slice(raw).unwrap();
         assert_eq!(audit.first,Some(hidden_compose_boundary(seed,&[])));
-        assert_eq!(audit.input,vec![]);
+        assert!(audit.input.is_empty());
         let executed=w.audit.iter().find(|r|matches!(
             &r.action,Some(Action::Exec{input,..}) if input.is_empty()
         )).expect("probe required");
