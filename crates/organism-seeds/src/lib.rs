@@ -124,3 +124,6 @@ pub mod s5_search;
 
 /// S6: bounded multi-node composition search over a seeded operator grammar.
 pub mod s6_compose;
+
+/// S7: observe failing tool boundary and add typed control-flow guard.
+pub mod s7_recover;
