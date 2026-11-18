@@ -15,6 +15,7 @@ A small deterministic interpreter for type-checked, bounded program graphs, deli
 - `Continuation` serialized across tick boundaries; `YIELD` emits a typed world intent with feedback injected upon resumption.
 - A typed, validated `mutate_literal` example for candidate version creation; no automatic strategy selection.
 - Generic metered `RewriteOp`: edits an instruction operator in canonical program JSON and revalidates the entire typed graph; selection and functional tests remain the organism's responsibility.
+- Metered generic `PrependBlocks` operation: insert arbitrary serialized typed basic blocks ahead of the old entry, revalidate the entire program graph, reject bad references/unbounded cycles, return canonical content-addressable bytes. S7 uses it to add a branch guard to a faulty prior tool, **without adding task-specific logic to the VM host**.
 - Generic `JsonFieldJson` and `JsonFieldU32` operations permit bounded, metered extraction of arbitrary structured training examples and numeric feedback; they do not grant evaluation-oracle access.
 
 ### Deliberate limitations
