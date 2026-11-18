@@ -60,6 +60,9 @@ pub enum Op {
     PackU16Be(u32),
     /// Generic big-endian length-tag-value codecs, not protocol role inference.
     TlvEncode(u32,u32), TlvDecode(u32),
+    /// Generic TLV tag search and physical-order permutation; all tags
+    /// are organism-supplied data, not special protocol constants.
+    TlvLookup(u32,u32), TlvReorder(u32,u32),
     /// Generic validated graph edit: program JSON, block name, register id, new Op JSON.
     /// It changes executable structure; selection/fitness remain organism decisions.
     RewriteOp(u32,u32,u32,u32),
@@ -266,6 +269,12 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
             Ok(if matches!(op,Op::Len(_)|Op::XorFold(_)){Type::U32}else{Type::Bytes})
         },
         Op::TlvDecode(a)=>{need(defs,*a,Type::Bytes)?;Ok(Type::Bytes)},
+        Op::TlvLookup(a,t)=>{
+            need(defs,*a,Type::Bytes)?;need(defs,*t,Type::U32)?;Ok(Type::Bytes)
+        },
+        Op::TlvReorder(a,order)=>{
+            need(defs,*a,Type::Bytes)?;need(defs,*order,Type::Bytes)?;Ok(Type::Bytes)
+        },
         Op::TlvEncode(tag,value)=>{
             need(defs,*tag,Type::U32)?;need(defs,*value,Type::Bytes)?;
             Ok(Type::Bytes)
@@ -430,6 +439,50 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             out.extend_from_slice(value);
             Value::Bytes(out)
         },
+        Op::TlvLookup(source,tag)=>{
+            let raw=bytes(regs,*source)?;
+            let wanted=num(regs,*tag)?;
+            if wanted>255 {return Err(VmError::Range);}
+            let mut at=0usize;
+            let mut answer=None;
+            while at<raw.len(){
+                if raw.len()-at<3 {return Err(VmError::InvalidInput);}
+                let n=u16::from_be_bytes([raw[at+1],raw[at+2]]) as usize;
+                let end=(at+3).checked_add(n).ok_or(VmError::Range)?;
+                if end>raw.len() {return Err(VmError::InvalidInput);}
+                if raw[at]==wanted as u8 {
+                    if answer.is_some(){return Err(VmError::InvalidInput);}
+                    answer=Some(raw[at+3..end].to_vec());
+                }
+                at=end;
+            }
+            Value::Bytes(answer.ok_or(VmError::InvalidInput)?)
+        },
+        Op::TlvReorder(source,order)=>{
+            let raw=bytes(regs,*source)?;
+            let desired=bytes(regs,*order)?;
+            if desired.len()>256 {return Err(VmError::InvalidInput);}
+            let mut at=0usize;
+            let mut fields=std::collections::BTreeMap::<u8,Vec<u8>>::new();
+            while at<raw.len(){
+                if raw.len()-at<3 {return Err(VmError::InvalidInput);}
+                let n=u16::from_be_bytes([raw[at+1],raw[at+2]]) as usize;
+                let end=(at+3).checked_add(n).ok_or(VmError::Range)?;
+                if end>raw.len() {return Err(VmError::InvalidInput);}
+                if fields.insert(raw[at],raw[at..end].to_vec()).is_some(){
+                    return Err(VmError::InvalidInput);
+                }
+                at=end;
+            }
+            if fields.len()!=desired.len(){return Err(VmError::InvalidInput);}
+            let mut result=Vec::with_capacity(raw.len());
+            for tag in desired {
+                let part=fields.remove(tag).ok_or(VmError::InvalidInput)?;
+                result.extend(part);
+            }
+            if result.len()>MAX_VALUE_BYTES {return Err(VmError::OutputTooLarge);}
+            Value::Bytes(result)
+        },
         Op::TlvDecode(source)=>{
             let wire=bytes(regs,*source)?;
             let mut at=0usize;
@@ -593,6 +646,9 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::XorFold(a)=>bytes(regs,*a)?.len(),
         Op::JsonIndex(a,_)|Op::ReplaceByte(a,_,_)=>bytes(regs,*a)?.len(),
         Op::TlvDecode(a)=>bytes(regs,*a)?.len().saturating_mul(8),
+        Op::TlvLookup(a,_)=>bytes(regs,*a)?.len().saturating_mul(2),
+        Op::TlvReorder(a,b)=>bytes(regs,*a)?.len().saturating_mul(2)
+            .saturating_add(bytes(regs,*b)?.len()),
         Op::TlvEncode(_,a)=>bytes(regs,*a)?.len().saturating_add(3),
         Op::ByteStuffEncode(a,_,_,_)=>bytes(regs,*a)?.len().saturating_mul(2),
         Op::ByteStuffDecode(a,_,_,_)=>bytes(regs,*a)?.len(),
@@ -995,5 +1051,33 @@ mod tests {
             Instruction{id:2,op:Op::TlvEncode(1,0)}
         ],Terminator::Return{value:2},Type::Bytes);
         assert_eq!(run_isolated(&bad_tag,input,100),Err(VmError::Range));
+    }
+
+    #[test]
+    fn tlv_lookup_and_reorder_are_generic_metered_and_reject_ambiguous_tags(){
+        let tlvs=vec![0x44,0,1,0x05,0x33,0,2,0xa1,0xa2,0x22,0,0];
+        let lookup=p(vec![
+            Instruction{id:1,op:Op::ConstU32(0x33)},
+            Instruction{id:2,op:Op::TlvLookup(0,1)},
+        ],Terminator::Return{value:2},Type::Bytes);
+        assert_eq!(run_isolated(&lookup,tlvs.clone(),100).unwrap().0,
+            Value::Bytes(vec![0xa1,0xa2]));
+        let reorder=p(vec![
+            Instruction{id:1,op:Op::ConstBytes{hex:"223344".into()}},
+            Instruction{id:2,op:Op::TlvReorder(0,1)},
+        ],Terminator::Return{value:2},Type::Bytes);
+        let (got,gas)=run_isolated(&reorder,tlvs.clone(),100).unwrap();
+        assert!(gas>1);
+        assert_eq!(got,Value::Bytes(vec![
+            0x22,0,0,0x33,0,2,0xa1,0xa2,0x44,0,1,0x05
+        ]));
+        assert_eq!(run_isolated(&lookup,
+            [tlvs.clone(),vec![0x33,0,0]].concat(),100),
+            Err(VmError::InvalidInput));
+        assert_eq!(run_isolated(&reorder,
+            [tlvs.clone(),vec![0x33,0,0]].concat(),100),
+            Err(VmError::InvalidInput));
+        assert_eq!(run_isolated(&reorder,vec![0x33,0,1],100),
+            Err(VmError::InvalidInput));
     }
 }
