@@ -133,3 +133,6 @@ pub mod s8_repair_search;
 
 /// S9: conditional repair using post-fault public boundary witnesses.
 pub mod s9_witness;
+
+/// S10: active semantic validation even for successful tool executions.
+pub mod s10_semantic;
