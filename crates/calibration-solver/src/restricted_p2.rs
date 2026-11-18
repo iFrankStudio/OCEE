@@ -1,4 +1,4 @@
-//! S15: researcher-side, information-restricted P2 TLV calibration solver.
+//! S15: researcher-side, information-restricted P2 TLV calibration solver in an isolated crate.
 //!
 //! Only two public HELLO frames and a query-limited service oracle are inputs.
 //! Does not access Protocol, Service internals, private tags, opcodes or seed.
@@ -6,7 +6,11 @@
 //! known RemoteEval body, and feedback interpretation ARE researcher priors.
 //! This is NOT an in-VM organism and NOT proof of general protocol learning.
 #![forbid(unsafe_code)]
-use crate::{ParseError,ServiceOutput};
+// These are the *only* observations allowed at the solver interface.
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub enum Diagnostic { BadBody, Unauthorized, Other }
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub enum OracleFeedback { Frame(Vec<u8>), Diagnostic(Diagnostic) }
 use std::collections::BTreeSet;
 
 #[derive(Clone,Debug)]
@@ -197,7 +201,7 @@ pub struct P2ProbeReport {
 /// The oracle owns its world/service; it exposes no hidden configuration.
 pub fn solve_p2<F>(grammar:&P2ObservedGrammar,request_id:u32,values:[u32;3],
     mut oracle:F)->Result<P2ProbeReport,&'static str>
-where F:FnMut(&[u8])->ServiceOutput {
+where F:FnMut(&[u8])->OracleFeedback {
     let mut calls=0usize;
     let mut eval=None;
     let mut result=None;
@@ -206,10 +210,10 @@ where F:FnMut(&[u8])->ServiceOutput {
         let answer=oracle(&bytes);
         calls+=1;
         match answer {
-            ServiceOutput::Diagnostic(ParseError::BadBody)=>{
+            OracleFeedback::Diagnostic(Diagnostic::BadBody)=>{
                 if eval.replace(code).is_some(){return Err("multiple eval candidates");}
             },
-            ServiceOutput::Diagnostic(ParseError::Unauthorized)=>{
+            OracleFeedback::Diagnostic(Diagnostic::Unauthorized)=>{
                 if result.replace(code).is_some(){return Err("multiple result candidates");}
             },
             _=>{},
@@ -225,14 +229,14 @@ where F:FnMut(&[u8])->ServiceOutput {
     let request=grammar.request(eval,request_id,&body)?;
     let response=oracle(&request);
     calls+=1;
-    if !matches!(response,ServiceOutput::Frame(_)) {
+    if !matches!(response,OracleFeedback::Frame(_)) {
         return Err("remote eval was not actually billed and accepted");
     }
     let result_request=grammar.request(result,request_id,&[])?;
     for _ in 0..3 {
         let response=oracle(&result_request);
         calls+=1;
-        if let ServiceOutput::Frame(bytes)=response {
+        if let OracleFeedback::Frame(bytes)=response {
             if let Some(value)=grammar.result_value(&bytes,result,request_id)? {
                 return Ok(P2ProbeReport{
                     query_count:calls,remote_opcode:eval,

@@ -1,7 +1,19 @@
 //! S15 protocol-level learnability lower-bound, NOT an autonomous OCEE VM.
 //! Solver receives public HELLO pair and a metered-count oracle ONLY.
-use ocee_protocol_sim::{Family,Service};
-use ocee_protocol_sim::restricted_p2::{P2ObservedGrammar,solve_p2};
+use ocee_protocol_sim::{Family,Service,ServiceOutput,ParseError};
+use ocee_calibration_solver::restricted_p2::{
+    P2ObservedGrammar,solve_p2,OracleFeedback,Diagnostic
+};
+fn visible(output:ServiceOutput)->OracleFeedback {
+    match output {
+        ServiceOutput::Frame(f)=>OracleFeedback::Frame(f),
+        ServiceOutput::Diagnostic(ParseError::BadBody)=>
+            OracleFeedback::Diagnostic(Diagnostic::BadBody),
+        ServiceOutput::Diagnostic(ParseError::Unauthorized)=>
+            OracleFeedback::Diagnostic(Diagnostic::Unauthorized),
+        _=>OracleFeedback::Diagnostic(Diagnostic::Other),
+    }
+}
 
 fn independently_fold(values:[u32;3])->u32 {
     values.into_iter().enumerate().fold(0u32,|sum,(i,value)|
@@ -21,7 +33,7 @@ fn restricted_p2_public_samples_enable_tag_role_and_opcode_discovery(){
         let measured=solve_p2(&grammar,17,values,|wire|{
             let answer=service.handle(1,step,wire,50_000);
             audited_b_gas+=answer.b_gas_charged;
-            step+=1; answer.output
+            step+=1; visible(answer.output)
         }).expect("restricted P2 oracle queries should find FOLD32 and RESULT");
         assert!(measured.query_count<=116,"query bound exceeded: {:?}",measured);
         assert_ne!(measured.remote_opcode,grammar.observed_hello_opcode);

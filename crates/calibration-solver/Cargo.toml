@@ -1,0 +1,10 @@
+[package]
+name = "ocee-calibration-solver"
+version = "0.1.0"
+edition = "2021"
+description = "Information-restricted researcher-side calibration solvers independent of the world implementation"
+
+[dev-dependencies]
+ocee-protocol-sim = { path = "../protocol-sim" }
+ocee-world-kernel = { path = "../world-kernel" }
+serde_json = "1"

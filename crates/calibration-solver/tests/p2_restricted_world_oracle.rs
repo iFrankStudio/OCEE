@@ -3,8 +3,10 @@
 //! SEND -> delayed C -> RECEIVE. It never sees protocol private parameters,
 //! world object maps, audit data, gas counters, or the target answer.
 //! The harness audits those privileged facts only after the trial.
-use ocee_protocol_sim::{Family,ServiceOutput};
-use ocee_protocol_sim::restricted_p2::{P2ObservedGrammar,solve_p2};
+use ocee_protocol_sim::{Family,ParseError};
+use ocee_calibration_solver::restricted_p2::{
+    P2ObservedGrammar,solve_p2,OracleFeedback,Diagnostic
+};
 use ocee_world_kernel::{
     Action,Code,Config,HelloSample,Message,NodeId,TransportDiagnostic,World,ORGANISM_ID
 };
@@ -43,9 +45,14 @@ fn observed_p2_service_is_learnable_with_real_world_messages_and_a_quota(){
             let mail:Vec<Message>=serde_json::from_slice(&received.payload).unwrap();
             assert_eq!(mail.len(),1);
             if let Ok(diagnostic)=serde_json::from_slice::<TransportDiagnostic>(&mail[0].bytes){
-                ServiceOutput::Diagnostic(diagnostic.code)
+                let public_code=match diagnostic.code {
+                    ParseError::BadBody=>Diagnostic::BadBody,
+                    ParseError::Unauthorized=>Diagnostic::Unauthorized,
+                    _=>Diagnostic::Other,
+                };
+                OracleFeedback::Diagnostic(public_code)
             }else{
-                ServiceOutput::Frame(mail[0].bytes.clone())
+                OracleFeedback::Frame(mail[0].bytes.clone())
             }
         }).expect("P2 bounded learning through actual SEND/RECEIVE");
         assert_eq!(report.result,independent_reference(values));

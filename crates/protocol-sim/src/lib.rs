@@ -383,6 +383,3 @@ mod tests {
         }
     }
 }
-
-/// Research-side public-evidence P2 calibration; never shipped to the VM organism.
-pub mod restricted_p2;

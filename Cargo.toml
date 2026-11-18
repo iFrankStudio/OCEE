@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/world-kernel", "crates/organism-vm", "crates/protocol-sim", "crates/organism-seeds"]
+members = ["crates/world-kernel", "crates/organism-vm", "crates/protocol-sim", "crates/organism-seeds", "crates/calibration-solver"]
 resolver = "2"
