@@ -54,3 +54,9 @@ S21 没有探测 P2 私有 REMOTE_EVAL/RESULT opcode，**没有提交或取回 F
 [提交 6f4231b](https://github.com/iFrankStudio/OCEE/commit/6f4231b0956bb8a5010a6e6cb45604af526cb850) 在活动 VM 的响应验收路径中加入外层首个 TLV 的逐字节重编码一致性，以及内层已发现五字段顺序的 `TlvReorder` 字节一致性。目的是拒绝额外外层 TLV、重复或额外内层字段，而非放宽协议假说。[CI #44389284575](https://github.com/iFrankStudio/OCEE/actions/runs/44389284575) 对该准确提交已完成，结论 success。此 CI 证明现有工作空间测试兼容该改动；**目前没有独立注入附加 TLV 的执行负对照，故不能宣称已通过恶意扩展帧的实测拒绝验证**。
 
 能力来源：两项严格验收规则由研究者直接修改初始程序图，非个体观察异常后自主编辑；不计为自主修复。下一项最小实验：只在开发世界的 C 回复上注入一个额外的合法外层 TLV，保留原回复主体；在真实活动 VM 上观察是否拒绝持久化，同时保留正常回复对照。若没有受控注入接口，应先建立研究端隔离注入，不向个体提供私有协议参数。不得将本次 CI 成功计为 G1/G2 或正式 E001 证据。
+
+## S21B 真实 C 回复附加外层 TLV 注入结果（2026-11-18 UTC）
+
+[测试提交 4ae6d95](https://github.com/iFrankStudio/OCEE/commit/4ae6d95bb6ad91e623b5283e5d7c752375a7a133) 的 [Actions #44408897590](https://github.com/iFrankStudio/OCEE/actions/runs/44408897590) 已于 2026-11-18 22:18:12 UTC 完成，结论 **success**。聚焦测试 `extra_outer_tlv_after_real_c_reply_is_not_accepted` 在 seed 42、标准 12,000 A gas/epoch 下让真实 C 先生成回复，研究端仅在交付 A 之前把外层声明长度增加 3 并追加合法空 TLV `[0x7f,0,0]`；断言实际注入恰好一次。未注入对照返回 U32(1) 且持久化 `/self/observations/p2-hello-nonreplay`；注入组返回 U32(0)，不得持久化该对象。两组 C 服务事件数相同、B gas 均为 0。该成功 CI 为**外层附加字段的实际执行拒绝证据**，不再只是源码推断。
+
+边界：这是研究者实施的传输层故障注入和研究者设计的严格响应验收；**不是个体自主发现漏洞或自行生成修复**。尚未注入额外/重复的**内层** TLV，也未独立证明各类恶意长度、重排、截断和其他种子均拒绝；没有 REMOTE_EVAL/RESULT 或 B 计算。不能据此扩大到任意 P2 帧安全或 E001 M0。后续优先单独测试一个内层额外字段的负对照，或转向受计费 VM 内 P2 操作码探索；避免重复同一外层注入测试。G1/G2 仍 NO-GO。
