@@ -3,7 +3,8 @@
 //! control-flow blocks, checks a public regression example, then CAS-adopts
 //! the new tool version. None of these steps is a researcher program swap.
 use ocee_organism_seeds::s7_recover::{
-    s7_empty_input_recovery,s7_no_repair_control,s7_manifest
+    s7_empty_input_recovery,s7_no_repair_control,
+    s7_wrong_guard_control,s7_manifest
 };
 use ocee_organism_vm::{Program,Type,Value,VmError,Terminator,run_isolated};
 use ocee_protocol_sim::Family;
@@ -135,4 +136,31 @@ fn a_function_that_already_handles_empty_does_not_mutate_its_tool(){
     let current=get_version(&world,&registry_hash(&world));
     assert_eq!(current.functions[0].blocks.len(),1);
     assert_eq!(run_isolated(&current,vec![],2000).unwrap().0,Value::U32(0));
+}
+
+
+#[test]
+fn executable_but_semantically_wrong_guard_is_rejected_before_cas(){
+    let world=run(2,s7_wrong_guard_control());
+    assert_eq!(world.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(0)),"faulty repair must not be marked adopted");
+    let original_hash=registry_hash(&world);
+    assert_eq!(world.state.objects["/self/tools/transform-v1"].version,0,
+        "failed regression must not overwrite original tool");
+    assert_eq!(run_isolated(&get_version(&world,&original_hash),vec![],2000),
+        Err(VmError::Range));
+    let repaired_proposals=world.state.objects.iter()
+        .filter(|(name,_)|name.starts_with("/self/versions/"))
+        .filter_map(|(_,obj)|{
+            let p:Program=serde_json::from_slice(&obj.bytes).ok()?;
+            if p.functions[0].blocks.len()==3 {Some(p)}else{None}
+        }).collect::<Vec<_>>();
+    assert_eq!(repaired_proposals.len(),1);
+    let wrong=&repaired_proposals[0];
+    assert_eq!(run_isolated(wrong,vec![],2000).unwrap().0,Value::U32(1),
+        "candidate executes but fails the known boundary output");
+    assert!(!world.audit.iter().any(|entry|matches!(
+        &entry.action,Some(Action::Write{key,expected_version:Some(0),..})
+        if key=="/self/tools/transform-v1"
+    )), "no CAS adoption should happen for an incorrect phenotype");
 }
