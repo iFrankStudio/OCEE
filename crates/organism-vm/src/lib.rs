@@ -57,6 +57,9 @@ pub enum Op {
     /// Generic validated graph edit: program JSON, block name, register id, new Op JSON.
     /// It changes executable structure; selection/fitness remain organism decisions.
     RewriteOp(u32,u32,u32,u32),
+    /// Prepend a list of arbitrary serialized blocks; full graph revalidated.
+    /// This can introduce branches/guards but cannot bypass VM static checks.
+    PrependBlocks(u32,u32),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Terminator {
@@ -264,6 +267,11 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
             need(defs,*a,Type::Bytes)?;need(defs,*start,Type::U32)?;
             need(defs,*len,Type::U32)?;Ok(Type::Bytes)
         },
+        Op::PrependBlocks(program,blocks)=>{
+            need(defs,*program,Type::Bytes)?;
+            need(defs,*blocks,Type::Bytes)?;
+            Ok(Type::Bytes)
+        },
         Op::RewriteOp(program,block,reg,op)=>{
             need(defs,*program,Type::Bytes)?;
             need(defs,*block,Type::Bytes)?;
@@ -391,6 +399,20 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             if value>255 {return Err(VmError::Range);}
             Value::Bytes(vec![value as u8])
         },
+        Op::PrependBlocks(source,new_blocks)=>{
+            let original=bytes(regs,*source)?;
+            let additions:Vec<Block>=serde_json::from_slice(bytes(regs,*new_blocks)?)
+                .map_err(|_|VmError::InvalidInput)?;
+            if additions.is_empty(){return Err(VmError::InvalidInput);}
+            let mut program:Program=serde_json::from_slice(original)
+                .map_err(|_|VmError::InvalidInput)?;
+            if program.canonical_bytes()!=original || program.validate().is_err(){
+                return Err(VmError::InvalidInput);
+            }
+            program.functions[0].blocks.splice(0..0,additions);
+            program.validate().map_err(|_|VmError::InvalidInput)?;
+            Value::Bytes(program.canonical_bytes())
+        },
         Op::RewriteOp(source,name,reg,replacement)=>{
             let original=bytes(regs,*source)?;
             let block_id=std::str::from_utf8(bytes(regs,*name)?)
@@ -472,6 +494,8 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::HexEncode(a)=>bytes(regs,*a)?.len().saturating_mul(2),
         Op::XorFold(a)=>bytes(regs,*a)?.len(),
         Op::JsonIndex(a,_)|Op::ReplaceByte(a,_,_)=>bytes(regs,*a)?.len(),
+        Op::PrependBlocks(a,b)=>bytes(regs,*a)?.len().saturating_mul(3)
+            .saturating_add(bytes(regs,*b)?.len()),
         Op::RewriteOp(a,b,_,d)=>bytes(regs,*a)?.len().saturating_mul(3)
             .saturating_add(bytes(regs,*b)?.len())
             .saturating_add(bytes(regs,*d)?.len()),
