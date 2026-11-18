@@ -23,6 +23,16 @@ This crate implements the deterministic **world host** for OCEE-0. The first P1 
 
 The current action driver and initial program-selection fixture remain available for testing. No tests should be described as evidence that a life form or self-directed innovation has appeared.
 
+### S13-A organism-created challenge echo (development-only)
+
+When a registered tool's `EXEC` actually occurs, the public simulated
+reports optionally echo the organism-owned `/self/repair/probe-nonce` as
+`probe_challenge`. The value is based on public `Observe` state and
+is NOT confidential, unpredictable or authenticated. The separate
+[S13-A VM](../../experiments/E001/DEV-S13-CHALLENGE.md) checks two echoes
+against the stored current challenge, identifying unmodified old-run
+reports with the same subject program. It does not stop coordinated forgery.
+
 ### S13 exact EXEC receipt (development-only)
 
 The kernel returns optional `ActionResult.exec_step` on Ok/InvalidCode
