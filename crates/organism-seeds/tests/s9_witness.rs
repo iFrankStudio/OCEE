@@ -40,15 +40,15 @@ fn witness_guides_repair_or_abstention_under_standard_budget(){
     let program=s9_external_witness_repair();
     assert_eq!(s9_manifest().program_hash,
         format!("sha256:{}",program.content_hash().unwrap()));
-    // seed % 18 == 2,5,8,11,14,17 all have an empty ByteAt fault.
-    // (seed/3)%4 determines witness agreement, missing or conflict.
-    for (seed,expect) in [(2u64,0u32),(5,1),(8,3),(11,3),(14,0),(17,1)] {
+    // Use S7-confirmed faulty rule indices 2 and 5; +18 preserves
+    // the rule but changes (seed/3)%4 witness mode.
+    for (seed,expect) in [(2u64,0u32),(5,1),(20,3),(23,3),(38,0),(41,1)] {
         let w=run(seed,program.clone());
         let initial=program.content_hash().unwrap();
         assert_eq!(w.state.organisms[&ORGANISM_ID].active_program_hash,
             Some(initial),"no host program replacement");
         let witness=w.state.objects.get("/public/E001/boundary-witness")
-            .expect("witness must be emitted after a genuine fault");
+            .unwrap_or_else(||panic!("witness missing after seed {seed}"));
         let witness:ocee_world_kernel::BoundaryWitness=
             serde_json::from_slice(&witness.bytes).unwrap();
         assert_eq!(witness.observed_after_step+1,
