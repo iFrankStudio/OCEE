@@ -43,8 +43,12 @@ fn run(seed:u64,donor:Option<&World>)->Run{
             r.result.gas_charged+r.result.vm_gas_charged).sum();
         assert_eq!(world.state.organisms[&ORGANISM_ID].vm_continuation,None);
         assert_eq!(world.state.organisms[&ORGANISM_ID].last_return,None);
-        assert!(world.state.objects.keys().all(|key|
-            key.starts_with("/self/")));
+        // Fresh worlds generate their own /public fixtures during setup.
+        // Only the initial program, inherited tool, registry and active pointer
+        // may exist under /self before the second episode starts.
+        assert_eq!(world.state.objects.keys().filter(|key|
+            key.starts_with("/self/")).count(),4);
+        assert!(!world.state.objects.contains_key("/self/results/transform-held-out"));
         assert_eq!(world.state.config.seed,seed);
         assert!(world.state.mailboxes.is_empty());
         assert!(world.state.service_events.is_empty());
@@ -73,6 +77,8 @@ fn check_tool(w:&World,seed:u64){
 }
 #[test]
 fn same_rule_new_world_reuses_prior_self_generated_tool_and_costs_less(){
+    assert_eq!(s14_manifest().program_hash,
+        format!("sha256:{}",s14_episode_transfer().content_hash().unwrap()));
     let old=run(17,None);
     assert_eq!(old.world.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(1)));
     let baseline=run(35,None); // 35%18==17, same semantics, different world.

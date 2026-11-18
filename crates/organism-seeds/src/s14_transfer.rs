@@ -15,7 +15,6 @@ fn lit(bytes:&[u8])->Op {
 fn b(id:&str,params:Vec<Param>,instructions:Vec<Instruction>,end:Terminator)->Block{
     Block{id:id.into(),params,instructions,terminator:end}
 }
-fn fallback()->Terminator{Terminator::Jump{target:"restart".into(),args:vec![]}}
 pub fn s14_episode_transfer()->Program {
     let mut program=s6_composition_search();
     let f=&mut program.functions[0];
