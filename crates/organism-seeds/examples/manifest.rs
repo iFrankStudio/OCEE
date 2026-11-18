@@ -8,6 +8,7 @@ fn main() {
         serde_json::to_value(ocee_organism_seeds::s5_search::s5_manifest()).unwrap(),
         serde_json::to_value(ocee_organism_seeds::s6_compose::s6_manifest()).unwrap(),
         serde_json::to_value(ocee_organism_seeds::s7_recover::s7_manifest()).unwrap(),
+        serde_json::to_value(ocee_organism_seeds::s8_repair_search::s8_manifest()).unwrap(),
     ];
     println!("{}",serde_json::to_string_pretty(&manifests).unwrap());
 }

@@ -127,3 +127,6 @@ pub mod s6_compose;
 
 /// S7: observe failing tool boundary and add typed control-flow guard.
 pub mod s7_recover;
+
+/// S8: bounded feedback-selected repair among two preset guard candidates.
+pub mod s8_repair_search;
