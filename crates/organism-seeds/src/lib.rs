@@ -163,3 +163,6 @@ pub mod s19_p1_transfer;
 
 /// S20: learn and inherit both P1 service-request and result-query executables.
 pub mod s20_p1_transfer;
+
+/// S21A: a metered organism infers P2 TLV roles from public HELLO pairs.
+pub mod s21_p2_tlv;
