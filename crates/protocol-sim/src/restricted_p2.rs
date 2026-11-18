@@ -6,7 +6,7 @@
 //! known RemoteEval body, and feedback interpretation ARE researcher priors.
 //! This is NOT an in-VM organism and NOT proof of general protocol learning.
 #![forbid(unsafe_code)]
-use crate::{ParseError,ServiceOutput,ServiceResult};
+use crate::{ParseError,ServiceOutput};
 use std::collections::BTreeSet;
 
 #[derive(Clone,Debug)]
@@ -190,7 +190,6 @@ pub struct P2ProbeReport {
     pub remote_opcode:u8,
     pub result_opcode:u8,
     pub result:u32,
-    pub billed_b_gas:u64,
 }
 
 /// Discover two hidden operation values via visible diagnostics, then actually
@@ -198,7 +197,7 @@ pub struct P2ProbeReport {
 /// The oracle owns its world/service; it exposes no hidden configuration.
 pub fn solve_p2<F>(grammar:&P2ObservedGrammar,request_id:u32,values:[u32;3],
     mut oracle:F)->Result<P2ProbeReport,&'static str>
-where F:FnMut(&[u8])->ServiceResult {
+where F:FnMut(&[u8])->ServiceOutput {
     let mut calls=0usize;
     let mut eval=None;
     let mut result=None;
@@ -206,7 +205,7 @@ where F:FnMut(&[u8])->ServiceResult {
         let bytes=grammar.request(code,request_id,&[])?;
         let answer=oracle(&bytes);
         calls+=1;
-        match answer.output {
+        match answer {
             ServiceOutput::Diagnostic(ParseError::BadBody)=>{
                 if eval.replace(code).is_some(){return Err("multiple eval candidates");}
             },
@@ -226,20 +225,18 @@ where F:FnMut(&[u8])->ServiceResult {
     let request=grammar.request(eval,request_id,&body)?;
     let response=oracle(&request);
     calls+=1;
-    if response.b_gas_charged!=20 ||
-        !matches!(response.output,ServiceOutput::Frame(_)) {
+    if !matches!(response,ServiceOutput::Frame(_)) {
         return Err("remote eval was not actually billed and accepted");
     }
     let result_request=grammar.request(result,request_id,&[])?;
     for _ in 0..3 {
         let response=oracle(&result_request);
         calls+=1;
-        if let ServiceOutput::Frame(bytes)=response.output {
+        if let ServiceOutput::Frame(bytes)=response {
             if let Some(value)=grammar.result_value(&bytes,result,request_id)? {
                 return Ok(P2ProbeReport{
                     query_count:calls,remote_opcode:eval,
                     result_opcode:result,result:value,
-                    billed_b_gas:20,
                 });
             }
         }else{return Err("result request not recognized");}

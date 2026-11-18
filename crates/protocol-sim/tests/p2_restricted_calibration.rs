@@ -16,15 +16,18 @@ fn restricted_p2_public_samples_enable_tag_role_and_opcode_discovery(){
         let grammar=P2ObservedGrammar::infer(&hello_req,&hello_resp)
             .expect("P2 public HELLO should permit bounded structural inference");
         let mut step=1u64;
+        let mut audited_b_gas=0u64;
         let values=[0x7d7e_01a3,seed as u32,0xf013_7e55];
         let measured=solve_p2(&grammar,17,values,|wire|{
             let answer=service.handle(1,step,wire,50_000);
-            step+=1; answer
+            audited_b_gas+=answer.b_gas_charged;
+            step+=1; answer.output
         }).expect("restricted P2 oracle queries should find FOLD32 and RESULT");
         assert!(measured.query_count<=116,"query bound exceeded: {:?}",measured);
         assert_ne!(measured.remote_opcode,grammar.observed_hello_opcode);
         assert_ne!(measured.result_opcode,measured.remote_opcode);
-        assert_eq!(measured.billed_b_gas,20);
+        // Billing is checked by a privileged harness and never passed to the solver.
+        assert_eq!(audited_b_gas,20);
         assert_eq!(measured.result,independently_fold(values));
         // Must not be able to win through unbounded repeated service charges:
         // the actual B computation is billed exactly once.
