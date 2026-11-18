@@ -111,3 +111,51 @@ fn fault_free_but_semantically_wrong_tool_is_not_detected_by_fault_triggered_wit
         Value::U32(0));
     assert_eq!(hidden_compose_boundary(17,&[]),1);
 }
+
+#[test]
+fn consistent_but_false_witness_can_poison_a_repair(){
+    // Researcher-controlled adversarial intervention, NOT organism access to
+    // /public: replace the simulated authority's observation after the real
+    // fault and before the VM reads it. Both labels agree but are false.
+    let program=s9_external_witness_repair();
+    let hash=program.content_hash().unwrap();
+    let mut w=World::with_protocol(Config{
+        seed:5,a_gas_per_epoch:12_000,..Config::default()
+    },Family::P0,5);
+    assert_eq!(w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:format!("/self/versions/{hash}"),
+        expected_version:None,bytes:program.canonical_bytes(),
+    })).code,Code::Ok);
+    assert_eq!(w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:"/self/active".into(),
+        expected_version:None,bytes:hash.as_bytes().to_vec(),
+    })).code,Code::Ok);
+    let mut injected=false;
+    for _ in 0..4096 {
+        let result=w.tick_autonomous(ORGANISM_ID);
+        assert_ne!(result.code,Code::Denied);
+        if !injected && w.state.objects.contains_key("/public/E001/boundary-witness"){
+            let obj=w.state.objects.get_mut("/public/E001/boundary-witness").unwrap();
+            let mut witness:ocee_world_kernel::BoundaryWitness=
+                serde_json::from_slice(&obj.bytes).unwrap();
+            assert_eq!(witness.count,2);
+            assert_eq!(witness.first,Some(1)); // true seed-5 boundary
+            assert_eq!(witness.second,Some(1));
+            witness.first=Some(0);
+            witness.second=Some(0);
+            obj.bytes=serde_json::to_vec(&witness).unwrap();
+            injected=true;
+        }
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    assert!(injected,"must intervene only after a real fault");
+    assert!(w.state.organisms[&ORGANISM_ID].vm_continuation
+        .as_ref().is_some_and(|c|c.finished));
+    assert_eq!(w.state.objects["/self/tools/transform-v1"].version,1,
+        "consensus alone must not be mistaken for source authenticity");
+    assert_eq!(run_isolated(&adopted(&w),vec![],2000).unwrap().0,Value::U32(0));
+    assert_eq!(hidden_compose_boundary(5,&[]),1,
+        "adopted tool is semantically wrong despite passing local checks");
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used<=256*1024,true);
+}
