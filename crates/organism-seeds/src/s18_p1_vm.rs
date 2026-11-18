@@ -338,6 +338,19 @@ pub fn s18_p1_no_diagnostic_control()->Program {
     program
 }
 
+/// Mechanism ablation: the remote B computation still occurs, but the VM
+/// cannot recognize a correctly shaped RESULT frame and must not persist it.
+/// This isolates result identification from earlier opcode discovery.
+pub fn s18_p1_no_result_shape_control()->Program {
+    let mut program=s18_p1_discover_and_invoke();
+    let wire=program.functions[0].blocks.iter_mut()
+        .find(|b|b.id=="result_wire").unwrap();
+    wire.instructions.iter_mut().find(|ins|ins.id==464).unwrap().op=
+        Op::ConstU32(15); // actual P1 RESULT frame is 14 bytes
+    program.validate().expect("S18 result-shape ablation must typecheck");
+    program
+}
+
 pub fn s18_manifest()->crate::SeedManifest {
     crate::SeedManifest{
         manifest_version:1,
