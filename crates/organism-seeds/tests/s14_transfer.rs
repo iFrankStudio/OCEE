@@ -121,3 +121,30 @@ fn different_rule_rejects_old_semantics_then_relearns_and_rebinds_registry(){
     println!("S14 negative transfer: fresh_gas={} inherited_gas={} import_gas={} fresh_ticks={} inherited_ticks={}",
         fresh.gas,inherited.gas,inherited.import_gas,fresh.ticks,inherited.ticks);
 }
+
+#[test]
+fn three_episode_chain_amortizes_initial_learning_without_snapshot_carryover(){
+    // Three distinct world seeds with the same hidden rule, not three copies
+    // of one world snapshot. Every transition imports only the two whitelisted
+    // self-owned objects through the same metered write path.
+    let first=run(17,None);
+    let second=run(35,Some(&first.world));
+    let third=run(53,Some(&second.world));
+    let cold_second=run(35,None);
+    let cold_third=run(53,None);
+    let original=selected_tool(&first.world).0;
+    assert_eq!(selected_tool(&second.world).0,original);
+    assert_eq!(selected_tool(&third.world).0,original);
+    assert_eq!(second.world.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(2)));
+    assert_eq!(third.world.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(2)));
+    check_tool(&third.world,53);
+    let inherited_total=first.gas+second.gas+third.gas;
+    let cold_total=first.gas+cold_second.gas+cold_third.gas;
+    assert!(inherited_total<cold_total,
+        "three-episode gas including initial learning: inherited {inherited_total} vs independent {cold_total}");
+    assert!(second.import_gas>0 && third.import_gas>0);
+    println!("S14 three-episode same-rule chain: inherited_total_gas={inherited_total} cold_total_gas={cold_total} second_import_gas={} third_import_gas={}",
+        second.import_gas,third.import_gas);
+}
