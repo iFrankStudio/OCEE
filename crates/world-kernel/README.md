@@ -23,6 +23,17 @@ This crate implements the deterministic **world host** for OCEE-0. The first P1 
 
 The current action driver and initial program-selection fixture remain available for testing. No tests should be described as evidence that a life form or self-directed innovation has appeared.
 
+### S11 second simulated semantic check
+
+After an actually executed registered-tool empty-input `EXEC`, the world
+publishes `/public/E001/semantic-audit` with a separate implementation
+of the same researcher-defined empty-input reference. It is world-owned,
+read-only for the organism, and withheld on gas-refused actions.
+S11 compares it with the primary semantic witness before adopting a
+tool repair. **Two code implementations in one simulator are not genuinely
+independent sources**: simultaneous falsification still causes wrongful
+adoption. See [S11 study](../../experiments/E001/DEV-S11-CORROBORATION.md).
+
 ### S10 development-only active semantic witness
 
 After an isolated `EXEC` of the **currently registered tool** on the

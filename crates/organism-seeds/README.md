@@ -6,6 +6,7 @@ This crate provides **explicit, researcher-authored VM programs**. It is not a l
 |---|---|---|
 | S0 | Read public HELLO, send example, observe/persist response | Public paths, JSON extraction, polling |
 | S1 P0 | Probe unknown REMOTE_EVAL opcode via diagnostics | P0 XOR frame layout, opcode range, `BadBody` selector |
+| S11 auxiliary | Require a separate simulated environment audit to agree with an existing semantic witness before adopting a repair; reject single-source poisoning | Both code paths controlled by same research world/seed; no provenance authentication or genuinely independent authority |
 | S10 auxiliary | Proactively execute an adopted tool on the seeded empty probe; compare even successful outputs against a simulated semantic witness; repair or abstain | Researcher-selected input, simulated correlated evaluator, finite repair candidates and guarded adoption; **not general semantic-error discovery** |
 | S9 auxiliary | Read simulated post-fault public witness, compare two boundary observations, choose guard candidate or explicitly abstain | Fully pre-seeded repair vocabulary, fixture-provided witness correctness, trust in two correlated labels, fault-triggered observation strategy |
 | S8 auxiliary | Generate two guard variants, reject the executable-but-wrong first proposal, validate and CAS-adopt second | Researcher-seeded [1,0] vocabulary, zero-output oracle, branch skeleton, bounded search strategy |
@@ -40,3 +41,5 @@ S8 measured selection under the original A budget: [bounded repair study](../../
 [S9 witness study](../../experiments/E001/DEV-S9-BOUNDARY-WITNESS.md) records both target values and explicit abstention. Its negative seed 17 proves a fault-triggered witness cannot find an output error when the tool executes without a runtime fault. Two witness labels in this fixture are not independent sources.
 
 [S10 study](../../experiments/E001/DEV-S10-SEMANTIC-PROBE.md): an Ok-returning but incorrect tool can now be challenged and repaired on a seeded probe. Two same-source labels remain vulnerable to consistent false evidence, as S9 already demonstrated.
+
+[S11 corroboration evidence](../../experiments/E001/DEV-S11-CORROBORATION.md): one-source corruption is rejected; simultaneous falsification of both simulated channels causes wrongful adoption. Identical outputs do not establish genuine source independence.
