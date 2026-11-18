@@ -163,6 +163,10 @@ pub struct BoundaryWitness {
     pub first: Option<u32>,
     pub second: Option<u32>,
     pub observed_after_step: u64,
+    /// Declared source, not a cryptographic authentication proof.
+    pub source_id: String,
+    /// Bound to the exact registered immutable tool version that was probed.
+    pub subject_program_hash: String,
 }
 
 /// Reference semantics available to the world fixture/researcher, never to
@@ -374,7 +378,8 @@ impl World {
         };
         let evidence=BoundaryWitness{
             task_id:"binary-byte-compose-v1".into(),input:vec![],
-            count,first,second,observed_after_step:observed_step
+            count,first,second,observed_after_step:observed_step,
+            source_id:"sim-boundary/v1".into(),subject_program_hash:hash.into()
         };
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&evidence)
@@ -405,6 +410,7 @@ impl World {
         let evidence=BoundaryWitness{
             task_id:"binary-byte-compose-v1".into(),input:input.to_vec(),
             count,first,second,observed_after_step:observed_step,
+            source_id:"sim-primary/v1".into(),subject_program_hash:hash.into(),
         };
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&evidence)
@@ -430,7 +436,8 @@ impl World {
         let evidence=BoundaryWitness{
             task_id:"binary-byte-compose-v1".into(),
             input:input.to_vec(),count:1,first:Some(independent_answer),
-            second:None,observed_after_step:observed_step
+            second:None,observed_after_step:observed_step,
+            source_id:"sim-secondary/v1".into(),subject_program_hash:hash.into()
         };
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&evidence)
