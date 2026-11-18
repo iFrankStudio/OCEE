@@ -3,7 +3,7 @@
 use ocee_organism_seeds::s6_compose::{
     s6_composition_search,s6_single_operand_control,s6_manifest
 };
-use ocee_organism_vm::{Op,Program,Value};
+use ocee_organism_vm::{Op,Program,Value,run_isolated};
 use ocee_protocol_sim::Family;
 use ocee_world_kernel::{
     Action,ActionResult,Code,Config,World,TransformTask,ORGANISM_ID,hidden_compose
@@ -72,6 +72,21 @@ fn single_seed_program_builds_two_input_compositions_with_held_out_validation() 
         assert_eq!(held_out,
             Value::U32(hidden_compose(seed,&task.held_out_input)),
             "held-out result for seed {seed} not available to the agent");
+        // Independent post-selection audit: never reveal these data to the VM.
+        // Use distinct lengths, first bytes, and XOR reductions to detect
+        // candidate expressions that merely fit the two public examples.
+        let independent_inputs: [&[u8];4] = [
+            &[1,2,3,4,5,6],
+            &[99,0,13],
+            &[0,0,0,0,0,1,2,3],
+            &[200,7,41,17,9],
+        ];
+        for input in independent_inputs {
+            let (actual,_gas)=run_isolated(&candidate,input.to_vec(),2000)
+                .expect("selected tool must execute on novel inputs");
+            assert_eq!(actual,Value::U32(hidden_compose(seed,input)),
+                "independent input audit failed for seed {seed}, input {input:?}");
+        }
         assert_eq!(world.state_hash(),World::from_snapshot(&world.snapshot_json())
             .unwrap().state_hash());
     }
