@@ -34,15 +34,8 @@ jobs:
         run: cargo test --workspace -- --show-output
       - name: Report S8 lifecycle costs under original A quota
         run: cargo run --quiet -p ocee-organism-seeds --example s8_cost
-      - name: Report S14 paired-episode inheritance costs (including import)
-        run: cargo test -p ocee-organism-seeds --test s14_transfer -- --nocapture
-      - name: Report S15 restricted P2 oracle and transport costs
-        run: |
-          cargo test -p ocee-calibration-solver --test p2_restricted_calibration -- --nocapture
-          cargo test -p ocee-calibration-solver --test p2_restricted_world_oracle -- --nocapture
-      - name: Report S17 three-family restricted reference costs
-        run: cargo test -p ocee-calibration-solver --test three_family_reference -- --nocapture
-      - name: Report S18 active P1 VM lifecycle and controls
-        run: cargo test -p ocee-organism-seeds --test s18_p1_vm -- --nocapture
+      # The workspace test already prints captured successful-test evidence
+      # via --show-output; rerunning S14/S15/S17/S18 just for logs duplicates
+      # costly deterministic-world simulations without additional coverage.
       - name: Print auditable development organism manifests
         run: cargo run --quiet -p ocee-organism-seeds --example manifest
