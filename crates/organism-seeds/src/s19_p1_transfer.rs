@@ -134,8 +134,15 @@ pub fn s19_p1_transfer_aware()->Program{
             i(7146,Op::JsonFieldString(7144,7145)),
             i(7147,lit(b"BadBody")),
             i(7148,Op::EqBytes(7146,7147)),
-        ],branch(7148,"read_job",vec![7140,7141,7143,7142],
+        ],branch(7148,"reuse_to_job",vec![7140,7141,7143,7142],
             "s19_restart",vec![])),
+        // read_job is a Yield continuation: four carried values plus an
+        // implicit Bytes action feedback. Bridge through one metered OBSERVE
+        // rather than pretending a Branch supplies a fifth argument.
+        block("reuse_to_job",vec![
+            p(7190,b),p(7191,u),p(7192,u),p(7193,b)
+        ],vec![],yield_to(WorldCall::Observe,vec![],"read_job",
+            vec![7190,7191,7192,7193])),
         block("s19_restart",vec![],vec![
             i(7150,lit(b"")),
         ],jump("cold_start",vec![7150])),
