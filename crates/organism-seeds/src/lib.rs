@@ -151,3 +151,6 @@ pub mod s13_receipt;
 
 /// S14: audited cross-episode tool inheritance and runtime validation.
 pub mod s14_transfer;
+
+/// S18: metered active P1 VM discovery and real C->B submission.
+pub mod s18_p1_vm;
