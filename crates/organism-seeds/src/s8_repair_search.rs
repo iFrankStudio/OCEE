@@ -50,14 +50,14 @@ pub fn s8_two_candidate_repair()->Program{
         else{panic!("S7 read_broken expected")};
     *next="start_search".into();
 
-    for block in &mut f.blocks {
-        let id=block.id.as_str();
-        match id {
+    for node in &mut f.blocks {
+        let id=node.id.clone();
+        match id.as_str() {
             "construct" => {
-                *block=block_fn_construct(&incorrect_template,&candidates,b,u);
+                *node=block_fn_construct(&incorrect_template,&candidates,b,u);
             },
             "validate_empty" => {
-                *block=block("validate_empty",vec![
+                *node=block("validate_empty",vec![
                     p(2080,b),p(2081,b),p(2082,b),p(2083,u),p(2084,b)
                 ],vec![i(2085,l(&[]))],Terminator::Yield{
                     call:WorldCall::Exec,args:vec![2080,2085],
@@ -66,7 +66,7 @@ pub fn s8_two_candidate_repair()->Program{
                 });
             },
             "empty_status" => {
-                *block=block("empty_status",vec![
+                *node=block("empty_status",vec![
                     p(2090,b),p(2091,b),p(2092,b),p(2093,u),p(2094,b)
                 ],vec![
                     i(2095,l(b"code")),
@@ -81,7 +81,7 @@ pub fn s8_two_candidate_repair()->Program{
                 });
             },
             "empty_value" => {
-                *block=block("empty_value",vec![
+                *node=block("empty_value",vec![
                     p(2100,b),p(2101,b),p(2102,b),p(2103,u),p(2104,b)
                 ],vec![
                     i(2105,l(b"payload")),
