@@ -2,7 +2,7 @@
 
 - 状态：**开发集的有界监督决策**，不是正式 E001 或开放式演化证据。
 - 完整代码：[S11 活动 VM](../../crates/organism-seeds/src/s11_audit.rs)、[两个世界核验通道](../../crates/world-kernel/src/lib.rs)、[端到端对照与对抗性试验](../../crates/organism-seeds/tests/s11_audit.rs)。
-- 已确认 CI：[GitHub Actions #44253077037](https://github.com/iFrankStudio/OCEE/actions/runs/44253077037) — **58 passed / 0 failed**。后续扩展了同一资源拒绝安全测试，第二条模拟核验在 `Code::Gas` 下同样不得泄露答案；以随后完整 CI 通过为准。
+- 已确认 CI：[GitHub Actions #44253475161](https://github.com/iFrankStudio/OCEE/actions/runs/44253475161) — **58 passed / 0 failed**。同一 CI 中，扩展后的资源拒绝安全测试也已通过：第二条模拟核验在 `Code::Gas` 下不得泄露答案。
 - S11 初始 VM 哈希（CI manifest）：`sha256:39df81633b930033cc27927546415d44ece8fcac726da0ce595ad220802b895f`，属于开发指纹，**未正式预注册**。
 - 使用原定 A 资源配置 `12,000 gas/epoch` 与 256 KiB 存储上限。未完成独立的完整成本与统计效应测量。
 
