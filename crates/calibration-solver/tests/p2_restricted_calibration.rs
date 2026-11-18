@@ -60,3 +60,21 @@ fn damaged_or_unpaired_public_evidence_does_not_yield_a_schema(){
     // Both frames are needed to distinguish kind from opcode/checksum roles.
     assert!(P2ObservedGrammar::infer(&request,&request).is_err());
 }
+
+
+#[test]
+fn diagnostic_blinding_prevents_opcode_discovery_without_exposing_hidden_answers(){
+    // Same public HELLO, but a transport that suppresses the two discriminating
+    // diagnostics. This is a researcher-controlled feedback ablation, not an
+    // organism's learned strategy. No remote job can be submitted.
+    let service=Service::new(Family::P2,42);
+    let (request,response)=service.public_hello_sample(0);
+    let grammar=P2ObservedGrammar::infer(&request,&response).unwrap();
+    let mut queries=0usize;
+    let outcome=solve_p2(&grammar,17,[1,2,3],|_|{
+        queries+=1;
+        OracleFeedback::Diagnostic(Diagnostic::Other)
+    });
+    assert_eq!(outcome,Err("no evaluable operation"));
+    assert_eq!(queries,112);
+}
