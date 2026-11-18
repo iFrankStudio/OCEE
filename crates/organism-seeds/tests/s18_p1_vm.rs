@@ -1,18 +1,14 @@
 //! S18 active VM P1 protocol discovery. Unlike S15-S17 reference solvers,
 //! every candidate and decision is executed through the metered organism VM.
 use ocee_organism_seeds::s18_p1_vm::{
-    s18_p1_discover_and_invoke,s18_p1_no_diagnostic_control,s18_manifest
+    s18_p1_discover_and_invoke,s18_p1_no_diagnostic_control,
+    s18_p1_no_result_shape_control,s18_manifest
 };
 use ocee_organism_vm::Value;
 use ocee_protocol_sim::{Family,Operation,FrameKind};
 use ocee_world_kernel::{Action,Code,Config,World,WorkItem,ORGANISM_ID};
 
-fn run(seed:u64,diagnostics:bool)->World {
-    let program=if diagnostics{
-        s18_p1_discover_and_invoke()
-    }else{
-        s18_p1_no_diagnostic_control()
-    };
+fn run_program(seed:u64,program:ocee_organism_vm::Program)->World {
     let hash=program.content_hash().unwrap();
     let mut world=World::with_protocol(Config{
         seed,a_gas_per_epoch:12_000,..Config::default()
@@ -42,6 +38,21 @@ fn run(seed:u64,diagnostics:bool)->World {
     assert_eq!(world.state_hash(),
         World::from_snapshot(&world.snapshot_json()).unwrap().state_hash());
     world
+}
+
+fn run(seed:u64,diagnostics:bool)->World {
+    run_program(seed,if diagnostics{s18_p1_discover_and_invoke()}
+        else{s18_p1_no_diagnostic_control()})
+}
+
+#[test]
+fn result_shape_ablation_preserves_b_execution_but_blocks_result_storage(){
+    let w=run_program(42,s18_p1_no_result_shape_control());
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(0)));
+    assert!(w.state.objects.contains_key("/self/discoveries/p1-operation-candidate"));
+    assert!(w.state.objects.contains_key("/self/results/p1-remote-eval-ack"));
+    assert!(!w.state.objects.contains_key("/self/results/p1-job0/value_le"));
+    assert_eq!(w.state.service_events.iter().map(|e|e.b_gas_charged).sum::<u64>(),20);
 }
 
 #[test]
