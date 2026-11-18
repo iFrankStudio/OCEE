@@ -139,3 +139,6 @@ pub mod s10_semantic;
 
 /// S11: simulated secondary evaluator and corroboration before adoption.
 pub mod s11_audit;
+
+/// S12: source labels and content-hash binding for simulated evidence.
+pub mod s12_provenance;
