@@ -54,6 +54,10 @@ pub enum Op {
     PackByte(u32),
     /// Pack a bounded integer into two little-endian bytes.
     PackU16Le(u32),
+    /// Encode/decode generic two-byte stuffing for reserved marker/escape
+    /// with an XOR mask; all four operands are explicit VM values.
+    ByteStuffEncode(u32,u32,u32,u32), ByteStuffDecode(u32,u32,u32,u32),
+    PackU16Be(u32),
     /// Generic validated graph edit: program JSON, block name, register id, new Op JSON.
     /// It changes executable structure; selection/fitness remain organism decisions.
     RewriteOp(u32,u32,u32,u32),
@@ -259,7 +263,14 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
             need(defs,*a,Type::Bytes)?;
             Ok(if matches!(op,Op::Len(_)|Op::XorFold(_)){Type::U32}else{Type::Bytes})
         },
-        Op::PackByte(a)|Op::PackU16Le(a)=>{need(defs,*a,Type::U32)?;Ok(Type::Bytes)},
+        Op::PackByte(a)|Op::PackU16Le(a)|Op::PackU16Be(a)=>{
+            need(defs,*a,Type::U32)?;Ok(Type::Bytes)
+        },
+        Op::ByteStuffEncode(a,m,e,mask)|Op::ByteStuffDecode(a,m,e,mask)=>{
+            need(defs,*a,Type::Bytes)?;
+            for reg in [m,e,mask] {need(defs,*reg,Type::U32)?;}
+            Ok(Type::Bytes)
+        },
         Op::ByteAt(a,i)=>{
             need(defs,*a,Type::Bytes)?;need(defs,*i,Type::U32)?;Ok(Type::U32)
         },
@@ -394,6 +405,52 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             if value>u16::MAX as u32 {return Err(VmError::Range);}
             Value::Bytes((value as u16).to_le_bytes().to_vec())
         },
+        Op::PackU16Be(a)=>{
+            let value=num(regs,*a)?;
+            if value>u16::MAX as u32 {return Err(VmError::Range);}
+            Value::Bytes((value as u16).to_be_bytes().to_vec())
+        },
+        Op::ByteStuffEncode(a,marker,escape,mask)=>{
+            let m=num(regs,*marker)?;
+            let e=num(regs,*escape)?;
+            let x=num(regs,*mask)?;
+            if m>255 || e>255 || x>255 || m==e || x==0 {
+                return Err(VmError::Range);
+            }
+            let mut out=Vec::new();
+            for &b in bytes(regs,*a)? {
+                if b==m as u8 || b==e as u8 {
+                    out.extend_from_slice(&[e as u8,b^(x as u8)]);
+                } else {out.push(b);}
+                if out.len()>MAX_VALUE_BYTES {return Err(VmError::OutputTooLarge);}
+            }
+            Value::Bytes(out)
+        },
+        Op::ByteStuffDecode(a,marker,escape,mask)=>{
+            let m=num(regs,*marker)?;
+            let e=num(regs,*escape)?;
+            let x=num(regs,*mask)?;
+            if m>255 || e>255 || x>255 || m==e || x==0 {
+                return Err(VmError::Range);
+            }
+            let input=bytes(regs,*a)?;
+            let mut out=Vec::with_capacity(input.len());
+            let mut i=0;
+            while i<input.len(){
+                let b=input[i];
+                if b==m as u8{return Err(VmError::InvalidInput);}
+                if b==e as u8 {
+                    i+=1;
+                    let next=*input.get(i).ok_or(VmError::InvalidInput)?^(x as u8);
+                    if next!=m as u8 && next!=e as u8 {
+                        return Err(VmError::InvalidInput);
+                    }
+                    out.push(next);
+                } else {out.push(b);}
+                i+=1;
+            }
+            Value::Bytes(out)
+        },
         Op::PackByte(a)=>{
             let value=num(regs,*a)?;
             if value>255 {return Err(VmError::Range);}
@@ -494,6 +551,8 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::HexEncode(a)=>bytes(regs,*a)?.len().saturating_mul(2),
         Op::XorFold(a)=>bytes(regs,*a)?.len(),
         Op::JsonIndex(a,_)|Op::ReplaceByte(a,_,_)=>bytes(regs,*a)?.len(),
+        Op::ByteStuffEncode(a,_,_,_)=>bytes(regs,*a)?.len().saturating_mul(2),
+        Op::ByteStuffDecode(a,_,_,_)=>bytes(regs,*a)?.len(),
         Op::PrependBlocks(a,b)=>bytes(regs,*a)?.len().saturating_mul(3)
             .saturating_add(bytes(regs,*b)?.len()),
         Op::RewriteOp(a,b,_,d)=>bytes(regs,*a)?.len().saturating_mul(3)
