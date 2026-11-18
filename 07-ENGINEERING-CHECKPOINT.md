@@ -200,6 +200,14 @@
 
 - **S18 最终全生命周期计量**：[CI #44313014356](https://github.com/iFrankStudio/OCEE/actions/runs/44313014356) 81 项 workspace 全通过；seed 7/42/99 的实际 SEND 数为 177/23/125，世界 tick 2,270/124/1,331，VM gas **29,149/3,779/20,385**，A 总 gas **31,446/4,998/22,318**，B 各 20。默认 A 12,000 gas/epoch，seed 7/99 跨越多个 epoch。与 S17 宿主参考算法没有计入其 CPU 的 A 动作账本不能直接对比；详见 [S18 成本口径](./experiments/E001/DEV-S18-ACTIVE-P1.md)。
 
+### S19 — 活动 P1 VM 生成可执行工具、跨世界继承候选
+
+- [详细实验与先验审计](./experiments/E001/DEV-S19-ACTIVE-TOOL.md)；[S19 首轮 CI #44330835759](https://github.com/iFrankStudio/OCEE/actions/runs/44330835759) 成功，工作空间 **84 passed / 0 failed**。
+- 活动 VM 从 P1 HELLO 和 BadBody 反馈中发现 checksum key 与 REMOTE_EVAL opcode 后，用两次受计费的 `RewriteOp` 特化预置编码器，计算不可变内容哈希，保存版本；只有 `EXEC` 输出匹配独立构造的预期报文，才写入工具指针并实际调用生成 B 工作项，最终 FOLD32 结果经过研究端公式审计。三 seed 7/42/99 均通过。
+- 有效类型、`EXEC` 返回 Ok 但分隔符错误的反例会拒绝注册与远端执行，不能把“可运行”误判成“有用工具”。
+- 跨世界 P1 工具继承与新世界合法 `BadBody` 探针验证、不兼容回退及 CAS 替换已提交，[CI #44332968604](https://github.com/iFrankStudio/OCEE/actions/runs/44332968604) 当前待核验。**不应先写出继承节约结果或声称完成跨语法迁移。**
+- **限制**：工具完整算法与特化结构被研究者预置；S19 是受限的代码特化和实用能力证据，不是陌生协议语法自动发现、原创算法或 E001 M0。G1/G2 NO-GO。
+
 ## 已发现且修复的关键问题
 
 - C/B 服务作业表初版使用 `BTreeMap<(actor, request_id), job>`，无法直接序列化为 JSON 对象键，导致世界快照计算失败；已改为稳定编码的字符串键，并通过世界快照重放验证。

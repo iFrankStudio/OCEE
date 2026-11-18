@@ -22,3 +22,7 @@ This regression does not establish new protocol learning, new tool generation, i
 2. If failure: reproduce the specific mismatch and fix root cause with one focused test, avoiding unrelated test proliferation.
 3. If success: append run ID, exact test result, and any resource/accounting difference here and in the engineering checkpoint.
 4. Proceed to a new capability test: persist a discovered *executable* P1 tool and validate it after a fresh episode, with a changed-protocol negative-transfer control. Do not count the researcher-supplied grammar as invented.
+
+## 后继验证补充
+
+更晚的 [S19 已成功 CI #44330835759](https://github.com/iFrankStudio/OCEE/actions/runs/44330835759) 执行了包含 S18 mid-scan restart 回归的完整工作空间并全部通过（84 passed / 0 failed），因此本记录先前的“未 CI-confirmed”属于历史撰写时点，不应继续当成当前状态。该回归证明快照恢复后计算与终态保持确定性，不构成个体自主选择了世界重启。

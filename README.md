@@ -78,6 +78,7 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 - [S16 诊断屏蔽下仅凭合法帧发现 P2 远端服务](./experiments/E001/DEV-S16-DIAGNOSTIC-FREE.md)：与 S15 的错误码扫描相区别，使用预置的有效工作项生成合法请求；全部错误诊断均被屏蔽仍可通过合法 ACK/RESULT 帧学习。世界 seed 7 的查询 114→95、A gas 460→384，但发送字节 3,206→3,598；seed 42 为 114→38、460→156 gas、3,206→1,232 字节。**这是一种新的研究者预置策略，不是同一 S15 个体自发适应诊断缺失。**
 - [S17 三协议未告知家族的参考学习](./experiments/E001/DEV-S17-THREE-FAMILY.md)：同一信息受限参考控制流程仅根据公开 HELLO 样例选择预先列明的 P0/P1/P2 语法假说，屏蔽全部错误诊断，依靠可验证合法响应获得 B 的 FOLD32 结果。协议级 18 组、真实世界 6 组通过；移除先前 P0/P1 参考测试中把**特权 B gas**作为求解器判据的设计。**它是封闭语法表选择，仍非活动 VM 的跨家族自主学习。**
 - [S18 活动 P1 VM 完整工作闭环](./experiments/E001/DEV-S18-ACTIVE-P1.md)：同一个活动 VM 读取 HELLO、从公开样例推导 XOR 校验键，实际试探未知 REMOTE_EVAL opcode，经真实 A→C→B 执行三 u32 工作项，再自行发现 RESULT opcode、校验返回帧并持久化可独立验证的 u32。seed 7/42/99 成功，B gas 各 20；关闭 BadBody 选择不能调用 B，仅破坏 RESULT 帧形状则调用 B 后仍拒绝伪成功。全部 VM 指令和消息实际计费；[CI #44311562315](https://github.com/iFrankStudio/OCEE/actions/runs/44311562315)。**P1 格式、策略和固定工作项结构均为研究者先验，未创造新工具或跨协议学习。**
+- [S19 P1 活动 VM 工具特化与跨世界验证](./experiments/E001/DEV-S19-ACTIVE-TOOL.md)：研究者模板由同一活动 VM 的 `RewriteOp` 用真实 HELLO 推导的校验键和反馈搜索到的 opcode 特化为内容寻址可执行工具；隔离 `EXEC` 的结果须与独立构造的预期帧一致，才能注册并供真实 B 工作项使用；错误但可运行的模板被拒绝。[首轮 CI #44330835759](https://github.com/iFrankStudio/OCEE/actions/runs/44330835759) 84 项测试通过。继承/失效回退测试已提交，**新 CI 验收中**，不提前声称跨世界节省或负迁移数值。P1 格式、模板、诊断与门槛均为研究者先验。
 - G0 Engineering GO；G1 Calibration **NO-GO**；G2 Confirmatory **NO-GO**。仍缺完整 S/O 基线、真正运行在 VM 中的跨家族未知结构学习、任务收益/四组对照、独立校准的更广预算覆盖、事务持久化及安全复核。
 - 运行关键测试：`cargo test --workspace`。仅在实现新核心不变量时增加必要测试，避免测试膨胀。
 
