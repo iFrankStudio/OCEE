@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44253475161](https://github.com/iFrankStudio/OCEE/actions/runs/44253475161) — Rust workspace **58 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44257611715](https://github.com/iFrankStudio/OCEE/actions/runs/44257611715) — Rust workspace **60 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -136,9 +136,13 @@
 - [CI #44253475161](https://github.com/iFrankStudio/OCEE/actions/runs/44253475161) **58 passed / 0 failed**。原有资源拒绝安全断言已扩展至第二通道，并在 #44253475161 通过：未实际执行时不得泄露隐藏答案。
 - 两个参考函数是**同一模拟世界及 seed 控制的代码实现**，而非真正独立且认证过的现实来源。测试输入、候选集合、比较与采用策略均为人工先验；无来源身份协议、可信度推断、跨 episode 或未知 P1/P2 学习证据。
 
-### S12 — 模拟证据的来源声明与程序版本绑定（待 CI 验证）
+### S12 — 模拟证据的来源声明与程序版本绑定（已通过 CI）
 
 - [S12 开发记录](./experiments/E001/DEV-S12-PROVENANCE.md)：为两条模拟证据增加来源声明及受检程序哈希，并让活动 VM 在使用证据前验证；添加来源污染、跨版本替换、机制消融与双来源共同伪造的聚焦测试。
+- [最终 CI #44257611715](https://github.com/iFrankStudio/OCEE/actions/runs/44257611715) **60 passed / 0 failed**；跨程序替换对照使用了**实际保存在版本库内的另一份合法程序哈希**，而非仅仅一个格式错误的字符串。
+- 正常种子仍能完成修复和拒绝；源角色标识或受检哈希不符时拒绝 CAS，移除验证机制后不符哈希依旧可能被误用。两个通道同时伪造元数据与数值依然无法保证真实性；同版本重放也未校验。
+- **元数据声明并非来源签名；所有额外判断和有限修复语法仍由研究者赋予。**这是程序上下文绑定，不是可信认证或 E001 M0。
+
 - **本项尚未通过 CI**，不得将其计入已验证能力。声明式来源不构成密码学认证，同版本重放和共同造假仍未解决。G1/G2 NO-GO。
 
 ## 已发现且修复的关键问题

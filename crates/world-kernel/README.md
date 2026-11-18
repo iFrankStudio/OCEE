@@ -23,6 +23,16 @@ This crate implements the deterministic **world host** for OCEE-0. The first P1 
 
 The current action driver and initial program-selection fixture remain available for testing. No tests should be described as evidence that a life form or self-directed innovation has appeared.
 
+### S12 bound evidence metadata (development-only)
+
+Simulated witness objects now include `source_id` (declared producer role)
+and `subject_program_hash` (the exact program hash whose registered
+`EXEC` produced the report), alongside task, input and step. An S12
+organism checks both metadata fields before trusting either channel.
+Neither field is cryptographically authenticated; a privileged attacker
+can still replace all values or replay old evidence for the same version.
+See [S12 experiment](../../experiments/E001/DEV-S12-PROVENANCE.md).
+
 ### S11 second simulated semantic check
 
 After an actually executed registered-tool empty-input `EXEC`, the world
