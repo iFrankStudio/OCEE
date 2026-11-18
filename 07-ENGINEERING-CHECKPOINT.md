@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-17
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44225567333](https://github.com/iFrankStudio/OCEE/actions/runs/44225567333) — Rust workspace **44 passed / 0 failed**
+- **确认 CI**：[GitHub Actions Run 44227232415](https://github.com/iFrankStudio/OCEE/actions/runs/44227232415) — Rust workspace **47 passed / 0 failed**
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -93,7 +93,13 @@
 - [S7 研究记录](./experiments/E001/DEV-S7-BOUNDARY-REPAIR.md)：同一活动 VM 在完成 S6 有限搜索/注册后自主测试空字节输入；三个开发 seed（2、5、16）观察到实际隔离 `InvalidCode`，记录故障，并用通用图插入在已注册工具前添加空输入分支，独立验证和 CAS 采用。
 - 新旧程序版本均保留、活动初始程序未由研究者切换；错误补丁返回 1 的对照即使程序可执行仍被拒绝，禁止修复的对照保留故障状态，无故障 seed 0 不发生多余修改。
 - VM `PrependBlocks` 操作重验证全部图与类型，保持无界 CFG 环拒绝和 gas 计量；相关安全不变量已有最小测试。
-- S7 的正确零值假说、守卫块结构和空输入探测策略为**人工预置**，不是自主形成的新算法；尚未完成原定 gas 配额、跨 episode、P1/P2 及正式对照校准。
+- S7 的正确零值假说、守卫块结构和空输入探测策略仍为人工预置；后续 seed 2 在原定 12,000 gas/epoch 下通过针对性测试，但仍未完成分阶段 gas 统计、跨 episode、P1/P2 及正式对照校准。
+
+### S8 — 故障后有限修复候选选择（辅助研究）
+
+- [S8 证据](./experiments/E001/DEV-S8-REPAIR-SEARCH.md)：首次候选程序合法可执行、但空输入返回 1；个体从环境观察到实际输出不符合预置目标 0 后拒绝，再在同一 VM 的受限 RepeatBounded 内生成第二版，执行回归测试并 CAS 采用。
+- 三种开发 seed（2、5、16）在原定每 epoch 12,000 A gas 配额下通过；禁止第二次尝试时无法修复；无故障 seed 0 不发生无谓修改；S7 seed 2 在标准配额下也通过。
+- **返值词表 [1,0]、正确值 0、控制流守卫与搜索顺序都被研究者预置**。这是有限候选范围的反馈选择，不是正确修复算法的自主发现。完整资源成本、跨 episode 和正式 E001 仍未验证。
 
 ## 已发现且修复的关键问题
 

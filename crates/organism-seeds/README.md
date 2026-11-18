@@ -6,6 +6,7 @@ This crate provides **explicit, researcher-authored VM programs**. It is not a l
 |---|---|---|
 | S0 | Read public HELLO, send example, observe/persist response | Public paths, JSON extraction, polling |
 | S1 P0 | Probe unknown REMOTE_EVAL opcode via diagnostics | P0 XOR frame layout, opcode range, `BadBody` selector |
+| S8 auxiliary | Generate two guard variants, reject the executable-but-wrong first proposal, validate and CAS-adopt second | Researcher-seeded [1,0] vocabulary, zero-output oracle, branch skeleton, bounded search strategy |
 | S7 auxiliary | Discover tool's out-of-training empty-input fault; insert conditional graph guard; retest; CAS update tool while retaining old version | **Seeded empty→0 hypothesis**, guard AST, probe strategy, S6 finite grammar; not a general autonomous diagnosis algorithm |
 | S6 auxiliary | Finite 3×3×2 multi-node operator composition, trained on labeled I/O examples and validated on held-out input | Human-seeded operator grammar, skeleton, candidate enumeration and feedback selection; not P1/P2 discovery |
 | S5 auxiliary | Search among Len/XorFold/ByteAt via two public I/O examples; create and apply tool to held-out input | Preseeded finite vocabulary, one-node skeleton, bounded enumeration, supervised comparator; **not E001 protocol adaptation** |
@@ -31,3 +32,5 @@ S5 auxiliary evidence: [development operator-search record](../../experiments/E0
 S6 multi-node composition evidence: [development study](../../experiments/E001/DEV-S6-COMPOSITION.md). Its search grammar was explicitly designed; no novel primitive or search-policy origin is claimed.
 
 S7 in-world repair evidence: [boundary-repair study](../../experiments/E001/DEV-S7-BOUNDARY-REPAIR.md). The tool's faulty behavior and selection of a surviving program version are genuinely observed, but the guard algorithm was provided in the initial seed.
+
+S8 measured selection under the original A budget: [bounded repair study](../../experiments/E001/DEV-S8-REPAIR-SEARCH.md). The correct target is supplied as an initial prior, not inferred from the failure alone.
