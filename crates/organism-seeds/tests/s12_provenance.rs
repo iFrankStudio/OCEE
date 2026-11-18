@@ -34,12 +34,20 @@ fn run(seed:u64,program:Program,attack:Attack)->World {
                 Attack::BothFalse=>&["/public/E001/semantic-witness","/public/E001/semantic-audit"],
                 Attack::None=>unreachable!(),
             };
+            // Replay a real, stored and content-addressed old program:
+            // the initial active VM is valid, but is NOT the registered tool.
+            let stale=w.state.organisms[&ORGANISM_ID]
+                .active_program_hash.clone().expect("active version exists");
+            assert!(w.state.objects.contains_key(&format!("/self/versions/{stale}")));
+            let registered=String::from_utf8(
+                w.state.objects["/self/tools/transform-v1"].bytes.clone()).unwrap();
+            assert_ne!(stale,registered);
             for &key in targets {
                 let object=w.state.objects.get_mut(key).unwrap();
                 let mut evidence:BoundaryWitness=serde_json::from_slice(&object.bytes).unwrap();
                 match attack {
                     Attack::PrimarySource|Attack::SecondarySource=>evidence.source_id="sim-forged/v1".into(),
-                    Attack::PrimaryHash|Attack::SecondaryHash=>evidence.subject_program_hash="sha256:stale-version".into(),
+                    Attack::PrimaryHash|Attack::SecondaryHash=>evidence.subject_program_hash=stale.clone(),
                     Attack::BothFalse=>{
                         assert_eq!(evidence.first,Some(1));
                         evidence.first=Some(0);
