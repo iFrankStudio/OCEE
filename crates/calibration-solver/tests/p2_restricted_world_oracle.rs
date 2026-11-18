@@ -67,8 +67,13 @@ fn observed_p2_service_is_learnable_with_real_world_messages_and_a_quota(){
         assert!(a_bill<12_000,"calibration must complete within one A epoch");
         assert_eq!(world.state_hash(),
             World::from_snapshot(&world.snapshot_json()).unwrap().state_hash());
-        println!("S15-P2 world transport seed={seed} oracle_queries={} world_ticks={} A_gas={} B_gas={}",
-            report.query_count,world.state.step,a_bill,b_bill);
+        let tx_bytes:usize=world.audit.iter().filter_map(|event|
+            match &event.action {
+                Some(Action::Send{bytes,..})=>Some(bytes.len()),
+                _=>None,
+            }).sum();
+        println!("S15-P2 world transport seed={seed} oracle_queries={} world_ticks={} A_gas={} B_gas={} tx_bytes={}",
+            report.query_count,world.state.step,a_bill,b_bill,tx_bytes);
     }
 }
 
@@ -120,7 +125,12 @@ fn s16_diagnostic_blind_reference_solver_still_uses_metered_c_to_b_transport(){
         assert_eq!(b_bill,20);
         assert_eq!(world.state_hash(),
             World::from_snapshot(&world.snapshot_json()).unwrap().state_hash());
-        println!("S16 P2 BLIND seed={seed} queries={} masked={} ticks={} A_gas={} B_gas={}",
-            outcome.query_count,blinded,world.state.step,a_bill,b_bill);
+        let tx_bytes:usize=world.audit.iter().filter_map(|event|
+            match &event.action {
+                Some(Action::Send{bytes,..})=>Some(bytes.len()),
+                _=>None,
+            }).sum();
+        println!("S16 P2 BLIND seed={seed} queries={} masked={} ticks={} A_gas={} B_gas={} tx_bytes={}",
+            outcome.query_count,blinded,world.state.step,a_bill,b_bill,tx_bytes);
     }
 }
