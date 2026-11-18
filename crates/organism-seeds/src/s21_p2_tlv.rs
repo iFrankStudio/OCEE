@@ -268,7 +268,6 @@ pub fn s21_p2_infer_and_validate_new_hello()->Program {
     let mut program=build(false);
     let f=&mut program.functions[0];
     let b=Type::Bytes;
-    let u=Type::U32;
     let save=f.blocks.iter_mut().find(|node|node.id=="save_roles").unwrap();
     save.terminator=y(WorldCall::Write,vec![1232,1231,1233],
         "probe_read",vec![1231]);

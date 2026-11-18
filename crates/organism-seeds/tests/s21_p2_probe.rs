@@ -14,7 +14,7 @@ fn run(seed:u64,ablate:bool)->World{
         else{s21_p2_infer_and_validate_new_hello()};
     let hash=program.content_hash().unwrap();
     let mut world=World::with_protocol(Config{
-        seed,a_gas_per_epoch:12_000,..Config::default(),
+        seed,a_gas_per_epoch:12_000,..Config::default()
     },Family::P2,seed);
     for (key,bytes) in [
         (format!("/self/versions/{hash}"),program.canonical_bytes()),
