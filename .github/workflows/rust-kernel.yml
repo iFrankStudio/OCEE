@@ -34,3 +34,5 @@ jobs:
         run: cargo test --workspace
       - name: Print auditable development organism manifests
         run: cargo run --quiet -p ocee-organism-seeds --example manifest
+      - name: One-time S6 development resource pilot (will be moved to on-demand)
+        run: cargo run --quiet -p ocee-organism-seeds --example s6_calibration
