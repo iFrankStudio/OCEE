@@ -31,9 +31,24 @@ fn restart_during_specialization_preserves_tool_and_b_billing() {
             actor:ORGANISM_ID,key,expected_version:None,bytes,
         })).code,Code::Ok);
     }
-    // Interrupt before the VM has completed its protocol discovery and tool creation.
-    for _ in 0..10 { uninterrupted.tick_autonomous(ORGANISM_ID); }
-    assert!(!uninterrupted.state.objects.contains_key("/self/tools/p1-eval-frame"));
+    // Synchronize on an actual semantic phase, not a fixed tick count.
+    // Seed 42 may register the tool before tick 10. A restart strictly
+    // after the immutable version is stored but before tool adoption probes
+    // the vulnerable transition without assuming search duration.
+    let mut inside_specialization=false;
+    for _ in 0..1024 {
+        let reply=uninterrupted.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(reply.code,Code::InvalidCode|Code::Denied));
+        let versions=uninterrupted.state.objects.keys().filter(
+            |key|key.starts_with("/self/versions/")).count();
+        if versions==2 &&
+            !uninterrupted.state.objects.contains_key("/self/tools/p1-eval-frame") {
+            inside_specialization=true;
+            break;
+        }
+    }
+    assert!(inside_specialization,
+        "must capture the unregistered generated program, not assume a tick");
     let snapshot=uninterrupted.snapshot_json();
     let mut restarted=World::from_snapshot(&snapshot).unwrap();
     assert_eq!(uninterrupted.state_hash(),restarted.state_hash());
