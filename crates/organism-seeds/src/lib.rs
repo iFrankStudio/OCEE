@@ -157,3 +157,6 @@ pub mod s18_p1_vm;
 
 /// S19: an active P1 organism specializes and validates an executable tool.
 pub mod s19_p1_tool;
+
+/// S19B: fresh-world verified executable reuse with stale-tool fallback.
+pub mod s19_p1_transfer;
