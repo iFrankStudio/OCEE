@@ -92,7 +92,9 @@ fn import(w:&mut World,hash:&str,program:&Program,registry:&str)->u64{
     gas(w)-prev
 }
 fn exec_seen(w:&World,hash:&str)->bool{
-    w.audit.iter().any(|e|matches!(
+    // An attempted EXEC is not evidence of a functional inherited tool.
+    // Require the world's metered action receipt to report success.
+    w.audit.iter().any(|e|e.result.code==Code::Ok && matches!(
         &e.action,Some(Action::Exec{program_hash,..}) if program_hash==hash
     ))
 }
