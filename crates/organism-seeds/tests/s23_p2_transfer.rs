@@ -47,9 +47,17 @@ fn trial(world_seed:u64,proto_seed:u64,donor:Option<&World>)->Run{
         .map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum();
     for _ in 0..16384 {
         let r=world.tick_autonomous(ORGANISM_ID);
-        assert!(!matches!(r.code,Code::Denied|Code::InvalidCode),
-            "S23 VM fault world={world_seed} protocol={proto_seed} step={} {:?}",
-            world.state.step,r.code);
+        if matches!(r.code,Code::Denied|Code::InvalidCode) {
+            let host=&world.state.organisms[&ORGANISM_ID];
+            let stage=host.vm_continuation.as_ref().map(|c|
+                (c.block.as_str(),c.pc,c.registers.keys().copied().collect::<Vec<_>>()));
+            let last=world.audit.iter().rev().take(3)
+                .map(|a|format!("{:?} => {:?}, vm_gas={}",
+                    a.action,a.result.code,a.result.vm_gas_charged))
+                .collect::<Vec<_>>();
+            panic!("S23 fault world={world_seed} protocol={proto_seed} step={} {:?}; stage={stage:?} pending={:?} recent={last:?}",
+                world.state.step,r.code,host.pending_feedback);
+        }
         if world.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
             .is_some_and(|c|c.finished){break;}
     }

@@ -27,4 +27,4 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Validate S23 real P2 tool specialization and transfer controls
-        run: cargo test -p ocee-organism-seeds --test s23_p2_transfer -- --show-output
+        run: cargo test -p ocee-organism-seeds --test s23_p2_transfer active_vm_specializes_seals_probes_and_execs_a_real_p2_tool -- --show-output
