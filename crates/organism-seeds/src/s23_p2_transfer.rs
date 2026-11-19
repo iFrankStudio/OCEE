@@ -44,9 +44,111 @@ fn ro_reply()->Vec<Param>{
     let mut v=ro();v.push(p(603,Type::Bytes));v
 }
 
+
+// S23 compaction: S21's original role learner unrolls 5 copies of a
+// 12-block classifier. This has identical public-evidence semantics but
+// uses ONE classifier inside a persisted, statically bounded 5-step loop.
+// No new protocol knowledge, VM permissions, block/byte limit or opcode
+// oracle is added. This graph only replaces S21's unrolled stages in S23.
+fn compact_public_hello_roles(f:&mut ocee_organism_vm::Function) {
+    f.blocks.retain(|n|!n.id.starts_with("stage"));
+    let b=Type::Bytes;
+    let u=Type::U32;
+    let mut state=Vec::new();
+    for k in 0..=10 {
+        state.push(p(1000+k,if k<4 || k==10 {b}else{u}));
+    }
+    let state_args:Vec<u32>=(1000..=1010).collect();
+    let mut with_index=state.clone();
+    with_index.push(p(1014,u));
+    let mut indexed=state_args.clone();
+    indexed.push(1014);
+    let mut candidate=with_index.clone();
+    candidate.extend([p(1011,u),p(1012,b),p(1013,b)]);
+    let mut candidate_args=indexed.clone();
+    candidate_args.extend([1011,1012,1013]);
+    let first=f.blocks.iter_mut().find(|n|n.id=="outer_response")
+        .expect("public HELLO envelope parser must exist");
+    first.instructions.push(i(9200,Op::ConstU32(0)));
+    first.terminator=br(53,"s23_role_stage",
+        vec![57,58,55,56,52,59,59,59,59,59,60,9200],
+        "failed",vec![]);
+    let mut next_blocks=vec![
+        block("s23_role_stage",with_index.clone(),vec![],
+            Terminator::RepeatBounded{
+                limit:5,body:"s23_role_read".into(),body_args:indexed.clone(),
+                done:"verify_checksum".into(),done_args:state_args.clone(),
+            }),
+        block("s23_role_read",with_index.clone(),vec![
+            i(9201,Op::JsonIndex(1000,1014)),
+            i(9202,Op::JsonIndex(1001,1014)),
+            i(9203,lit(b"tag")),
+            i(9204,Op::JsonFieldU32(9201,9203)),
+            i(9205,Op::JsonFieldU32(9202,9203)),
+            i(9206,lit(b"value")),
+            i(9207,Op::JsonFieldBytes(9201,9206)),
+            i(9208,Op::JsonFieldBytes(9202,9206)),
+            i(9209,Op::EqU32(9204,9205)),
+        ],br(9209,"s23_role_id",indexed.iter().copied()
+            .chain([9204,9207,9208]).collect(),"failed",vec![])),
+        block("s23_role_id",candidate.clone(),vec![
+            i(9210,Op::Len(1012)),
+            i(9211,Op::ConstU32(4)),
+            i(9212,Op::EqU32(9210,9211)),
+        ],br(9212,"s23_role_store_id",candidate_args.clone(),
+            "s23_role_body",candidate_args.clone())),
+        block("s23_role_body",candidate.clone(),vec![
+            i(9213,Op::Len(1012)),
+            i(9214,Op::ConstU32(0)),
+            i(9215,Op::EqU32(9213,9214)),
+        ],br(9215,"s23_role_store_body",candidate_args.clone(),
+            "s23_role_onebyte",candidate_args.clone())),
+        block("s23_role_onebyte",candidate.clone(),vec![
+            i(9216,Op::Len(1012)),
+            i(9217,Op::ConstU32(1)),
+            i(9218,Op::EqU32(9216,9217)),
+        ],br(9218,"s23_role_kind_request",candidate_args.clone(),
+            "failed",vec![])),
+        block("s23_role_kind_request",candidate.clone(),vec![
+            i(9219,lit(&[0])),
+            i(9220,Op::EqBytes(1012,9219)),
+        ],br(9220,"s23_role_kind_response",candidate_args.clone(),
+            "s23_role_opcode",candidate_args.clone())),
+        block("s23_role_kind_response",candidate.clone(),vec![
+            i(9221,lit(&[1])),
+            i(9222,Op::EqBytes(1013,9221)),
+        ],br(9222,"s23_role_store_kind",candidate_args.clone(),
+            "s23_role_opcode",candidate_args.clone())),
+        block("s23_role_opcode",candidate.clone(),vec![
+            i(9223,Op::EqBytes(1012,1013)),
+        ],br(9223,"s23_role_store_opcode",candidate_args.clone(),
+            "s23_role_store_check",candidate_args.clone())),
+        block("s23_role_next",with_index.clone(),vec![
+            i(9224,Op::ConstU32(1)),
+            i(9225,Op::Add(1014,9224)),
+        ],j("s23_role_stage",state_args.iter().copied()
+            .chain([9225]).collect())),
+    ];
+    for (role,slot) in [
+        ("id",7usize),("body",8),("kind",5),
+        ("opcode",6),("check",9)
+    ]{
+        let mut carried=indexed.clone();
+        carried[slot]=1011;
+        carried[10]=9227;
+        next_blocks.push(block(&format!("s23_role_store_{role}"),
+            candidate.clone(),vec![
+                i(9226,Op::PackByte(1011)),
+                i(9227,Op::Concat(1010,9226)),
+            ],j("s23_role_next",carried)));
+    }
+    f.blocks.extend(next_blocks);
+}
+
 pub fn s23_p2_remote_tool_transfer()->Program{
     let mut program=s22_p2_discover_and_execute();
     let f=&mut program.functions[0];
+    compact_public_hello_roles(f);
     let b=Type::Bytes;
     let u=Type::U32;
     let s=f.blocks.iter_mut().find(|v|v.id=="s22_start").unwrap();
