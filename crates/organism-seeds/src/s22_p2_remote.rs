@@ -156,7 +156,19 @@ fn make(use_diagnostics:bool,enable_result:bool)->Program {
             i(675,lit(&[3,0])), // explicitly seeded 3*u32 workload
             i(676,Op::Concat(675,674)),
             i(677,Op::ConstU32(1)), // ACK phase
-        ],j("s22_construct",vec![600,601,677,676])),
+        ],j("s22_job_gate",vec![600,601,677,676])),
+        // A one-shot bounded stage transition is required by the typed
+        // graph verifier: otherwise reusing the same frame-builder for
+        // opcode probing AND the later job forms an unbounded static
+        // backedge via feedback -> remote_found -> job_send -> builder.
+        // It is not a search shortcut; VM still builds every frame.
+        block("s22_job_gate",vec![
+            v(600,Type::Bytes),v(601,Type::U32),
+            v(602,Type::U32),v(603,Type::Bytes)
+        ],vec![],Terminator::RepeatBounded{
+            limit:1,body:"s22_construct".into(),body_args:byte_args(),
+            done:"failed".into(),done_args:vec![],
+        }),
         block("s22_response_classify",with_bytes(),vec![
             i(680,Op::ConstU32(0)),
             i(681,Op::ByteAt(603,680)),
