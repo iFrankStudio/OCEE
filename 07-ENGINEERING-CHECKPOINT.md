@@ -286,9 +286,18 @@
 - [6abfdfa](https://github.com/iFrankStudio/OCEE/commit/6abfdfaad6634b8be2abb9244c4e9fd339ab8854) 已把 S23 现有有界空接收处理搬到 S22 基类，并让 S23 复用已有等价逻辑，避免重复基本块。S22/S23/S24 后继定向及全 workspace CI 待成功结果，**G1/G2 仍 NO-GO**。
 
 
-### 2026-11-19 S24 后继全量回归：seed99 正向失败（尚未修复）
+### 2026-11-19 S24 历史全量回归：seed99 正向失败（后继已复现并修复）
 
 - 本次复核 GitHub Actions **S22 [#44503380110](https://github.com/iFrankStudio/OCEE/actions/runs/44503380110) failure** 与完整 workspace **[#44503380220](https://github.com/iFrankStudio/OCEE/actions/runs/44503380220) failure**，两者共同指向 `crates/organism-seeds/tests/s22_p2_remote.rs:54` 的 `active_vm_p2_learns_both_hidden_operations_and_executes_real_b_fold32`，**seed99 返回 `Some(U32(0))`，预期 `Some(U32(1))`**。seed7/42 的同一正向用例已成功，阴性组两项通过；这不是单纯超时/取消，也不能宣称 S24 整套全量通过。
 - 同一修订的 **S23 [#44503380158](https://github.com/iFrankStudio/OCEE/actions/runs/44503380158) success** 与 **S24 [#44503380118](https://github.com/iFrankStudio/OCEE/actions/runs/44503380118) success** 不能替代失败的 S22/全量。S24B seed42 资源计量已经变为 1122 tick、A 18,845 gas、VM 14,663 gas、B 20；旧成本不可沿用。
 - 代码复核：S22 `s22_guard_receive` 对 `Empty` 使用 `RepeatBounded(128)`，耗尽后直接 `failed`；但现有测试仅检查最终返回值，**未记录 seed99 终止时的具体分支、是否重试耗尽、最后反馈或 C 服务事件**。因此目前只能把 128 次等待预算、消息延迟与资源调度视为待验证假说，不能写成已确认根因。
 - **下一执行检查点**：先在 S22 seed99 单独增加最小诊断（终态 continuation/最近 RECEIVE 状态/实际发送及服务事件；不读私有答案作为控制输入），重现失败并确定因果；若确认重试耗尽，优先修正有界等待的语义/预算而非无限循环或盲目扩大限额。随后只运行 S22 定向 CI，成功后再考虑全量 CI。保留确定性、配额、错误拒绝和负面组；此处属于研究者工程修复，不是个体自主修复。**G1/G2 NO-GO**。
+
+
+### 2026-11-19 S24 后继核验：共享预算耗尽已复现，分阶段真实高延迟重试通过
+
+- [完整审计](./experiments/E001/DEV-S24-RECOVERABLE-TLV.md) 第6节；[历史重放定向 #44517653790](https://github.com/iFrankStudio/OCEE/actions/runs/44517653790) **2项通过**，同一 seed99 旧的全生命周期共享128次 Empty 限额**确实耗尽**：终态 U32(0)，tick1284、A14,197、B20。
+- [研究者修复提交 0e8458c](https://github.com/iFrankStudio/OCEE/commit/0e8458c288802eb919d281c39dff9508f8b2a1f5) 把 S22 的空接收细分为远端操作码扫描、真实 B ACK、RESULT 三个不同 RepeatBounded（各 cap256，保持原有 VM 上限、真实成本和持久计数）。新 seed99 在默认网络延迟下 U32(1)、A18,529、B20，但三计数均为0，不能仅凭此例证明真正经历了高负载 Empty。
+- 增加模拟消息延迟并保留全部 P2 私有参数及任务语义不变：delay4 的真实 Empty 为 **6+2+70=78**、A20,309、tick1207、B20、任务仍完成；最初 [#44518525140](https://github.com/iFrankStudio/OCEE/actions/runs/44518525140) 因测试设定的超过128压力门槛而失败，不能叫作计算失败。delay6 的真实 Empty 为 **12+4+140=156**，且每段≤256、最终 U32(1)、tick1313、A22,087、B20，结果匹配独立 FOLD32；[定向 CI #44519428630](https://github.com/iFrankStudio/OCEE/actions/runs/44519428630) **3项通过**。
+- [同代码的 S22 定向 #44516301596](https://github.com/iFrankStudio/OCEE/actions/runs/44516301596) **3通过**、[S23 #44516301537](https://github.com/iFrankStudio/OCEE/actions/runs/44516301537) **3通过**、[S24 ACK 损坏补救 #44516301516](https://github.com/iFrankStudio/OCEE/actions/runs/44516301516) **7通过**。新 S22 seed7/42/99 A 分别39564/18986/18529，B 各20；S24B 受损 ACK 补救 A18,952、tick1122、B20。以上为新程序计费，不得沿用旧哈希的 gas。
+- **当前完整 workspace [#44519428660](https://github.com/iFrankStudio/OCEE/actions/runs/44519428660) 仍待最终结果**，不能以定向测试代替全量验收。该修复由研究者显式重构 VM 初始程序图，未证明赛博个体主动产生容错策略，更没有跨家族语法或开放式演化。G1/G2 继续 NO-GO。
