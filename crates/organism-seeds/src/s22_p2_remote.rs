@@ -366,12 +366,15 @@ pub fn s24_recovery_manifest()->crate::SeedManifest{
 /// feedback into a metered, persisted VM decision instead of JsonIndex([])
 /// causing InvalidCode. S23 has its own equivalent bounded retry graph and
 /// composes from the raw core to avoid duplicate blocks and static size cost.
+/// Keep independent metered, persisted RECEIVE=Empty budgets for protocol
+/// discovery (phase 0), real B ACK (phase 1) and RESULT scan (phase 2).
+/// The VM still caps EACH RepeatBounded limit at 256; nothing is unlimited.
 fn s22_guard_receive(mut program:Program)->Program{
     let f=&mut program.functions[0];
     let original=f.blocks.iter_mut().find(|b|b.id=="s22_feedback").unwrap();
     let payload_ops=std::mem::take(&mut original.instructions);
     let payload_term=std::mem::replace(&mut original.terminator,
-        br(7604,"s22_receive_retry",route_args(),
+        br(7604,"s22_retry_phase",route_args(),
             "s22_feedback_check_ok",vec![600,601,602,603]));
     original.instructions=vec![
         i(7600,lit(b"code")),
@@ -379,14 +382,32 @@ fn s22_guard_receive(mut program:Program)->Program{
         i(7602,lit(b"Empty")),
         i(7604,Op::EqBytes(7601,7602)),
     ];
-    f.blocks.extend([
-        block("s22_receive_retry",route(),vec![],
+    let caps=[
+        ("s22_remote_receive_retry","s22_remote_retry_wait"),
+        ("s22_ack_receive_retry","s22_ack_retry_wait"),
+        ("s22_result_receive_retry","s22_result_retry_wait"),
+    ];
+    let mut blocks=vec![
+        block("s22_retry_phase",route(),vec![
+            i(7610,Op::ConstU32(0)),
+            i(7611,Op::EqU32(602,7610)),
+        ],br(7611,caps[0].0,route_args(),
+            "s22_retry_phase_other",route_args())),
+        block("s22_retry_phase_other",route(),vec![
+            i(7612,Op::ConstU32(1)),
+            i(7613,Op::EqU32(602,7612)),
+        ],br(7613,caps[1].0,route_args(),caps[2].0,route_args())),
+    ];
+    for (header,wait) in caps {
+        blocks.push(block(header,route(),vec![],
             Terminator::RepeatBounded{
-                limit:128,body:"s22_retry_wait".into(),
-                body_args:route_args(),done:"failed".into(),done_args:vec![],
-            }),
-        block("s22_retry_wait",route(),vec![],
-            y(WorldCall::Observe,vec![],"s22_receive",route_args())),
+                limit:256,body:wait.into(),body_args:route_args(),
+                done:"failed".into(),done_args:vec![],
+            }));
+        blocks.push(block(wait,route(),vec![],
+            y(WorldCall::Observe,vec![],"s22_receive",route_args())));
+    }
+    blocks.extend([
         block("s22_feedback_check_ok",with_feedback(),vec![
             i(7605,lit(b"code")),
             i(7606,Op::JsonFieldString(603,7605)),
@@ -396,7 +417,8 @@ fn s22_guard_receive(mut program:Program)->Program{
             "failed",vec![])),
         block("s22_feedback_payload",with_feedback(),payload_ops,payload_term),
     ]);
-    program.validate().expect("S22 bounded RECEIVE Empty recovery must validate");
+    f.blocks.extend(blocks);
+    program.validate().expect("S22 per-phase bounded RECEIVE budgets must validate");
     program
 }
 pub(crate) fn s22_p2_raw_no_receive_guard()->Program{make(true,true)}
