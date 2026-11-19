@@ -166,3 +166,6 @@ pub mod s20_p1_transfer;
 
 /// S21A: a metered organism infers P2 TLV roles from public HELLO pairs.
 pub mod s21_p2_tlv;
+
+/// S22 active P2 private opcode exploration and remote B FOLD32 closure.
+pub mod s22_p2_remote;
