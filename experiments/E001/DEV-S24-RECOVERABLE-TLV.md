@@ -53,3 +53,9 @@ S24 并不是“个体自己修复了自己的算法”：通用安全原语、�
 此前 S23A 已经有一套受计费的 `RepeatBounded(128)` OBSERVE→RECEIVE 修复。提交 [6abfdfa](https://github.com/iFrankStudio/OCEE/commit/6abfdfaad6634b8be2abb9244c4e9fd339ab8854) 将相同的**研究者编写**世界动作状态检查与有界重试接入 S22 的各初始变体：只有 `RECEIVE.code==Ok` 才解析 bytes、`Empty` 走有界/可持久化等待、其它状态安全失败。S23A 仍沿用其已存在的等价重试器，通过原始 S22 生成器组合，不因重复四个块突破128-block/64KiB VM 上限。
 
 该修复正在分别由 [S22 #44503380110](https://github.com/iFrankStudio/OCEE/actions/runs/44503380110)、[S23 #44503380158](https://github.com/iFrankStudio/OCEE/actions/runs/44503380158)、[S24 #44503380118](https://github.com/iFrankStudio/OCEE/actions/runs/44503380118) 验收。**在这些后继 CI 给出最终结果前，不能称 Empty 回归已通过。** 这是先前已知的空接收时序问题在计算成本微调后被触发，不是个体自动发现的程序修复。
+
+## S24 下沉 Empty 重试后的资源复测
+
+[新定向 CI #44503380118](https://github.com/iFrankStudio/OCEE/actions/runs/44503380118) **success，7项通过**。真实 C 损坏 ACK：安全拒绝仍在72 tick 返回 U32(0)、B20；有界 RESULT 补救仍得到经过独立 FOLD32 验证的 U32(1)，但新成本变为 **1122 tick、A gas 18,845、其中 VM gas 14,663、B gas20**。
+
+此前 [#44502050065](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065) 的1047 tick、A 12,912、VM 8,821是**未下沉共用 RECEIVE=Empty 重试前的历史事实**，不可当作新版本成本。显式重试增加实际资源与调度成本，不能隐藏。全量回归 [#44503380220](https://github.com/iFrankStudio/OCEE/actions/runs/44503380220) 另核验。
