@@ -1,0 +1,29 @@
+name: S25 High-Latency VM Restart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s25-restart.yml"
+      - "crates/organism-seeds/tests/s25_p2_restart.rs"
+      - "crates/organism-seeds/src/s22_p2_remote.rs"
+      - "crates/world-kernel/src/lib.rs"
+      - "crates/organism-vm/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s25-restart-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mid-receive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify charged P2 continuation and exact state restart after 128+ Empty responses
+        run: cargo test -p ocee-organism-seeds --test s25_p2_restart -- --show-output
