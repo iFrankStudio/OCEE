@@ -355,3 +355,10 @@
 - Rust 原生执行数据：**完全相同 root + S19(P1)/S23(P2) 初始程序包**，source world/protocol seed42，target P2 world128/protocol42。Target 无继承 C：**A 21,833 gas / 1,163 tick**。跨家族 D 携带 P1 自己生成的工具并保留 p1 原生命名：**A 21,895 gas / 1,163 tick**（真实导入 **62 gas**，额外 **+62**；P1 donor 工具**未被实际 EXEC**，不能声称 H3）。同家族 P2→P2 导入 D：**A 16,671 gas / 1,087 tick**（导入 **102 gas**），相对冷启动节省 **5,162 gas / 23.64%**；donor 工具真实 EXEC，冷启动有候选发现/测试，两者 B 各20。所有 source 和 target 真实 B 计算通过独立 FOLD32 验算与状态快照检查。
 - 原生日志中用于 Python 跨家族审计的成对 C/D 行：source=P1、target=P2、两组成功1，A=21833/21895、B=20/20、发送字节1162/1162、ticks=1163/1163，导入工具 causal_tool_used 0/0，目标世界初始 state hash 相同。不得把同家族正对照误填进跨家族 H3 统计。
 - **科学限制**：数据只来自匹配的一组开发 seed，个体能复用的是研究者提供的完整 P2 编码模板经过实例特化，不是自创新跨家族算法；P1→P2 工具未被消费，说明当前机制对该知识没有跨协议迁移效用。G0 GO、G1/G2 **NO-GO**；下一个真正研究点是 VM 内可生成、类型化、两家族都可消费的**协议无关功能子程序**，且要有移除工具的功能/资源反事实。避免继续用只共享文件、未调用的工具宣称迁移。
+
+
+### 2026-11-19 — S27 全部定向流水线成功、配对 CSV 已归档
+
+- 修复 CSV 工作目录问题后的 [S27 最终 CI #44559169797](https://github.com/iFrankStudio/OCEE/actions/runs/44559169797)：GitHub Actions `paired-evidence` job **completed/success**；Rust 真世界配对测试、独立 Python 配对审计、CSV artifact 上传三个步骤全部成功。原始 CSV [工件 14548366400](https://github.com/iFrankStudio/OCEE/actions/runs/44559169797/artifacts/14548366400) 已保存（GitHub 压缩 artifact SHA256 `cb7a32babcdd83e58b556e402b277795b4c9327696b99d8f4d4111b73c568369`）。具体方法和首轮失败的透明记录见 [S27 报告](./experiments/E001/DEV-S27-PAIRED-TRANSFER.md)。
+- 独立 Python 输出：**P1→P2 跨家族，1个真实配对 seed**，C/D 成功各1，D−C 成功差0，声称 causal_tool_used=0，A gas 差 **+62**、B gas差0、发送字节差0、tick差0。与 Rust 原生事件审计所见的 P1 donor 工具未 EXEC 一致。S27 同家族 P2→P2 兼容继承节省 **5,162 A gas / 23.64%**，但 **不是**跨家族 H3。
+- S27 新增核心测试是有效配对，不足以通过 G1：家族专家先验、未验证任何跨家族功能复用、未形成非模板结构创新，也没有正式预注册；G0 GO、**G1/G2 NO-GO**。后续应在功能性可迁移子程序上继续，而非只延长重复历史 CI。
