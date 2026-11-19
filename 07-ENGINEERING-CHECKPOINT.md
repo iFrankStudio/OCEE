@@ -234,7 +234,7 @@
 
 ### S23A — P2 可执行 REMOTE_EVAL 工具特化、验收及继承（定向验证通过）
 
-- [S23A 实验与工程记录](./experiments/E001/DEV-S23-P2-EXECUTABLE-TRANSFER.md)、[三核心对照 CI #44455627472](https://github.com/iFrankStudio/OCEE/actions/runs/44455627472)：**3 passed / 0 failed**。完整 workspace CI [#44455627462](https://github.com/iFrankStudio/OCEE/actions/runs/44455627462) 初次归档时待最终验收，不能提前宣布全量通过。
+- [S23A 实验与工程记录](./experiments/E001/DEV-S23-P2-EXECUTABLE-TRANSFER.md)、[三核心对照 CI #44455627472](https://github.com/iFrankStudio/OCEE/actions/runs/44455627472)：**3 passed / 0 failed**。完整 workspace CI [#44455627462](https://github.com/iFrankStudio/OCEE/actions/runs/44455627462) 的 `kernel` job 已结束为 **cancelled**，并非 success；因此 S23A 目前只有三项定向对照成功的 CI 证据，不能宣称该提交完整 workspace 回归通过。
 - 同一个活动 VM 用 S21A 公开 HELLO 得到 P2 私有 role/order，再用 S22 的合法 C BadBody 得到 REMOTE_EVAL opcode，在 VM 内完成研究者预置的 TLV 编码器两处 RewriteOp、内容寻址、隔离 EXEC、C 功能性验收、CAS 注册。真实 B FOLD32 工作报文**必须由注册程序 EXEC 生成**，并由研究端独立验证返回值。
 - 同 S23A 初始程序、target world128/protocol42：**冷 19,712 A gas/1132 tick**、兼容继承 **14,452/1057**（导入102、节省26.7%）、失效继承并 CAS 重学 **20,319/1142**（导入102、负迁移+3.1%），B 均20。seed99 的独立冷启动 19,277 gas/1127 tick 也通过。
 - 先遇到128基本块和64KiB容量不足：没有保留任何放宽上限，改用研究者的五次有界角色识别共享图；共享反馈环由一次性 bounded 阶段约束。seed99 还暴露合法 RECEIVE=Empty 导致 InvalidCode，现由最多128次计费等待/重试处理，只有返回 Ok 才解析 payload。**不应将这些研究者故障排除误报成个体自行修复**。
