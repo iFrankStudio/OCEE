@@ -50,20 +50,14 @@ fn trial_mode(mode: u8) -> (World,usize) {
             }
         }
         let result=world.tick_autonomous(ORGANISM_ID);
-        if mode == 2 && result.code == Code::InvalidCode {
-            // Negative finding: malformed inner TLV currently aborts VM
-            // rather than returning a graceful U32(0). Do not call this recovery.
-            break;
-        }
         assert!(!matches!(result.code,Code::InvalidCode|Code::Denied),
             "VM fault at step {}: {:?}",world.state.step,result.code);
         if world.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
             .is_some_and(|c|c.finished){break}
     }
-    if mode != 2 {
-        assert!(world.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
-            .is_some_and(|c|c.finished));
-    }
+    assert!(world.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
+        .is_some_and(|c|c.finished),
+        "malformed TLV should now terminate in the organism's U32(0) branch");
     (world,altered)
 }
 
@@ -88,9 +82,10 @@ fn extra_inner_tlv_after_real_c_reply_is_not_accepted() {
     assert_eq!(normal.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(1)));
     let (mutated,injections)=trial_mode(2);
     assert_eq!(injections,1);
-    // The actual observed outcome is InvalidCode, not graceful U32(0).
-    // Assert the safety boundary without misrepresenting organism recovery.
-    assert_ne!(mutated.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(1)));
+    // S24 adds a generic, paid preflight so the organism can now observe
+    // malformed TLV as a normal failure branch, not a terminal VM fault.
+    assert_eq!(mutated.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(0)));
+    assert!(mutated.audit.iter().all(|e|e.result.code!=Code::InvalidCode));
     assert!(!mutated.state.objects.contains_key("/self/observations/p2-hello-nonreplay"));
     assert_eq!(mutated.state.service_events.len(),normal.state.service_events.len());
     assert_eq!(mutated.state.service_events.iter().map(|e|e.b_gas_charged).sum::<u64>(),0);

@@ -376,7 +376,23 @@ pub fn s21_p2_infer_and_validate_new_hello()->Program {
         blk("probe_outer_exact",vec![
             param(2155,b),param(2156,b),param(2157,b),
             param(2158,b),param(2159,Type::Bool)
-        ],vec![],br(2159,"probe_kind",vec![2155,2156,2157,2158],
+        ],vec![],br(2159,"probe_inner_preflight",
+            vec![2155,2156,2157,2158],"failed",vec![])),
+        // The untrusted inner TLV must have exactly the five tags observed
+        // from public HELLO, in exactly their observed physical order,
+        // BEFORE any TlvLookup/TlvReorder instruction can trap on extra,
+        // duplicate or truncated values. The new generic VM predicate is
+        // total: malformed TLV => Bool(false), not InvalidCode.
+        blk("probe_inner_preflight",vec![
+            param(2240,b),param(2241,b),param(2242,b),param(2243,b)
+        ],vec![
+            instr(2244,lit(b"value")),
+            instr(2245,Op::JsonFieldBytes(2243,2244)),
+            instr(2246,Op::ConstU32(6)),
+            instr(2247,Op::ConstU32(5)),
+            instr(2248,Op::Slice(2240,2246,2247)),
+            instr(2249,Op::TlvMatchesOrder(2245,2248)),
+        ],br(2249,"probe_kind",vec![2240,2241,2242,2243],
             "failed",vec![])),
         blk("probe_kind",vec![
             param(2160,b),param(2161,b),param(2162,b),param(2163,b)
