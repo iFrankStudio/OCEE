@@ -124,15 +124,21 @@ fn matched_bundle_paired_transfer_has_real_positive_and_negative_controls(){
     let (mut cold,root_c,seed_c)=boot(Family::P2,TARGET_SEED,PROTOCOL_SEED);
     let (mut foreign,root_f,seed_f)=boot(Family::P2,TARGET_SEED,PROTOCOL_SEED);
     let (mut same,root_s,seed_s)=boot(Family::P2,TARGET_SEED,PROTOCOL_SEED);
+    let (mut sham,root_sh,seed_sh)=boot(Family::P2,TARGET_SEED,PROTOCOL_SEED);
     assert_eq!(root_c,root_p1);
     assert_eq!(root_c,root_f);
     assert_eq!(root_c,root_s);
+    assert_eq!(root_c,root_sh);
     assert_eq!(seed_c,seed_f);
     assert_eq!(seed_c,seed_s);
+    assert_eq!(seed_c,seed_sh);
     let foreign_cost=import(&mut foreign,&p1_hash,&p1_program,
         "/self/tools/p1-eval-frame");
     let same_cost=import(&mut same,&p2_hash,&p2_program,
         "/self/tools/p2-eval-frame");
+    let sham_cost=import(&mut sham,&p2_hash,&p2_program,
+        "/self/tools/p2-eval-framf");
+    assert_eq!(same_cost,sham_cost,"equal-cost import");
     assert!(foreign_cost>0 && same_cost>0);
 
     // The target VM is not host-selected after boot and all groups have
@@ -140,7 +146,8 @@ fn matched_bundle_paired_transfer_has_real_positive_and_negative_controls(){
     finish(&mut cold);
     finish(&mut foreign);
     finish(&mut same);
-    for w in [&cold,&foreign,&same] {
+    finish(&mut sham);
+    for w in [&cold,&foreign,&same,&sham] {
         verify_b(w,Family::P2);
         assert_eq!(w.state.objects["/self/active"].version,1);
         assert_eq!(w.state.organisms[&ORGANISM_ID].active_program_hash.as_deref(),
@@ -164,6 +171,16 @@ fn matched_bundle_paired_transfer_has_real_positive_and_negative_controls(){
     assert_ne!(source_p2.state.objects["/public/E001/job0"].bytes,
         same.state.objects["/public/E001/job0"].bytes);
     assert!(exec_seen(&same,&p2_hash));
+    assert!(!exec_seen(&sham,&p2_hash),"sham registry must not be consumed");
+    assert_eq!(own_tool(&sham,"/self/tools/p2-eval-framf").0,p2_hash);
+    assert!(sham.state.objects.contains_key("/self/candidates/p2-eval-hash"),
+        "sham import must take cold candidate path");
+    assert_eq!(gas(&sham),gas(&cold)+sham_cost,
+        "paid but invisible tool must not improve runtime");
+    assert_eq!(sham.state.step,cold.state.step+2,
+        "two paid import writes are the only additional ticks");
+    assert!(gas(&same)<gas(&sham),
+        "functional registry visibility must improve cost over equal-cost sham");
     assert_eq!(own_tool(&same,"/self/tools/p2-eval-frame").0,p2_hash);
     assert!(!same.state.objects.contains_key("/self/candidates/p2-eval-hash"));
     assert!(gas(&same)<gas(&cold),
