@@ -167,8 +167,12 @@ fn matched_bundle_paired_transfer_has_real_positive_and_negative_controls(){
     assert!(gas(&same)<gas(&cold),
         "compatible tool must save metered A gas even after paid import");
     assert!(same.state.step<cold.state.step);
-    assert!(!exec_seen(&cold,&p2_hash),
-        "tool removal counterfactual must not execute donor tool");
+    assert!(cold.state.objects.contains_key("/self/candidates/p2-eval-hash"),
+        "without inheritance the VM must learn and test a cold candidate");
+    assert_eq!(cold.state.objects["/self/tools/p2-eval-frame"].version,0);
+    // The cold VM may independently generate an *identical content hash*
+    // under the unchanged P2 protocol seed; hash equality alone is not
+    // evidence of inheritance. The candidate and audit trajectory distinguish it.
 
     let csv=format!("pair_id,arm,source_family,target_family,success,a_gas,b_gas,bytes_sent,ticks,causal_tool_used,seed_hash\n{}{}",
         csv_record("s27-p1-to-p2-world128","C",true,&cold,false,&seed_c),
