@@ -316,3 +316,9 @@
 - [S23 继承路径修订](./crates/organism-seeds/src/s23_p2_transfer.rs)：在已有 EXEC 的合法 Bytes 输出被当作 P2 结构之前，加入**个体内部的受计费检查**：至少3字节、HELLO 已学 marker、单个外层 tag=0x10 TLV 结构、内层五字段实际 tag 顺序与已学角色吻合。不满足就走原有冷学习分支，禁止直接进入可能抛 InvalidCode 的 TlvDecode / TlvLookup。这是研究者编写的受限容错图，不是活动个体自发修复。
 - 本节记录的是**已提交的实验与可证伪断言，不是测试已经通过**。需先看 S26 定向 GitHub Actions 的 completed/success 与实际 A/B/导入 gas、工具版本，再记录结论；完整 workspace 在新修改上同样尚待核验。
 - 即使 S26A 通过，也仅说明拒绝跨家族直接复用与可恢复重学；**C/D 均非同一冻结跨家族通用初始 VM**，不满足 E001 的跨家族正迁移/原语发现判据。下一步仍需统一初始个体+真实配对探索/记忆消融。G0 GO、G1/G2 NO-GO。
+
+
+### 2026-11-19 — S25 全量 #44524418089 最终取消（独立核验）
+
+- 通过 GitHub Actions 原生 jobs 查询确认 [S25 定向 #44524418058](https://github.com/iFrankStudio/OCEE/actions/runs/44524418058) 的 `mid-receive` job 为 `completed/success`，但 [S25 全 workspace #44524418089](https://github.com/iFrankStudio/OCEE/actions/runs/44524418089) 的 `kernel` job 为 `completed/cancelled`。**不能把 S25 的全量标为通过**；已确认的最近一次全量成功仍是 S24 的 [#44519428660](https://github.com/iFrankStudio/OCEE/actions/runs/44519428660)，113 项通过。
+- S26A 针对性 Rust/CI 已提交，但尚无经原生日志核验的 completed/success；不要在新 workflow 出结果前报告 S26A 的 gas、CAS 版本、B 结果为实测成功。G1/G2 仍 NO-GO。
