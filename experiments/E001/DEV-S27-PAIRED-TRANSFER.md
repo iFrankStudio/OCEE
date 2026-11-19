@@ -35,3 +35,11 @@ Source 世界：P1 或 P2，world/protocol seed42；Target：P2 world128/protoco
 - 使用同一个 root `03a2ca2e477b6d9985fd16e0ed457e67ceeafbb5c1d9789623821a343d7e3a46`，source world/protocol seed42；target world128/protocol42：**冷 C** A21,833 / tick1163；**跨家族 P1→P2 D** A21,895 / tick1163，迁入62 gas，来自 P1 的可执行工具在 P2 中实际 EXEC 次数为0；**同家族 P2→P2 D** A16,671 / tick1087，迁入102 gas，来自 P2 的工具确实 EXEC，较冷启动节省5,162 A gas（23.64%）。所有组 B gas20，真实 FOLD32 与独立参考一致。
 - 跨家族 CSV 通过 s26_paired_audit.py：paired_seeds=1，C/D 成功各1，配对成功差0，D 成功且声称工具因果使用数0，两组都成功时 A 成本 D−C=+62，B gas、byte-hops、ticks 均差0。只报告单个开发 seed 的事实，**绝不声称统计显著性或 H3 确认性通过**。
 - **机制结论**：现有模型能以可测净收益继承**同一家族相同协议实例**的封存程序，但跨 P1→P2 原生命名的程序未被当前 P2 专用执行策略消费；单纯跨家族搬运已产生负资源收益。G1/G2 仍 NO-GO。下一切片需真正跨家族复用协议无关、经功能自测的子程序，并有工具移除反事实。
+
+
+## 2026-11-19 S27B — 同成本不可见工具反事实（待 CI 验证）
+
+- [Rust 修订 eba12a6](https://github.com/iFrankStudio/OCEE/commit/eba12a6b6c66212c8b0d2a08fe74a2c64653fefd) 在现有 S27 原生配对中加入第四个 target P2 世界 `sham`，保持完全相同的 root、两份专家程序、world/protocol seed、任务与资源配额。
+- `same` 与 `sham` 均真实导入 **同一份 P2 个体生成的不可变工具字节和内容哈希**；差别仅为 registry 名称：可消费的 `/self/tools/p2-eval-frame` 对比不可消费但等长的 `/self/tools/p2-eval-framf`。两个真实 WRITE 导入成本须严格相等。工具没有被删除，也没有额外给宿主隐藏答案。
+- 新断言：`sham` 不 EXEC 导入工具，走冷候选路径，A gas 等于 `cold + sham_import`，tick 等于 `cold + 2`（两次导入 WRITE）；`same` 的净成本严格低于 `sham`。所有四个世界仍须真实 B/FOLD32 正确、快照一致。这检验工具**可消费性**是否产生收益，而不是只看成功 EXEC 事件。
+- **状态：源码已提交，未获取本提交的 completed/success CI 或原生日志。** 以上是待证伪断言，不是已验证结果；若失败须依据原生审计排查，不调整断言以迎合结论。此试验只加强同家族功能复用归因，不能替代跨 P1/P2 结构迁移，亦不改变 E001 G1/G2 NO-GO。
