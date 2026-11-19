@@ -337,3 +337,12 @@
 - S26B 是**研究者播种的两种已知字节格式假说的有限选择**。它解决“必须有单个可测试初始程序入口”的前置障碍，但没有自主发明解析器、没有真正 C→B 工作，不能当成跨家族 H3 或开放式演化。S26B 全 workspace [#44548600138](https://github.com/iFrankStudio/OCEE/actions/runs/44548600138) 在本条撰写时仍须核验最终结论。
 - [S26C 活动程序包提交 8634dc4](https://github.com/iFrankStudio/OCEE/commit/8634dc4b55261d9cb8b924aa3e1df2562988e6d5)：同样的封存 router + P1 S19/P2 S23 **两份相同预先安装的程序库**，让 root 根据公开 HELLO 自行受计费 WRITE(/self/active) 切换到专用程序，必须有真实 B FOLD32 与逐条审计。专用模块全部为研究者提供而且在两世界等额安装；**即使测试通过也只是受先验限定的自主选择**。定向 [#44549321018](https://github.com/iFrankStudio/OCEE/actions/runs/44549321018) 的结果尚待验收。
 - G0 工程 GO；G1/G2 仍 **NO-GO**。后续关键是固定整个初始程序包并让它自行生成、验证、继承跨家族可用的工具，而非仅选择两份人工专家。
+
+
+### 2026-11-19 — S26C 单一初始程序包的真实远端计算（已核验定向 CI）
+
+- [定向 Rust CI #44549321018](https://github.com/iFrankStudio/OCEE/actions/runs/44549321018) **completed/success，1项核心测试通过/0失败**；对应 [提交 8634dc4](https://github.com/iFrankStudio/OCEE/commit/8634dc4b55261d9cb8b924aa3e1df2562988e6d5)，测试源码 [s26_dispatch.rs](./crates/organism-seeds/tests/s26_dispatch.rs)。**P1 和 P2 世界使用完全相同的 root hash** `03a2ca2e477b6d9985fd16e0ed457e67ceeafbb5c1d9789623821a343d7e3a46`，两种专用程序 S19 P1 / S23 P2 在两世界都同时预置并按实际 WRITE 计费，没有宿主按家族安装不同程序。root 使用公开 HELLO 结构证据判别，写入 /self/discoveries/framing-family，再在**活动 VM 内一次受计费 CAS WRITE(/self/active)**切换到匹配专用程序；世界内核清除旧 continuation，后续 tick 自主执行被选程序。
+- 原生日志：world/protocol seed42，P1 **A 9,762 gas、133 ticks、B 20 gas**；P2 **A 21,833 gas、1,163 ticks、B 20 gas**。这两组 A gas **包含两份研究者预安装专用程序以及 router 的初始写入成本**，不可与未计安装成本的其它历史实验直接比较。二者真实 C→B 计算、独立 FOLD32、世界快照状态一致性、单次 VM 自主 active 切换、P1/P2 结果持久化的因果断言均通过。
+- **先验来源审计**：这**不是一份单体新算法**，而是研究者先验的公共入口加两份已知协议专家的同源包，选择逻辑也由研究者给出；没有从 P1 创造出跨 P2 有用的新协议工具，没有 C/D 继承收益，更无开放式演化。其意义仅为排除后续“测试宿主按已知世界手动选专家”的混杂因子，建立同源执行与等初始能力的实验地基。
+- S26B 独立定向 #44548600143 已通过，但其全量 #44548600138 随更新 main 的新代码推送成为 **cancelled**，不得写为通过；S26C 后继完整工作空间 [#44549320903](https://github.com/iFrankStudio/OCEE/actions/runs/44549320903) **尚待完成**。G0 GO；G1/G2 **NO-GO**。
+- **下一真正决定性步骤**：在上述同源初始程序包基础上，实施由个体自己生成并在跨家族世界**功能性复用**的非字节模板工具（如经真实交互选择的通用校验/结果解析子程序），匹配 C/D pair 的 budget、seed、权限与初始化，移除继承工具作结构性反事实。若只是运行预置 P1/P2 专用库，禁止提升 G1 或 H3 结论。
