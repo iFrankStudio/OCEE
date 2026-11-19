@@ -143,11 +143,11 @@ fn historical_shared_128_counter_is_observed_not_assumed(){
 /// A reproducible perturbation: slow only the simulated C transport, not
 /// the P2 protocol, private opcodes, VM limits, B work or expected answer.
 #[test]
-fn delayed_c_mail_exercises_separate_bounded_retry_counters(){
+fn six_tick_c_delay_exercises_separate_bounded_retry_counters(){
     let p=s22_p2_discover_and_execute();
     let hash=p.content_hash().unwrap();
     let mut w=World::with_protocol(Config{
-        seed:99,message_delay:4,a_gas_per_epoch:12_000,..Config::default()
+        seed:99,message_delay:6,a_gas_per_epoch:12_000,..Config::default()
     },Family::P2,99);
     for (key,bytes) in [
         (format!("/self/versions/{hash}"),p.canonical_bytes()),
