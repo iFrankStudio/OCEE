@@ -1,0 +1,27 @@
+name: S24 P2 Seed99 Receive Budget
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s24-receive-budget.yml"
+      - "crates/organism-seeds/src/s22_p2_remote.rs"
+      - "crates/organism-seeds/tests/s24_p2_receive_budget.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s24-budget-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate seed99 result and separated counted retries
+        run: cargo test -p ocee-organism-seeds --test s24_p2_receive_budget -- --show-output
