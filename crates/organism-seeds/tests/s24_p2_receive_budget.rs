@@ -138,3 +138,56 @@ fn historical_shared_128_counter_is_observed_not_assumed(){
     assert_eq!(*ret,Some(Value::U32(0)),"the old seed99 regression must reproduce");
     assert_eq!(count,128,"demonstrate exhaustion of the historical retry cap");
 }
+
+
+/// A reproducible perturbation: slow only the simulated C transport, not
+/// the P2 protocol, private opcodes, VM limits, B work or expected answer.
+#[test]
+fn delayed_c_mail_exercises_separate_bounded_retry_counters(){
+    let p=s22_p2_discover_and_execute();
+    let hash=p.content_hash().unwrap();
+    let mut w=World::with_protocol(Config{
+        seed:99,message_delay:4,a_gas_per_epoch:12_000,..Config::default()
+    },Family::P2,99);
+    for (key,bytes) in [
+        (format!("/self/versions/{hash}"),p.canonical_bytes()),
+        ("/self/active".into(),hash.into_bytes()),
+    ] {
+        assert_eq!(w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key,bytes,expected_version:None,
+        })).code,Code::Ok);
+    }
+    for _ in 0..16_384 {
+        let result=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(result.code,Code::InvalidCode|Code::Denied),
+            "delayed C replies must not fault the VM");
+        if w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
+            .is_some_and(|c|c.finished){break;}
+    }
+    let agent=&w.state.organisms[&ORGANISM_ID];
+    let cont=agent.vm_continuation.as_ref().unwrap();
+    assert!(cont.finished);
+    let keys=["s22_remote_receive_retry","s22_ack_receive_retry",
+        "s22_result_receive_retry"];
+    let counts=keys.map(|k|*cont.loop_counters.get(k).unwrap_or(&0));
+    let total=counts.iter().sum::<u32>();
+    let gas=w.audit.iter().map(|e|
+        e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+    let b_gas=w.state.service_events.iter()
+        .map(|e|e.b_gas_charged).sum::<u64>();
+    println!("S24 delayed-C P2 seed99: retries={counts:?} total={total} ticks={} A_gas={gas} B_gas={b_gas} return={:?}",
+        w.state.step,agent.last_return);
+    assert_eq!(agent.last_return,Some(Value::U32(1)),
+        "delayed real C must still yield validated B result");
+    assert_eq!(b_gas,20);
+    assert!(total>128,"must genuinely stress the previous shared budget");
+    assert!(counts.iter().all(|&n|n<=256),
+        "every phase must stay within the static VM cap");
+    let job:WorkItem=serde_json::from_slice(
+        &w.state.objects["/public/E001/job0"].bytes).unwrap();
+    let expected=job.values.iter().enumerate().fold(0u32,|sum,(i,&x)|
+        sum.wrapping_add(x.rotate_left((i%32) as u32)));
+    let raw=&w.state.objects["/self/results/p2-job0/value_le"].bytes;
+    assert_eq!(u32::from_le_bytes(raw.as_slice().try_into().unwrap()),expected);
+    assert_eq!(w.state_hash(),World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
