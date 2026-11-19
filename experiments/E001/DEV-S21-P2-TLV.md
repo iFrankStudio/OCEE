@@ -60,3 +60,9 @@ S21 没有探测 P2 私有 REMOTE_EVAL/RESULT opcode，**没有提交或取回 F
 [测试提交 4ae6d95](https://github.com/iFrankStudio/OCEE/commit/4ae6d95bb6ad91e623b5283e5d7c752375a7a133) 的 [Actions #44408897590](https://github.com/iFrankStudio/OCEE/actions/runs/44408897590) 已于 2026-11-18 22:18:12 UTC 完成，结论 **success**。聚焦测试 `extra_outer_tlv_after_real_c_reply_is_not_accepted` 在 seed 42、标准 12,000 A gas/epoch 下让真实 C 先生成回复，研究端仅在交付 A 之前把外层声明长度增加 3 并追加合法空 TLV `[0x7f,0,0]`；断言实际注入恰好一次。未注入对照返回 U32(1) 且持久化 `/self/observations/p2-hello-nonreplay`；注入组返回 U32(0)，不得持久化该对象。两组 C 服务事件数相同、B gas 均为 0。该成功 CI 为**外层附加字段的实际执行拒绝证据**，不再只是源码推断。
 
 边界：这是研究者实施的传输层故障注入和研究者设计的严格响应验收；**不是个体自主发现漏洞或自行生成修复**。尚未注入额外/重复的**内层** TLV，也未独立证明各类恶意长度、重排、截断和其他种子均拒绝；没有 REMOTE_EVAL/RESULT 或 B 计算。不能据此扩大到任意 P2 帧安全或 E001 M0。后续优先单独测试一个内层额外字段的负对照，或转向受计费 VM 内 P2 操作码探索；避免重复同一外层注入测试。G1/G2 仍 NO-GO。
+
+## 内层 TLV 注入的真实负面结果（2026-11-19 UTC）
+
+[提交 2207ac1](https://github.com/iFrankStudio/OCEE/commit/2207ac11253eb09124437bd9fc6cb7ce19644cc1) 对应 [CI #44427591350](https://github.com/iFrankStudio/OCEE/actions/runs/44427591350) **failure**。聚焦测试的正常/外层注入路径通过，但内层额外合法 TLV `[0x7f,0,0]`（同步调整两层长度）在真实 C 回复交付后，使活动 VM 于 step 11 返回 `Code::InvalidCode`；原测试要求不得发生 VM fault，因此失败。**这不是个体返回 U32(0) 的优雅拒绝，更不是自主修复。**
+
+[后续提交 083f53f](https://github.com/iFrankStudio/OCEE/commit/083f53f3b305333e711f8d475517b71020c7668f) 只将测试断言调整为忠实记录该已观察到的异常退出，同时要求不产生成功返回、不保存成功对象、B gas=0、服务事件数不变；没有修改个体图或 VM 语义。该提交 CI 结果需另行核实；即使通过也只证明**失败封闭/未伪成功**，不证明活动个体具备可恢复的异常处理。后续应专门研究受限 VM 的错误值反馈或个体可执行的错误分支，避免把 `InvalidCode` 当作成功防御能力。
