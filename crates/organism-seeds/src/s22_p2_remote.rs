@@ -116,7 +116,7 @@ fn make(use_diagnostics:bool,enable_result:bool)->Program {
             i(655,Op::JsonFieldBytes(653,654)),
             i(656,Op::EqU32(602,652)), // remote opcode search?
         ],br(656,"s22_probe_classify",vec![600,601,655],
-            "s22_response_classify",byte_args().slice(0,3).concat(&[655]))),
+            "s22_response_classify",vec![600,601,602,655])),
         block("s22_probe_classify",vec![
             v(600,Type::Bytes),v(601,Type::U32),v(603,Type::Bytes)
         ],vec![
@@ -145,10 +145,10 @@ fn make(use_diagnostics:bool,enable_result:bool)->Program {
             i(669,Op::ConstU32(u32::MAX)),
         ],y(WorldCall::Write,vec![668,667,669],
             "s22_read_job",role_op_args())),
-        block("s22_read_job",with_feedback(),vec![
+        block("s22_read_job",vec![v(600,Type::Bytes),v(601,Type::U32),v(603,Type::Bytes)],vec![
             i(670,lit(b"/public/E001/job0")),
         ],y(WorldCall::Read,vec![670],"s22_job_send",role_op_args())),
-        block("s22_job_send",with_feedback(),vec![
+        block("s22_job_send",vec![v(600,Type::Bytes),v(601,Type::U32),v(603,Type::Bytes)],vec![
             i(671,lit(b"payload")),
             i(672,Op::JsonFieldBytes(603,671)),
             i(673,lit(b"values_le")),
