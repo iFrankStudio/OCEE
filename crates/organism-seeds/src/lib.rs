@@ -169,3 +169,6 @@ pub mod s21_p2_tlv;
 
 /// S22 active P2 private opcode exploration and remote B FOLD32 closure.
 pub mod s22_p2_remote;
+
+/// S23 researcher-seeded generic P2 executable TLV frame template.
+pub mod s23_p2_tool;
