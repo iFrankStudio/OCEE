@@ -1,6 +1,6 @@
 # OCEE — 开放式演化赛博生态世界
 
-**规范基线：v0.2.0 · 工程：P1/P2/P3 + S0–S26C 开发进展；S26A 后继全量 CI 成功、S26B 与 S26C 定向 CI 成功；S26C 全量核验中 · E001 尚未校准、未预注册**
+**规范基线：v0.2.0 · 工程：P1/P2/P3 + S0–S27 开发进展；S26C 全量 CI 成功、S27 配对原生 Rust+独立分析+工件归档成功 · E001 尚未校准、未预注册**
 
 OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是探索一种能够适应未知数字环境、学习使用现有软硬件与网络服务、创造新工具并持续改进自身的赛博生命培养机制。
 
@@ -112,3 +112,10 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 - **S26B** [同一冻结公开证据路由程序](./crates/organism-seeds/src/s26_family.rs)：同一初始 VM 哈希在 P0/P1/P2×3 开发种子中，识别 P1/P2 已披露结构假说并持久记录，P0 无误分类；[定向 CI](https://github.com/iFrankStudio/OCEE/actions/runs/44548600143) 通过。
 - **S26C** [同源程序包的真实 B 工作](./crates/organism-seeds/tests/s26_dispatch.rs)：两个世界均按相同成本预安装相同的 S19 P1 / S23 P2 专用库与同一个初始 root；活动 VM 仅凭公开 HELLO 选择专用程序并受计费切换 `/self/active`，随后真实 C→B 完成 FOLD32。seed42：P1 A 9,762 gas / 133 tick，P2 A 21,833 gas / 1,163 tick，B 各20；[定向 CI](https://github.com/iFrankStudio/OCEE/actions/runs/44549321018) 通过。
 - **严格边界**：S26B/C 的语法判别和两份专家程序均由研究者预设，**没有产生跨家族可复用的自创新算法**，也没有完成正式 C/D 配对继承。S26C 全量 CI [#44549320903](https://github.com/iFrankStudio/OCEE/actions/runs/44549320903) 尚待最终核验。继续坚持 **G0 GO，G1/G2 NO-GO**。
+
+
+## S27 配对遗传/继承开发实验（不是 E001 确认性演化证据）
+
+[S27 研究与可复核结果](./experiments/E001/DEV-S27-PAIRED-TRANSFER.md)、[原生 Rust 测试](./crates/organism-seeds/tests/s27_transfer_pairs.rs)、[最终通过 CI #44559169797](https://github.com/iFrankStudio/OCEE/actions/runs/44559169797)。在相同 S26C root+P1/P2 初始包、目标 P2 world128/protocol42 下：不继承 **21,833 A gas**；继承自身先前生成的兼容 P2 工具 **16,671 A gas**（导入102，节省5,162、23.64%，实际 EXEC）；继承来自 P1、保留正确原生工具命名的无用经验 **21,895 A gas**（导入62，P1 工具不被当前 P2 程序消费）。三组 B gas 各20、结果独立校验。跨家族 C/D 的真实 CSV 已由 Python 脚本核验并在 [CI 工件](https://github.com/iFrankStudio/OCEE/actions/runs/44559169797/artifacts/14548366400) 归档。
+
+**结论严界**：单个开发种子，正收益只在同家族/相同协议实例；跨家族迁入程序没有被功能性利用，不能算 H3。初始专家、协议语法与工具模板均为研究者先验；仍 **G0 GO，G1/G2 NO-GO**。真正下一目标是活动 VM 自行生成并在不同家族实际使用的、独立功能验证的协议无关子程序，加移除工具反事实和配对净收益。
