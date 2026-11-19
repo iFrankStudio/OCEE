@@ -14,7 +14,7 @@ fn seed99_real_b_result_survives_three_metered_retry_budgets(){
     },Family::P2,99);
     for (key,bytes) in [
         (format!("/self/versions/{hash}"),p.canonical_bytes()),
-        ("/self/active".into(),hash.into_bytes()),
+        ("/self/active".into(),hash.clone().into_bytes()),
     ] {
         assert_eq!(w.tick(Some(Action::Write{
             actor:ORGANISM_ID,key,bytes,expected_version:None,
@@ -112,7 +112,7 @@ fn historical_shared_128_counter_is_observed_not_assumed(){
     },Family::P2,99);
     for (key,bytes) in [
         (format!("/self/versions/{hash}"),p.canonical_bytes()),
-        ("/self/active".into(),hash.into_bytes()),
+        ("/self/active".into(),hash.clone().into_bytes()),
     ]{
         assert_eq!(w.tick(Some(Action::Write{
             actor:ORGANISM_ID,key,bytes,expected_version:None,
