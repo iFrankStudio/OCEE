@@ -322,3 +322,10 @@
 
 - 通过 GitHub Actions 原生 jobs 查询确认 [S25 定向 #44524418058](https://github.com/iFrankStudio/OCEE/actions/runs/44524418058) 的 `mid-receive` job 为 `completed/success`，但 [S25 全 workspace #44524418089](https://github.com/iFrankStudio/OCEE/actions/runs/44524418089) 的 `kernel` job 为 `completed/cancelled`。**不能把 S25 的全量标为通过**；已确认的最近一次全量成功仍是 S24 的 [#44519428660](https://github.com/iFrankStudio/OCEE/actions/runs/44519428660)，113 项通过。
 - S26A 针对性 Rust/CI 已提交，但尚无经原生日志核验的 completed/success；不要在新 workflow 出结果前报告 S26A 的 gas、CAS 版本、B 结果为实测成功。G1/G2 仍 NO-GO。
+
+### 2026-11-19 — S26A 负迁移定向及后继全量 CI 已完成（独立复核）
+
+- [S26A 定向运行 #44535284980](https://github.com/iFrankStudio/OCEE/actions/runs/44535284980)，head `6a987303`，GitHub Actions `foreign-family` job 和实际 Rust 测试步骤均为 **completed/success**。测试断言覆盖：真实 P1 S19 VM 产生并注册可执行工具；P2 S23 VM 对跨家族导入执行受计费验证，拒绝外来结构、重新特化并 CAS 替换；两个 P2 世界均成功，B 各扣 20 gas、结果独立核验，导入组 A gas 严格高于冷启动组。此处的成本差方向来自测试断言，**尚未从日志提取精确 gas 数字**，不得编造。
+- [后继全量工作空间 #44535255224](https://github.com/iFrankStudio/OCEE/actions/runs/44535255224)，head `d1df6c58`，`kernel` job **completed/success**；`Run world and VM invariant tests`、S8 生命周期成本报告和个体 manifest 三个步骤均为 **success**。此结果是 S26A 后继代码的全量回归证据，不会倒填此前被取消的 S25 原运行。
+- **能力来源与负面结论**：P1 与 P2 的初始活动程序不同，且外来帧结构检查由研究者编写；因此本结果仅证明跨家族错误工具可安全拒绝并重学，属于**负迁移成本**而非结构正迁移、通用协议发现或自主发明。S26 C/D 配对 CSV 及统一初始 VM 尚未完成，正式 E001 未启动，**G0 GO / G1、G2 NO-GO**。
+- **下一执行检查点**：以一个冻结的跨 P1/P2 初始 VM 哈希构建原生 C/D 配对；仅迁移个体产生的对象/工具，逐条计费并记录世界审计；先做一对真实跨家族运行和工具移除反事实，再生成开发集 CSV 交由 `s26_paired_audit.py` 检查。不要复用两套不同的研究者程序冒充同源对照。
