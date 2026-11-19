@@ -25,7 +25,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Run real paired Rust worlds and export raw cross-family C/D observations
         env:
-          OCEE_S27_CSV: target/s27_cross_family.csv
+          OCEE_S27_CSV: ${{ github.workspace }}/target/s27_cross_family.csv
         run: cargo test -p ocee-organism-seeds --test s27_transfer_pairs -- --show-output
       - name: Independently audit paired seed, success and costs
         run: python3 experiments/E001/s26_paired_audit.py target/s27_cross_family.csv
