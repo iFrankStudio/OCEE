@@ -33,7 +33,7 @@ S21A 在一个活动 VM 中从公开 HELLO request/response 推断 P2 五个内�
 - **选择性移除 BadBody 信号**：将活动 VM 的 BadBody 匹配词换成一个永远匹配不上的标签。尽管它仍发出合法 P2 候选，不能选择 REMOTE_EVAL、不向 B 提交工作、不给出结果。**这不证明 P2 学习普遍依赖详细诊断**：只是此研究者预置策略的一个机制消融。
 - **错误的 RESULT 形状假说**：仅将预期正文长度从5改为6，合法 B 工作仍被执行并计费20，但活动 VM 无法将合法 RESULT 误记为成功答案。这个反例区分远端执行与个体正确辨认结果。
 
-**完整 workspace CI 的最终验收应另以其相应成功 Run 为准**；定向 CI 的三项成功不能直接替代旧研究阶段的所有回归。归档时 [全量 CI #44440432805](https://github.com/iFrankStudio/OCEE/actions/runs/44440432805) 尚在运行。
+**全量验证已完成**：[CI #44440432805](https://github.com/iFrankStudio/OCEE/actions/runs/44440432805) **104 项 Rust workspace 测试通过、0 失败**；额外的 [S22 定向 CI #44440713315](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315) 也以 3 项核心测试通过独立确认。CI 对应 Rust 实现提交 [191f854](https://github.com/iFrankStudio/OCEE/commit/191f8545a246478d0394f8949baae90132c8762c)，其后只添加文档与独立定向 CI 工作流，没有修改受验的 S22 Rust 实现。
 
 ## 不可隐去的先验与未达到的目标
 

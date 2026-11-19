@@ -1,6 +1,6 @@
 # OCEE — 开放式演化赛博生态世界
 
-**规范基线：v0.2.0 · 工程：P1/P2/P3 + S0–S21 开发基线，CI 99 项通过 · E001 尚未校准、未预注册**
+**规范基线：v0.2.0 · 工程：P1/P2/P3 + S0–S22 开发基线，CI 104 项通过 · E001 尚未校准、未预注册**
 
 OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是探索一种能够适应未知数字环境、学习使用现有软硬件与网络服务、创造新工具并持续改进自身的赛博生命培养机制。
 
@@ -55,7 +55,7 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 ## 当前工程进度：P1/P2/P3 开发切片
 
 - Rust 世界内核：[world-kernel](./crates/world-kernel/)；受限 VM：[organism-vm](./crates/organism-vm/)；协议模拟器：[protocol-sim](./crates/protocol-sim/)。
-- [最新已验证 CI Run #44355391031](https://github.com/iFrankStudio/OCEE/actions/runs/44355391031)：**99 项工作空间测试通过，0 项失败**。覆盖时序、权限/资源、状态重放、程序版本与回退、隔离只读、受限循环、三种未知协议的报文处理与 FOLD32 远程服务。
+- [最新已验证 CI Run #44440432805](https://github.com/iFrankStudio/OCEE/actions/runs/44440432805)：**104 项 Rust 工作空间测试通过，0 项失败**。覆盖时序、权限/资源、状态重放、程序版本与回退、隔离只读、受限循环、三种未知协议的报文处理与 FOLD32 远程服务。
 - [工程检查点与尚未完成的工作](./07-ENGINEERING-CHECKPOINT.md) 区分实现证据与实验结论：端到端样例使用研究者准备的程序及合法协议报文，**不能算作自发探索、真实新能力创造或 E001 成功**。
 - 已实现真正以 VM 世界动作为主导的 [S0 观察/重放个体与 S1 P0 反馈探测个体](./experiments/E001/DEV-S0-S1.md)。S0 可以跨 P0/P1/P2 利用公开样例；S1 在已知 P0 XOR 规则但未知目标操作码的条件下，通过可见错误反馈识别操作码，诊断屏蔽对照不产生同一发现。**S0 和原版 S1 依旧没有新程序生成；派生工具实验见 S3，尚无跨家族迁移证据。**
 - [S2 P0 远程工作项开发实验](./experiments/E001/DEV-S2.md)：从 S1 持久发现构造有效 FOLD32 请求，主动搜索 RESULT 操作码并保存计算结果；**S2 仍由研究者在阶段边界安装，不是自主创生工具**。
@@ -81,7 +81,7 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 - [S19 P1 活动 VM 工具特化与跨世界验证](./experiments/E001/DEV-S19-ACTIVE-TOOL.md)：研究者模板由同一活动 VM 的 `RewriteOp` 用真实 HELLO 推导的校验键和反馈搜索到的 opcode 特化为内容寻址可执行工具；隔离 `EXEC` 的结果须与独立构造的预期帧一致，才能注册并供真实 B 工作项使用；错误但可运行的模板被拒绝。[首轮 CI #44330835759](https://github.com/iFrankStudio/OCEE/actions/runs/44330835759) 84 项测试通过。同一 S19 transfer-aware VM 在新世界选择兼容继承时 A gas **6,669→6,046（节省 9.3%）**，继承失效并回退时 **6,669→7,070（增加 6.0%）**，两种导入各计 62 gas。两条路径都实际调用 B 并正确取得结果；[最终 87-test CI](https://github.com/iFrankStudio/OCEE/actions/runs/44335557937)。P1 格式、模板、诊断与门槛均为研究者先验。
 - [S20 活动 P1 VM 双工具的自主特化和累计继承](./experiments/E001/DEV-S20-DUAL-TOOL.md)：S19 生成 REMOTE_EVAL 程序的同一初始 VM，在发现合法 RESULT 后进一步自行改写并验证第二个可执行编码器，存储两个不可变版本。新世界只搬运两程序+两 registry hash，真实 `EXEC→C SEND/RECEIVE` 分别复验；不兼容工具会被局部回退和 CAS 替换。对 world seed128/protocol seed42：无继承 **8,354 A gas/136 tick**、单工具继承 **7,731/135**、双工具继承 **3,851/33**（导入124 gas已计入）。三世界（42→128→129，**协议实例保持42**）计首轮学习的累计 gas **16,056 vs 全冷启动25,064**，节省35.9%；失效工具确有负迁移成本。[最终成功 CI #44340938612](https://github.com/iFrankStudio/OCEE/actions/runs/44340938612) **93通过**。**所有 P1 语法/模板和判定仍由研究者预置，不等于陌生协议演化。**
 - [S21 活动 VM 的 P2 字段角色推断与新 HELLO 实用验证](./experiments/E001/DEV-S21-P2-TLV.md)：S21A 在六个种子中仅凭公开配对 HELLO 推断五个私有 tag 与真实顺序（A gas3404–3406），移除配对变化后不能保存。S21B 在四个种子中把所学 tag/order 与公开 HELLO opcode 编成 request ID73 的**新报文**，经真实 C 反馈验证后才持久化（A gas4230–4231、12 tick、B gas0）；错误响应验收条件拒绝伪成功。[CI #44355391031](https://github.com/iFrankStudio/OCEE/actions/runs/44355391031) 99项通过。**P2 五字段 TLV 格式、HELLO 和判定策略均为研究者先验；未发现 REMOTE_EVAL，也未发生跨 P1→P2 的单个体迁移。**
-- [S22 活动 P2 TLV 隐藏操作码探索及 B FOLD32 闭环](./experiments/E001/DEV-S22-P2-B-CYCLE.md)：**同一受计费 VM** 从公开 HELLO 推断私有字段标签/顺序，再通过真实 C 的 BadBody 反馈发现 REMOTE_EVAL，读取公开工作项提交 B，验证 ACK，扫描 RESULT 并保存独立 FOLD32 数值。P2 开发 seed7/42/99 的 A gas **25,076/12,953/12,599**、B gas均20；[S22 定向 CI #44440713315](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315) 三关键测试成功，两个负对照分别拒绝失去 BadBody 选择及错误 RESULT 长度。**完整 workspace CI 尚待确认。** 预置 P2 TLV 假说、候选范围、FOLD32 工作形状和验收规则依然限制结论。
+- [S22 活动 P2 TLV 隐藏操作码探索及 B FOLD32 闭环](./experiments/E001/DEV-S22-P2-B-CYCLE.md)：**同一受计费 VM** 从公开 HELLO 推断私有字段标签/顺序，再通过真实 C 的 BadBody 反馈发现 REMOTE_EVAL，读取公开工作项提交 B，验证 ACK，扫描 RESULT 并保存独立 FOLD32 数值。P2 开发 seed7/42/99 的 A gas **25,076/12,953/12,599**、B gas均20；[S22 定向 CI #44440713315](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315) 三关键测试成功，两个负对照分别拒绝失去 BadBody 选择及错误 RESULT 长度。[完整 workspace CI #44440432805](https://github.com/iFrankStudio/OCEE/actions/runs/44440432805) **104 项工作空间测试通过**。 预置 P2 TLV 假说、候选范围、FOLD32 工作形状和验收规则依然限制结论。
 - G0 Engineering GO；G1 Calibration **NO-GO**；G2 Confirmatory **NO-GO**。仍缺完整 S/O 基线、真正运行在 VM 中的跨家族未知结构学习、任务收益/四组对照、独立校准的更广预算覆盖、事务持久化及安全复核。
 - 运行关键测试：`cargo test --workspace`。仅在实现新核心不变量时增加必要测试，避免测试膨胀。
 
@@ -97,6 +97,6 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 ## 版本状态
 
 - **v0.1.0**：世界、个体和 E001 的初始草案；未实现。
-- **v0.2.0**：冻结执行语义和研究边界；工程已推进到 P1/P2/P3 初始实现（99 项工作空间测试通过）。**完整 VM ISA、独立结构生成学习、对照校准与持久化尚未完成，E001 没有确认性实验结果**。
+- **v0.2.0**：冻结执行语义和研究边界；工程已推进到 P1/P2/P3 初始实现（104 项工作空间测试通过）。**完整 VM ISA、独立结构生成学习、对照校准与持久化尚未完成，E001 没有确认性实验结果**。
 
 需要修改 VM 语义、协议语法、先验能力、资源模型、正式门槛时，请先提出明确版本化变更并评估实验可比性。

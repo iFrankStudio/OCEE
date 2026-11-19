@@ -214,6 +214,6 @@ S20 初始程序开发哈希：`sha256:24d67e17ff371a29ef3c74189c3442699db73a7f9
 
 ## S22 P2 完整工作闭环的初始能力来源（开发集）
 
-[S22 报告](./experiments/E001/DEV-S22-P2-B-CYCLE.md)，[三项定向核心测试成功](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315)。这份新的活动初始程序将 S21A 的公开 HELLO role 推断和 P2 有界 opcode 反馈扫描、3*u32/FOLD32 工作组成**同一个连续 VM 程序**。私有 role tag/order、REMOTE_EVAL/RESULT opcode、protocol seed、B 资源/答案不作为个体输入。研究端仅在结束后独立检查结果。
+[S22 报告](./experiments/E001/DEV-S22-P2-B-CYCLE.md)，[定向三项验证通过](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315)、[完整 workspace 104 项通过](https://github.com/iFrankStudio/OCEE/actions/runs/44440432805)。这份新的活动初始程序将 S21A 的公开 HELLO role 推断和 P2 有界 opcode 反馈扫描、3*u32/FOLD32 工作组成**同一个连续 VM 程序**。私有 role tag/order、REMOTE_EVAL/RESULT opcode、protocol seed、B 资源/答案不作为个体输入。研究端仅在结束后独立检查结果。
 
 播种先验仍为：1B marker、2B 大端外部长度、外层 0x10 TLV、五个内层字段的形状/角色、公开 HELLO 规则、XOR 算法、112 opcode 候选、BadBody 选择标签、3*u32 工作模型、固定请求 ID17、ACK/RESULT 的成功状态与长度、失败/回退策略及所有通用 VM 字节运算。**S22 不含动态发明新算法或跨家族迁移能力**，正式 E001 初始 S 未冻结，G1/G2 NO-GO。
