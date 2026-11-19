@@ -26,7 +26,10 @@ permissions:
 jobs:
   kernel:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # S23's metered multi-episode simulations exceeded the previous 20-minute
+    # job ceiling on both original and rerun attempts. Keep a finite ceiling;
+    # investigate actual duration before raising it again.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
