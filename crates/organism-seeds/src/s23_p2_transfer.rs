@@ -238,7 +238,51 @@ pub fn s23_p2_remote_tool_transfer()->Program{
             i(9011,Op::JsonFieldString(603,9010)),
             i(9012,lit(b"Ok")),
             i(9013,Op::EqBytes(9011,9012)),
-        ],br(9013,"s23_decode_tool_wire",vec![600,603],
+        ],br(9013,"s26_wire_min",vec![600,603],
+            "s23_fallback",vec![600])),
+        // S26 engineering: a program can EXEC successfully yet emit a
+        // different protocol family. Total byte-structure checks precede
+        // all fallible TLV decoding. Failed preflight follows the existing
+        // paid cold-learning path, not a VM InvalidCode trap.
+        block("s26_wire_min",vec![p(600,b),p(603,b)],vec![
+            i(9310,lit(b"payload")),
+            i(9311,Op::JsonFieldBytes(603,9310)),
+            i(9312,lit(b"Bytes")),
+            i(9313,Op::JsonFieldBytes(9311,9312)),
+            i(9314,Op::Len(9313)),
+            i(9315,Op::ConstU32(3)),
+            i(9316,Op::Div(9314,9315)),
+            i(9317,Op::ConstU32(0)),
+            i(9318,Op::EqU32(9316,9317)),
+        ],br(9318,"s23_fallback",vec![600],
+            "s26_wire_marker",vec![600,603,9313])),
+        block("s26_wire_marker",vec![p(600,b),p(603,b),p(9313,b)],vec![
+            i(9319,Op::ConstU32(0)),
+            i(9320,Op::ByteAt(9313,9319)),
+            i(9321,Op::ByteAt(600,9319)),
+            i(9322,Op::EqU32(9320,9321)),
+        ],br(9322,"s26_wire_outer",vec![600,603,9313],
+            "s23_fallback",vec![600])),
+        block("s26_wire_outer",vec![p(600,b),p(603,b),p(9313,b)],vec![
+            i(9323,Op::Len(9313)),
+            i(9324,Op::ConstU32(3)),
+            i(9325,Op::Sub(9323,9324)),
+            i(9326,Op::Slice(9313,9324,9325)),
+            i(9327,lit(&[0x10])),
+            i(9328,Op::TlvMatchesOrder(9326,9327)),
+        ],br(9328,"s26_wire_inner",vec![600,603,9326],
+            "s23_fallback",vec![600])),
+        block("s26_wire_inner",vec![p(600,b),p(603,b),p(9326,b)],vec![
+            i(9329,Op::TlvDecode(9326)),
+            i(9330,Op::ConstU32(0)),
+            i(9331,Op::JsonIndex(9329,9330)),
+            i(9332,lit(b"value")),
+            i(9333,Op::JsonFieldBytes(9331,9332)),
+            i(9334,Op::ConstU32(6)),
+            i(9335,Op::ConstU32(5)),
+            i(9336,Op::Slice(600,9334,9335)),
+            i(9337,Op::TlvMatchesOrder(9333,9336)),
+        ],br(9337,"s23_decode_tool_wire",vec![600,603],
             "s23_fallback",vec![600])),
         block("s23_decode_tool_wire",vec![p(600,b),p(603,b)],vec![
             i(9014,lit(b"payload")),
