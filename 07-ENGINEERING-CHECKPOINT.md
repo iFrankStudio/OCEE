@@ -307,3 +307,12 @@
 - [S25 研究记录](./experiments/E001/DEV-S25-MID-RECEIVE-RESTART.md)、[定向 CI #44524418058](https://github.com/iFrankStudio/OCEE/actions/runs/44524418058) **1项通过/0失败**。S24 原 P2 活动程序不变，world/protocol seed99、C delay6；在 step1225、A gas18,978、B gas20、三段实际 Empty=[12,4,113]（共129），尚未保存 RESULT 时，测试主持者真实 JSON snapshot/reload。
 - 恢复后的 VM continuation 持有相同有界计数、pending transport、审计链和资源状态，两条世界继续执行均在 step1313、A gas22,087、B gas20、Empty=[12,4,140]（共156）完成真实 FOLD32。逐条 `World.audit` 完全相等、最终 state hash 相同 `c0f2dca98cbe5825bdd8678db7c07af3a4641e547f2a398b52c8d6de4af02977`。不是只做完成后的快照 round-trip。
 - S25 只加入一个紧凑因果测试与独立定向 CI，不增加个体特权、VM 指令、重试预算或者新的宿主修复规则。**这是工程的确定性续执行证据，并非个体主动备份、重新发明控制流或开放式演化**。全量 [#44524418089](https://github.com/iFrankStudio/OCEE/actions/runs/44524418089) 尚待结论。G0 GO、G1/G2 NO-GO。
+
+
+### 2026-11-19 — S26A 跨家族继承工具的可恢复拒绝（CI 尚待原生验收）
+
+- [S26 配对研究契约](./experiments/E001/DEV-S26-CROSS-FAMILY-PAIRED.md)与 [开发集配对分析工具](./experiments/E001/s26_paired_audit.py) 已提交；没有任何来自原生实验的 C/D CSV，不得声称 H26 已验证或 G1 通过。
+- [S26A 原生负迁移测试](./crates/organism-seeds/tests/s26_foreign_family.rs) + [定向工作流](./.github/workflows/s26-foreign-family.yml) 已提交。测试由实际 P1 S19 活动 VM 生成可执行编码器，经按真实 WRITE 计费的跨 episode 导入转交 P2 S23 VM，比较同 world/protocol/job 的冷启动对照。要求异构 P1 报文先被 P2 个体拒绝而非 InvalidCode，再由它自行通过当前公开 P2 反馈重新特化/注册编码器、EXEC 发出真实 B/FOLD32 请求、结果独立核验且 B 只扣20 gas；失败继承成本必须计入。
+- [S23 继承路径修订](./crates/organism-seeds/src/s23_p2_transfer.rs)：在已有 EXEC 的合法 Bytes 输出被当作 P2 结构之前，加入**个体内部的受计费检查**：至少3字节、HELLO 已学 marker、单个外层 tag=0x10 TLV 结构、内层五字段实际 tag 顺序与已学角色吻合。不满足就走原有冷学习分支，禁止直接进入可能抛 InvalidCode 的 TlvDecode / TlvLookup。这是研究者编写的受限容错图，不是活动个体自发修复。
+- 本节记录的是**已提交的实验与可证伪断言，不是测试已经通过**。需先看 S26 定向 GitHub Actions 的 completed/success 与实际 A/B/导入 gas、工具版本，再记录结论；完整 workspace 在新修改上同样尚待核验。
+- 即使 S26A 通过，也仅说明拒绝跨家族直接复用与可恢复重学；**C/D 均非同一冻结跨家族通用初始 VM**，不满足 E001 的跨家族正迁移/原语发现判据。下一步仍需统一初始个体+真实配对探索/记忆消融。G0 GO、G1/G2 NO-GO。
