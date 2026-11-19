@@ -362,3 +362,11 @@
 - 修复 CSV 工作目录问题后的 [S27 最终 CI #44559169797](https://github.com/iFrankStudio/OCEE/actions/runs/44559169797)：GitHub Actions `paired-evidence` job **completed/success**；Rust 真世界配对测试、独立 Python 配对审计、CSV artifact 上传三个步骤全部成功。原始 CSV [工件 14548366400](https://github.com/iFrankStudio/OCEE/actions/runs/44559169797/artifacts/14548366400) 已保存（GitHub 压缩 artifact SHA256 `cb7a32babcdd83e58b556e402b277795b4c9327696b99d8f4d4111b73c568369`）。具体方法和首轮失败的透明记录见 [S27 报告](./experiments/E001/DEV-S27-PAIRED-TRANSFER.md)。
 - 独立 Python 输出：**P1→P2 跨家族，1个真实配对 seed**，C/D 成功各1，D−C 成功差0，声称 causal_tool_used=0，A gas 差 **+62**、B gas差0、发送字节差0、tick差0。与 Rust 原生事件审计所见的 P1 donor 工具未 EXEC 一致。S27 同家族 P2→P2 兼容继承节省 **5,162 A gas / 23.64%**，但 **不是**跨家族 H3。
 - S27 新增核心测试是有效配对，不足以通过 G1：家族专家先验、未验证任何跨家族功能复用、未形成非模板结构创新，也没有正式预注册；G0 GO、**G1/G2 NO-GO**。后续应在功能性可迁移子程序上继续，而非只延长重复历史 CI。
+
+
+### S27 审计回执修订的全量 CI 验收（2026-11-19）
+
+- `main` 提交 [`43fc708`](https://github.com/iFrankStudio/OCEE/commit/43fc70805e530f44bc24a6f6e9400a6fbbae09ac) 将 `s27_transfer_pairs.rs` 的 `exec_seen()` 从仅见到 `Action::Exec` 收紧为还需同条世界审计 `result.code == Code::Ok`。
+- 对应 [完整工作空间 Actions #44573987351](https://github.com/iFrankStudio/OCEE/actions/runs/44573987351) 已于 **2026-11-19 17:41 UTC completed/success**：`Run world and VM invariant tests`、`Report S8 lifecycle costs under original A quota`、`Print auditable development organism manifests` 均成功。该次是全量工作流，不应冒称单独重新运行 S27 的 CSV/独立 Python 审计；此前 S27 独立证据仍以 [#44559169797](https://github.com/iFrankStudio/OCEE/actions/runs/44559169797) 为准。
+- **证据语义**：`causal_tool_used` CSV 字段当前至多证明成功的 `EXEC` 事件被审计观察到，**不证明工具对最终成功必要**。同家族节省 gas 与冷启动对照支持功能复用，但尚需严格的“保持其他导入/资源轨迹一致，仅移除或禁用工具”的反事实，才可强化因果归因。跨家族 P1→P2 的工具成功 EXEC 为 0，成本 +62 A gas，维持负迁移结论。
+- 下一小实验优先在现有 S27 原生运行器增加真正同源、同计费导入、仅工具可用性不同的反事实（保留原始审计/失败行），避免引入新研究者专家模板；随后才研究跨家族可消费的通用子程序。**E001 未预注册，G1/G2 NO-GO**。
