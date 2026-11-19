@@ -211,3 +211,9 @@ S20 初始程序开发哈希：`sha256:24d67e17ff371a29ef3c74189c3442699db73a7f9
 **预置先验**：1B marker、2B BE envelope、外层 tag=0x10、五个内层 TLV、tag+BE length+value 布局、role 的数量与请求/响应值变化模板、kind0/1、4B ID、XOR 校验、固定 HELLO 的空请求和成功响应 [0,1]、分类/构造/验收算法、研究者给予的 TlvDecode/TlvEncode/TlvLookup/TlvReorder VM 算子。学习的是一个预设格式下的实例 tag/order，而非普适未知语法结构。S21A、S21B 是**两份不同的研究者构建初始程序**，没有证据显示 S20 P1 个体自迁移到 P2。
 
 初始哈希由 CI manifest 自动生成：S21A sha256:bcc84858fafa3682a921a4b1e9a20bdd5d884d410b3f7857ff81dd9f7859d123；S21B sha256:1095b67c907aad889999fa0e469803a7fabc42fb1c3060facce1b6dd19b13a14。均非 E001 确认性 S 初始基线，G1/G2 NO-GO。
+
+## S22 P2 完整工作闭环的初始能力来源（开发集）
+
+[S22 报告](./experiments/E001/DEV-S22-P2-B-CYCLE.md)，[三项定向核心测试成功](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315)。这份新的活动初始程序将 S21A 的公开 HELLO role 推断和 P2 有界 opcode 反馈扫描、3*u32/FOLD32 工作组成**同一个连续 VM 程序**。私有 role tag/order、REMOTE_EVAL/RESULT opcode、protocol seed、B 资源/答案不作为个体输入。研究端仅在结束后独立检查结果。
+
+播种先验仍为：1B marker、2B 大端外部长度、外层 0x10 TLV、五个内层字段的形状/角色、公开 HELLO 规则、XOR 算法、112 opcode 候选、BadBody 选择标签、3*u32 工作模型、固定请求 ID17、ACK/RESULT 的成功状态与长度、失败/回退策略及所有通用 VM 字节运算。**S22 不含动态发明新算法或跨家族迁移能力**，正式 E001 初始 S 未冻结，G1/G2 NO-GO。

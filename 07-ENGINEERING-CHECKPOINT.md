@@ -224,6 +224,14 @@
 - S21B 初始活动程序使用自己的上述结果及公开 HELLO opcode 重新组装 request ID73、发送真实 C 并验证回帧；seed7/42/99/272 A gas4230/4231/4231/4231，各12 tick、SEND1、B0，研究端独立解码确认是真正的新合法 HELLO，不是公开样例重放。响应 body 判据故意错误时即使 C 已接受也拒绝保存。
 - **研究限制**：五字段 TLV 的框架、固定 HELLO 行为、判别/验证规则及新通用 TLV 原语仍由研究者预置；S21A/B 是不同初始程序，既非 S20 P1 的跨家族迁移，也没有发明完整未知语法、发现 P2 私有 REMOTE_EVAL/RESULT 或完成 B 计算。G1/G2 NO-GO。
 
+### S22 — 同一活动 P2 VM 的隐藏操作码搜索与 B 完整闭环（定向验证成功）
+
+- [S22 完整记录](./experiments/E001/DEV-S22-P2-B-CYCLE.md)、[定向 CI #44440713315](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315)：**3 项因果核心测试通过，0失败**；全 workspace CI [#44440432805](https://github.com/iFrankStudio/OCEE/actions/runs/44440432805) 仍须等待最终状态，不能提前称全量通过。
+- 首次在**同一个活动 VM**内串联 P2 公开 HELLO 字段 tag/order 推断、合法 frame 构建、112候选有界 REMOTE_EVAL 扫描、C 的 BadBody 诊断选择、从公开 job0 提交真实 B FOLD32 3*u32 任务、合法 ACK 校验、RESULT opcode 有界扫描及真实 u32 回收。私有协议参数和 B 账本仅供**研究端事后核验**，不是个体输入。
+- seed7/42/99：世界 tick **2071/1047/1037**、A gas **25,076/12,953/12,599**、其中 VM gas **20,601/8,870/8,523**、SEND **96/40/39**、B gas均20。真实工作正文和返回值与独立 FOLD32 校验一致。
+- 负对照：取消 BadBody 选择时 B0；错误 RESULT 预期长度时 B20但不保存假结果。注意它们仅约束研究者预置策略的因果证据。**完整 P2 TLV 五字段和 XOR、诊断及工作语义依然由研究者播种；不证明跨语法单个体演化或原创算法。**
+- S21 的恶意内层 TLV 可能引发 InvalidCode 而非优雅故障，S22 尚未消除这一已确认缺口；不能把故障封闭误称为主动自愈。
+
 ## 已发现且修复的关键问题
 
 - C/B 服务作业表初版使用 `BTreeMap<(actor, request_id), job>`，无法直接序列化为 JSON 对象键，导致世界快照计算失败；已改为稳定编码的字符串键，并通过世界快照重放验证。
