@@ -217,3 +217,9 @@ S20 初始程序开发哈希：`sha256:24d67e17ff371a29ef3c74189c3442699db73a7f9
 [S22 报告](./experiments/E001/DEV-S22-P2-B-CYCLE.md)，[定向三项验证通过](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315)、[完整 workspace 104 项通过](https://github.com/iFrankStudio/OCEE/actions/runs/44440432805)。这份新的活动初始程序将 S21A 的公开 HELLO role 推断和 P2 有界 opcode 反馈扫描、3*u32/FOLD32 工作组成**同一个连续 VM 程序**。私有 role tag/order、REMOTE_EVAL/RESULT opcode、protocol seed、B 资源/答案不作为个体输入。研究端仅在结束后独立检查结果。
 
 播种先验仍为：1B marker、2B 大端外部长度、外层 0x10 TLV、五个内层字段的形状/角色、公开 HELLO 规则、XOR 算法、112 opcode 候选、BadBody 选择标签、3*u32 工作模型、固定请求 ID17、ACK/RESULT 的成功状态与长度、失败/回退策略及所有通用 VM 字节运算。**S22 不含动态发明新算法或跨家族迁移能力**，正式 E001 初始 S 未冻结，G1/G2 NO-GO。
+
+## S23A P2 可执行工具生成与跨 episode 复用的能力来源（开发）
+
+[完整 S23A 研究记录](./experiments/E001/DEV-S23-P2-EXECUTABLE-TRANSFER.md)，[定向 CI #44455627472](https://github.com/iFrankStudio/OCEE/actions/runs/44455627472) 三组关键实验通过。活动 VM 根据公开 P2 HELLO 和真实 C 的 BadBody 反馈得到 role tags/order、REMOTE_EVAL opcode，通过 RewriteOp 将这些**实例参数**写进**研究者已经提供完整结构**的 P2 编码器 AST。它自己计算程序哈希、经普通世界 WRITE 留存、EXEC 运行并向真实 C 发出空任务探针；只有 C 确认 BadBody 才允许注册。新世界只导入合法程序版本与 registry hash（均计费），活动 VM 仍须重新测试当前 C，兼容复用，不兼容回退并 CAS(0) 更新。
+
+完整 P2 五字段格式、XOR、字段角色假说、候选扫描范围、BadBody 判别、固定 FOLD32 工作形状、程序 AST 和插槽、兼容性/收益策略与结果校验**都是研究者先验**，不能把“参数填充+实机验收”称为陌生语法自行发明。继承操作由研究端实验驱动器执行，不是个体自主跨世界迁移；RESULT 工具并未继承。基础 VM 128块、64KiB 程序及计费上限保留；新增 compact role loop 属研究者对初始图的工程重构。S/O 正式初始哈希未冻结，G1/G2 NO-GO。

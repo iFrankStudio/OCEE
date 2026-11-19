@@ -232,6 +232,14 @@
 - 负对照：取消 BadBody 选择时 B0；错误 RESULT 预期长度时 B20但不保存假结果。注意它们仅约束研究者预置策略的因果证据。**完整 P2 TLV 五字段和 XOR、诊断及工作语义依然由研究者播种；不证明跨语法单个体演化或原创算法。**
 - S21 的恶意内层 TLV 可能引发 InvalidCode 而非优雅故障，S22 尚未消除这一已确认缺口；不能把故障封闭误称为主动自愈。
 
+### S23A — P2 可执行 REMOTE_EVAL 工具特化、验收及继承（定向验证通过）
+
+- [S23A 实验与工程记录](./experiments/E001/DEV-S23-P2-EXECUTABLE-TRANSFER.md)、[三核心对照 CI #44455627472](https://github.com/iFrankStudio/OCEE/actions/runs/44455627472)：**3 passed / 0 failed**。完整 workspace CI [#44455627462](https://github.com/iFrankStudio/OCEE/actions/runs/44455627462) 初次归档时待最终验收，不能提前宣布全量通过。
+- 同一个活动 VM 用 S21A 公开 HELLO 得到 P2 私有 role/order，再用 S22 的合法 C BadBody 得到 REMOTE_EVAL opcode，在 VM 内完成研究者预置的 TLV 编码器两处 RewriteOp、内容寻址、隔离 EXEC、C 功能性验收、CAS 注册。真实 B FOLD32 工作报文**必须由注册程序 EXEC 生成**，并由研究端独立验证返回值。
+- 同 S23A 初始程序、target world128/protocol42：**冷 19,712 A gas/1132 tick**、兼容继承 **14,452/1057**（导入102、节省26.7%）、失效继承并 CAS 重学 **20,319/1142**（导入102、负迁移+3.1%），B 均20。seed99 的独立冷启动 19,277 gas/1127 tick 也通过。
+- 先遇到128基本块和64KiB容量不足：没有保留任何放宽上限，改用研究者的五次有界角色识别共享图；共享反馈环由一次性 bounded 阶段约束。seed99 还暴露合法 RECEIVE=Empty 导致 InvalidCode，现由最多128次计费等待/重试处理，只有返回 Ok 才解析 payload。**不应将这些研究者故障排除误报成个体自行修复**。
+- 先验 P2 格式、112候选、BadBody判据、FOLD32任务和完整可执行模板均由研究者预置；只证明已知格式下实例特化与迁移节约，RESULT 尚需冷搜索，P1→P2 同初始个体迁移尚无证据。G1/G2 NO-GO。
+
 ## 已发现且修复的关键问题
 
 - C/B 服务作业表初版使用 `BTreeMap<(actor, request_id), job>`，无法直接序列化为 JSON 对象键，导致世界快照计算失败；已改为稳定编码的字符串键，并通过世界快照重放验证。
