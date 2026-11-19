@@ -178,3 +178,6 @@ pub mod s23_p2_transfer;
 
 /// S26B: a single public-evidence P1/P2 framing router (researcher grammar priors).
 pub mod s26_family;
+
+/// S26C: common-seed family router selects existing charged specialists.
+pub mod s26_dispatch;

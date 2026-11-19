@@ -1,0 +1,28 @@
+name: S26C Frozen Bundle Active Dispatch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s26-dispatch.yml"
+      - "crates/organism-seeds/src/s26_dispatch.rs"
+      - "crates/organism-seeds/tests/s26_dispatch.rs"
+      - "crates/organism-seeds/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s26-dispatch-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  dispatcher:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify same root and same specialist bundle autonomously execute real P1 and P2 B tasks
+        run: cargo test -p ocee-organism-seeds --test s26_dispatch -- --show-output
