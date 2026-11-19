@@ -1,0 +1,32 @@
+name: S24 Recoverable TLV Boundary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s24-tlv-recovery.yml"
+      - "crates/organism-vm/src/lib.rs"
+      - "crates/organism-seeds/src/s21_p2_tlv.rs"
+      - "crates/organism-seeds/tests/s21_p2_outer_injection.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s24-recovery-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  recoverable-p2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify general total TLV preflight
+        run: cargo test -p ocee-organism-vm tlv_shape_preflight -- --show-output
+      - name: Verify S21 real C reply injection and graceful organism rejection
+        run: cargo test -p ocee-organism-seeds --test s21_p2_outer_injection -- --show-output
+      - name: Verify ordinary P2 HELLO still succeeds
+        run: cargo test -p ocee-organism-seeds --test s21_p2_probe -- --show-output
