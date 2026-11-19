@@ -1,0 +1,37 @@
+name: S27 Paired Tool Inheritance Evidence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s27-transfer-pairs.yml"
+      - "crates/organism-seeds/tests/s27_transfer_pairs.rs"
+      - "experiments/E001/s26_paired_audit.py"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s27-pairs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  paired-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run real paired Rust worlds and export raw cross-family C/D observations
+        env:
+          OCEE_S27_CSV: target/s27_cross_family.csv
+        run: cargo test -p ocee-organism-seeds --test s27_transfer_pairs -- --show-output
+      - name: Independently audit paired seed, success and costs
+        run: python3 experiments/E001/s26_paired_audit.py target/s27_cross_family.csv
+      - name: Preserve raw exploratory pair metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: s27-cross-family-paired-dev
+          path: target/s27_cross_family.csv
+          if-no-files-found: error
