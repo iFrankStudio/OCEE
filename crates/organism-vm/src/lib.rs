@@ -8,7 +8,10 @@ use std::collections::{BTreeMap, BTreeSet};
 pub const MAX_PROGRAM_BYTES: usize = 64 * 1024;
 pub const MAX_VALUE_BYTES: usize = 64 * 1024;
 pub const MAX_OUTPUT_BYTES: usize = 1024;
-pub const MAX_BLOCKS: usize = 128;
+// S23 development capacity revision (contract 0.2.1): a typed graph may
+// compose public-HELLO role inference, bounded search, and tool provenance.
+// Byte, instruction, bounded-loop, gas and permission limits are unchanged.
+pub const MAX_BLOCKS: usize = 144;
 pub const MAX_INSTRUCTIONS: usize = 4096;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -1079,5 +1082,31 @@ mod tests {
             Err(VmError::InvalidInput));
         assert_eq!(run_isolated(&reorder,vec![0x33,0,1],100),
             Err(VmError::InvalidInput));
+    }
+
+    #[test]
+    fn bounded_graph_capacity_144_is_enforced_without_relaxing_static_validation(){
+        fn chain(n:usize)->Program {
+            let mut blocks=Vec::new();
+            for k in 0..n {
+                let id=if k==0{"entry".into()}else{format!("b{k}")};
+                let terminator=if k+1==n {
+                    Terminator::Return{value:0}
+                } else {
+                    Terminator::Jump{target:format!("b{}",k+1),args:vec![0]}
+                };
+                blocks.push(Block{id,params:vec![Param{id:0,ty:Type::Bytes}],
+                    instructions:vec![],terminator});
+            }
+            Program{format_version:1,entry_function:"main".into(),
+                functions:vec![Function{name:"main".into(),
+                    args:vec![Type::Bytes],returns:Type::Bytes,blocks}]}
+        }
+        let under=chain(MAX_BLOCKS);
+        assert!(under.validate().is_ok(),"144 finite acyclic blocks legal");
+        assert_eq!(run_isolated(&under,vec![8,4],500).unwrap().0,
+            Value::Bytes(vec![8,4]));
+        assert!(chain(MAX_BLOCKS+1).validate().is_err(),
+            "145 blocks must still be rejected");
     }
 }
