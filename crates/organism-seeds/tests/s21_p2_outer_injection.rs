@@ -5,7 +5,10 @@ use ocee_organism_vm::Value;
 use ocee_protocol_sim::Family;
 use ocee_world_kernel::{Action,Code,Config,World,ORGANISM_ID,NodeId};
 
-fn trial(inject: bool) -> (World,usize) {
+fn trial(inject: bool) -> (World,usize) { trial_mode(if inject { 1 } else { 0 }) }
+
+// 0 = baseline, 1 = extra outer TLV, 2 = extra inner TLV.
+fn trial_mode(mode: u8) -> (World,usize) {
     let program=s21_p2_infer_and_validate_new_hello();
     let hash=program.content_hash().unwrap();
     let mut world=World::with_protocol(Config{
@@ -23,7 +26,7 @@ fn trial(inject: bool) -> (World,usize) {
     for _ in 0..512 {
         // Inject only after the real C service has produced its response,
         // before the transport delivers it to the organism.
-        if inject {
+        if mode != 0 {
             for message in &mut world.state.pending_deliveries {
                 if message.source==NodeId::C && message.destination==NodeId::A
                     && altered==0 && message.bytes.len()>=6
@@ -31,6 +34,16 @@ fn trial(inject: bool) -> (World,usize) {
                     let old_len=u16::from_be_bytes([message.bytes[1],message.bytes[2]]);
                     let new_len=old_len.checked_add(3).unwrap();
                     message.bytes[1..3].copy_from_slice(&new_len.to_be_bytes());
+                    if mode == 2 {
+                        // The single outer TLV begins immediately after the
+                        // 3-byte envelope: tag (1B), length (2B), value.
+                        // Extend its inner value while preserving a valid
+                        // outer TLV and envelope length.
+                        assert!(message.bytes.len() >= 6);
+                        let inner_len=u16::from_be_bytes([message.bytes[4],message.bytes[5]]);
+                        assert_eq!(usize::from(inner_len)+6,message.bytes.len());
+                        message.bytes[4..6].copy_from_slice(&inner_len.checked_add(3).unwrap().to_be_bytes());
+                    }
                     message.bytes.extend_from_slice(&[0x7f,0,0]);
                     altered+=1;
                 }
@@ -60,4 +73,16 @@ fn extra_outer_tlv_after_real_c_reply_is_not_accepted() {
     assert_eq!(mutated.state.service_events.len(),normal.state.service_events.len());
     assert_eq!(mutated.state.service_events.iter()
         .map(|e|e.b_gas_charged).sum::<u64>(),0);
+}
+
+#[test]
+fn extra_inner_tlv_after_real_c_reply_is_not_accepted() {
+    let (normal,_) = trial_mode(0);
+    assert_eq!(normal.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(1)));
+    let (mutated,injections)=trial_mode(2);
+    assert_eq!(injections,1);
+    assert_eq!(mutated.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(0)));
+    assert!(!mutated.state.objects.contains_key("/self/observations/p2-hello-nonreplay"));
+    assert_eq!(mutated.state.service_events.len(),normal.state.service_events.len());
+    assert_eq!(mutated.state.service_events.iter().map(|e|e.b_gas_charged).sum::<u64>(),0);
 }
