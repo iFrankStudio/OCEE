@@ -210,9 +210,12 @@ fn make(use_diagnostics:bool,enable_result:bool)->Program {
             i(706,Op::ConstU32(6)),
             i(707,Op::ConstU32(5)),
             i(708,Op::Slice(600,706,707)),
-            i(709,Op::TlvReorder(603,708)), // five distinct observed tags
-            i(710,Op::EqBytes(709,603)), // preserve exact physical order
-        ],br(710,"s22_check",byte_args(),
+            // No untrusted TLV reorder before shape validation. The total
+            // predicate returns a metered Bool(false) on unexpected tags,
+            // duplicate tags, bad lengths or wrong physical order, so the
+            // active organism can reject this C reply and keep scanning.
+            i(709,Op::TlvMatchesOrder(603,708)),
+        ],br(709,"s22_check",byte_args(),
             "s22_bad_response",route_args())),
         block("s22_check",with_bytes(),vec![
             i(711,Op::XorFold(603)),
