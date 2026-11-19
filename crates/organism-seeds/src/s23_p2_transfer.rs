@@ -7,7 +7,7 @@
 //! the instance-specific tags/opcode/seed/B answer are never passed to the VM.
 #![forbid(unsafe_code)]
 use ocee_organism_vm::{Block,Instruction,Op,Param,Program,Terminator,Type,WorldCall};
-use crate::s22_p2_remote::s22_p2_discover_and_execute;
+use crate::s22_p2_remote::s22_p2_raw_no_receive_guard;
 use crate::s23_p2_tool::s23_seeded_p2_frame_template;
 
 fn p(id:u32,ty:Type)->Param{Param{id,ty}}
@@ -146,7 +146,7 @@ fn compact_public_hello_roles(f:&mut ocee_organism_vm::Function) {
 }
 
 pub fn s23_p2_remote_tool_transfer()->Program{
-    let mut program=s22_p2_discover_and_execute();
+    let mut program=s22_p2_raw_no_receive_guard();
     let f=&mut program.functions[0];
     compact_public_hello_roles(f);
     let b=Type::Bytes;

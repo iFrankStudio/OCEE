@@ -360,9 +360,49 @@ pub fn s24_recovery_manifest()->crate::SeedManifest{
     }
 }
 
-pub fn s22_p2_discover_and_execute()->Program{make(true,true)}
-pub fn s22_p2_no_badbody_selection()->Program{make(false,true)}
-pub fn s22_p2_no_result_shape()->Program{make(true,false)}
+
+/// In S22, a RECEIVE=Empty is an ordinary delayed-mailbox observation,
+/// not a P2 response. Bounded OBSERVE+RECEIVE retry turns this world
+/// feedback into a metered, persisted VM decision instead of JsonIndex([])
+/// causing InvalidCode. S23 has its own equivalent bounded retry graph and
+/// composes from the raw core to avoid duplicate blocks and static size cost.
+fn s22_guard_receive(mut program:Program)->Program{
+    let f=&mut program.functions[0];
+    let original=f.blocks.iter_mut().find(|b|b.id=="s22_feedback").unwrap();
+    let payload_ops=std::mem::take(&mut original.instructions);
+    let payload_term=std::mem::replace(&mut original.terminator,
+        br(7604,"s22_receive_retry",route_args(),
+            "s22_feedback_check_ok",vec![600,601,602,603]));
+    original.instructions=vec![
+        i(7600,lit(b"code")),
+        i(7601,Op::JsonFieldString(603,7600)),
+        i(7602,lit(b"Empty")),
+        i(7604,Op::EqBytes(7601,7602)),
+    ];
+    f.blocks.extend([
+        block("s22_receive_retry",route(),vec![],
+            Terminator::RepeatBounded{
+                limit:128,body:"s22_retry_wait".into(),
+                body_args:route_args(),done:"failed".into(),done_args:vec![],
+            }),
+        block("s22_retry_wait",route(),vec![],
+            y(WorldCall::Observe,vec![],"s22_receive",route_args())),
+        block("s22_feedback_check_ok",with_feedback(),vec![
+            i(7605,lit(b"code")),
+            i(7606,Op::JsonFieldString(603,7605)),
+            i(7607,lit(b"Ok")),
+            i(7608,Op::EqBytes(7606,7607)),
+        ],br(7608,"s22_feedback_payload",vec![600,601,602,603],
+            "failed",vec![])),
+        block("s22_feedback_payload",with_feedback(),payload_ops,payload_term),
+    ]);
+    program.validate().expect("S22 bounded RECEIVE Empty recovery must validate");
+    program
+}
+pub(crate) fn s22_p2_raw_no_receive_guard()->Program{make(true,true)}
+pub fn s22_p2_discover_and_execute()->Program{s22_guard_receive(make(true,true))}
+pub fn s22_p2_no_badbody_selection()->Program{s22_guard_receive(make(false,true))}
+pub fn s22_p2_no_result_shape()->Program{s22_guard_receive(make(true,false))}
 pub fn s22_manifest()->crate::SeedManifest{
     let program=s22_p2_discover_and_execute();
     crate::SeedManifest{
