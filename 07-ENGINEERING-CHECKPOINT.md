@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-19
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **最近已确认全量 CI**：[GitHub Actions Run 44485672595](https://github.com/iFrankStudio/OCEE/actions/runs/44485672595) — Rust workspace **107 passed / 0 failed**（S23A 基线）；[S24 定向 CI #44502050065](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065) **7 passed / 0 failed**；新全量 [#44502050056](https://github.com/iFrankStudio/OCEE/actions/runs/44502050056) 待最终结果。
+- **最近已确认全量 CI**：[GitHub Actions #44519428660](https://github.com/iFrankStudio/OCEE/actions/runs/44519428660) — Rust workspace **113 passed / 0 failed**（S24 最新成功基线）；[S25 定向 #44524418058](https://github.com/iFrankStudio/OCEE/actions/runs/44524418058) **1 passed / 0 failed**；S25 全量 [#44524418089](https://github.com/iFrankStudio/OCEE/actions/runs/44524418089) 待最终验收。
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -300,4 +300,10 @@
 - [研究者修复提交 0e8458c](https://github.com/iFrankStudio/OCEE/commit/0e8458c288802eb919d281c39dff9508f8b2a1f5) 把 S22 的空接收细分为远端操作码扫描、真实 B ACK、RESULT 三个不同 RepeatBounded（各 cap256，保持原有 VM 上限、真实成本和持久计数）。新 seed99 在默认网络延迟下 U32(1)、A18,529、B20，但三计数均为0，不能仅凭此例证明真正经历了高负载 Empty。
 - 增加模拟消息延迟并保留全部 P2 私有参数及任务语义不变：delay4 的真实 Empty 为 **6+2+70=78**、A20,309、tick1207、B20、任务仍完成；最初 [#44518525140](https://github.com/iFrankStudio/OCEE/actions/runs/44518525140) 因测试设定的超过128压力门槛而失败，不能叫作计算失败。delay6 的真实 Empty 为 **12+4+140=156**，且每段≤256、最终 U32(1)、tick1313、A22,087、B20，结果匹配独立 FOLD32；[定向 CI #44519428630](https://github.com/iFrankStudio/OCEE/actions/runs/44519428630) **3项通过**。
 - [同代码的 S22 定向 #44516301596](https://github.com/iFrankStudio/OCEE/actions/runs/44516301596) **3通过**、[S23 #44516301537](https://github.com/iFrankStudio/OCEE/actions/runs/44516301537) **3通过**、[S24 ACK 损坏补救 #44516301516](https://github.com/iFrankStudio/OCEE/actions/runs/44516301516) **7通过**。新 S22 seed7/42/99 A 分别39564/18986/18529，B 各20；S24B 受损 ACK 补救 A18,952、tick1122、B20。以上为新程序计费，不得沿用旧哈希的 gas。
-- **当前完整 workspace [#44519428660](https://github.com/iFrankStudio/OCEE/actions/runs/44519428660) 仍待最终结果**，不能以定向测试代替全量验收。该修复由研究者显式重构 VM 初始程序图，未证明赛博个体主动产生容错策略，更没有跨家族语法或开放式演化。G1/G2 继续 NO-GO。
+- **完整 workspace [#44519428660](https://github.com/iFrankStudio/OCEE/actions/runs/44519428660) 已通过113项**，可用作 S24 基线；S25 新增快照试验仍需以自己的全量 CI 核验。该修复由研究者显式重构 VM 初始程序图，未证明赛博个体主动产生容错策略，更没有跨家族语法或开放式演化。G1/G2 继续 NO-GO。
+
+### 2026-11-19 S25 — 真实高延迟状态恢复的完整审计一致性
+
+- [S25 研究记录](./experiments/E001/DEV-S25-MID-RECEIVE-RESTART.md)、[定向 CI #44524418058](https://github.com/iFrankStudio/OCEE/actions/runs/44524418058) **1项通过/0失败**。S24 原 P2 活动程序不变，world/protocol seed99、C delay6；在 step1225、A gas18,978、B gas20、三段实际 Empty=[12,4,113]（共129），尚未保存 RESULT 时，测试主持者真实 JSON snapshot/reload。
+- 恢复后的 VM continuation 持有相同有界计数、pending transport、审计链和资源状态，两条世界继续执行均在 step1313、A gas22,087、B gas20、Empty=[12,4,140]（共156）完成真实 FOLD32。逐条 `World.audit` 完全相等、最终 state hash 相同 `c0f2dca98cbe5825bdd8678db7c07af3a4641e547f2a398b52c8d6de4af02977`。不是只做完成后的快照 round-trip。
+- S25 只加入一个紧凑因果测试与独立定向 CI，不增加个体特权、VM 指令、重试预算或者新的宿主修复规则。**这是工程的确定性续执行证据，并非个体主动备份、重新发明控制流或开放式演化**。全量 [#44524418089](https://github.com/iFrankStudio/OCEE/actions/runs/44524418089) 尚待结论。G0 GO、G1/G2 NO-GO。

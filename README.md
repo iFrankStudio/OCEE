@@ -1,6 +1,6 @@
 # OCEE — 开放式演化赛博生态世界
 
-**规范基线：v0.2.0 · 工程：P1/P2/P3 + S0–S24 开发进展；S23A 全量107项通过，S24定向7项、接收预算压力3项通过；新全量待核验 · E001 尚未校准、未预注册**
+**规范基线：v0.2.0 · 工程：P1/P2/P3 + S0–S25 开发进展；S24 全量113项通过、S25 执行中恢复定向1项通过；S25 全量核验中 · E001 尚未校准、未预注册**
 
 OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是探索一种能够适应未知数字环境、学习使用现有软硬件与网络服务、创造新工具并持续改进自身的赛博生命培养机制。
 
@@ -84,7 +84,8 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 - [S22 活动 P2 TLV 隐藏操作码探索及 B FOLD32 闭环](./experiments/E001/DEV-S22-P2-B-CYCLE.md)：**同一受计费 VM** 从公开 HELLO 推断私有字段标签/顺序，再通过真实 C 的 BadBody 反馈发现 REMOTE_EVAL，读取公开工作项提交 B，验证 ACK，扫描 RESULT 并保存独立 FOLD32 数值。P2 开发 seed7/42/99 的 A gas **25,076/12,953/12,599**、B gas均20；[S22 定向 CI #44440713315](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315) 三关键测试成功，两个负对照分别拒绝失去 BadBody 选择及错误 RESULT 长度。[完整 workspace CI #44440432805](https://github.com/iFrankStudio/OCEE/actions/runs/44440432805) **104 项工作空间测试通过**。 预置 P2 TLV 假说、候选范围、FOLD32 工作形状和验收规则依然限制结论。
 - [S23A 活动 P2 可执行工具的实例特化与跨世界复用](./experiments/E001/DEV-S23-P2-EXECUTABLE-TRANSFER.md)：同一 VM 从公开 HELLO/真实 C 反馈推断 P2 roles 和 REMOTE_EVAL opcode，将其填入**研究者提供的通用 TLV 可执行模板**，哈希封存、隔离 EXEC、真实 C 的 BadBody 验收，才注册供真实 B 任务使用。新世界只受计费搬运 program/hash；兼容时复用、不兼容时回退完整扫描并 CAS 替换。在 world128/protocol42 的同初始程序开发对照中：冷启动 A **19,712**、兼容继承 **14,452**（节省26.7%，导入102已计入）、失效继承 **20,319**（负迁移+3.1%），B 各20；seed99 冷启动亦通过。[S23 定向 CI #44455627472](https://github.com/iFrankStudio/OCEE/actions/runs/44455627472) **3通过**，完整 workspace CI 另验。研究者语法/模板先验未减少，RESULT 仍冷扫描，G1/G2 NO-GO。
 - [S24 可恢复的内层 TLV 拒绝与损坏 ACK 后的有界 RESULT 补救](./experiments/E001/DEV-S24-RECOVERABLE-TLV.md)：通用、计费的 TLV tag/order 预检查使真实 C 注入的额外内层字段触发个体常规失败分支而非 `InvalidCode`，同时覆盖 S21 HELLO 与 S22/S23 共用 P2 回复解析。另一个**研究者预置的独立初始程序变体**会在真实 ACK 损坏后查询合法 RESULT，成功回收 B 已完成的 FOLD32（seed42：旧版1047tick/12,912 A gas；加入有界空接收后**1122tick/18,845 A gas**，B仍20，不重复计算）。[S24 定向 CI #44502050065](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065) 7项通过。并非个体自行发明修复，更不是任意恶意 TLV 已安全。
-- [S24 真实空接收的可恢复预算与失效归因](./experiments/E001/DEV-S24-RECOVERABLE-TLV.md)：VM 每个 RepeatBounded 块的限额依旧不超过256，研究者把原先跨阶段共享的128次计数按远端探索/真实ACK/RESULT三阶段拆分。seed99旧程序重放实际达到共享计数128并失败（B20），新程序在默认延迟下完成真实B工作（A18,529、B20）；增加模拟 C 的传输延迟至6 tick 后真实重试达到**12/4/140，合计156**，仍正确取得独立校验的 FOLD32（A22,087、B20）。[独立定向 CI #44519428630](https://github.com/iFrankStudio/OCEE/actions/runs/44519428630) **3项通过**；完整 workspace [#44519428660](https://github.com/iFrankStudio/OCEE/actions/runs/44519428660) 以最终结果另验。该策略是研究者工程修复，不是个体自发改善算法。
+- [S24 真实空接收的可恢复预算与失效归因](./experiments/E001/DEV-S24-RECOVERABLE-TLV.md)：VM 每个 RepeatBounded 块的限额依旧不超过256，研究者把原先跨阶段共享的128次计数按远端探索/真实ACK/RESULT三阶段拆分。seed99旧程序重放实际达到共享计数128并失败（B20），新程序在默认延迟下完成真实B工作（A18,529、B20）；增加模拟 C 的传输延迟至6 tick 后真实重试达到**12/4/140，合计156**，仍正确取得独立校验的 FOLD32（A22,087、B20）。[独立定向 CI #44519428630](https://github.com/iFrankStudio/OCEE/actions/runs/44519428630) **3项通过**；[完整 workspace #44519428660](https://github.com/iFrankStudio/OCEE/actions/runs/44519428660) **113项全通过**。该策略是研究者工程修复，不是个体自发改善算法。
+- [S25 超过128次真实空接收后的活动 VM 快照恢复](./experiments/E001/DEV-S25-MID-RECEIVE-RESTART.md)：沿用 S24 seed99 / C delay6 的原活动程序，当三段真实空接收计数已达 **[12,4,113]（合计129）**、B 已计费20但 RESULT 尚未保存时保存快照并恢复。两轨迹继续执行到最终 **[12,4,140]（156）**，均返回正确 FOLD32；完整逐条审计和最终状态哈希完全相等，最终 A gas22,087、tick1313、B仅20，不重复扣费。[S25 定向 #44524418058](https://github.com/iFrankStudio/OCEE/actions/runs/44524418058) **1项成功**，全量 [#44524418089](https://github.com/iFrankStudio/OCEE/actions/runs/44524418089) 待验。它验证内核的持久执行确定性，不是个体自主备份或算法发明。
 - G0 Engineering GO；G1 Calibration **NO-GO**；G2 Confirmatory **NO-GO**。仍缺完整 S/O 基线、真正运行在 VM 中的跨家族未知结构学习、任务收益/四组对照、独立校准的更广预算覆盖、事务持久化及安全复核。
 - 运行关键测试：`cargo test --workspace`。仅在实现新核心不变量时增加必要测试，避免测试膨胀。
 
@@ -100,6 +101,6 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 ## 版本状态
 
 - **v0.1.0**：世界、个体和 E001 的初始草案；未实现。
-- **v0.2.0**：冻结执行语义和研究边界；工程已推进到 P1/P2/P3 初始实现（最近 S23A 全量107项通过；S24 新全量验收中）。**完整 VM ISA、独立结构生成学习、对照校准与持久化尚未完成，E001 没有确认性实验结果**。
+- **v0.2.0**：冻结执行语义和研究边界；工程已推进到 P1/P2/P3 初始实现（S24 全量113项通过；S25 定向通过、全量待核验）。**完整 VM ISA、独立结构生成学习、对照校准与持久化尚未完成，E001 没有确认性实验结果**。
 
 需要修改 VM 语义、协议语法、先验能力、资源模型、正式门槛时，请先提出明确版本化变更并评估实验可比性。
