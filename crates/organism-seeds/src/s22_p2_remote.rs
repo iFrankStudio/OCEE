@@ -316,6 +316,50 @@ fn make(use_diagnostics:bool,enable_result:bool)->Program {
     program.validate().expect("S22 active P2 full-cycle VM must verify");
     program
 }
+
+/// S24B: researcher-proposed bounded recovery policy for an invalid C ACK.
+/// Do NOT infer B execution from a malformed ACK. Instead, query RESULT via
+/// the same active VM and accept ONLY a fully validated positive result.
+/// If C never executed the task, the bounded result search ends in failure.
+/// A test injects malformed TLV only after the real C service built its ACK.
+pub fn s24_p2_retry_result_after_bad_ack()->Program {
+    let mut program=s22_p2_discover_and_execute();
+    let f=&mut program.functions[0];
+    let invalid=f.blocks.iter_mut().find(|b|b.id=="s22_bad_response").unwrap();
+    invalid.terminator=br(685,"s24_ack_recovery",vec![600],
+        "s22_result_increment",vec![600,601]);
+    f.blocks.push(block("s24_ack_recovery",vec![v(600,Type::Bytes)],vec![],
+        // s22_result_start is a WorldCall::Write continuation; supply a
+        // real paid Observe feedback rather than forging that extra Bytes.
+        y(WorldCall::Observe,vec![],"s22_result_start",vec![600])));
+    program.validate().expect("S24 bounded malformed-ACK result recovery must typecheck");
+    program
+}
+pub fn s24_recovery_manifest()->crate::SeedManifest{
+    let program=s24_p2_retry_result_after_bad_ack();
+    crate::SeedManifest{
+        manifest_version:1,
+        kind:"S24B-P2-researcher-seeded-bounded-ACK-result-recovery",
+        program_hash:format!("sha256:{}",program.content_hash().unwrap()),
+        built_in_modules:vec![
+            "S22-public-HELLO-P2-role-learning",
+            "S22-researcher-seeded-112-REMOTE_EVAL-and-RESULT-scans",
+            "generic-TlvMatchesOrder-returning-ordinary-bool",
+            "malformed-ACK-branches-to-metered-bounded-RESULT-discovery",
+            "RESULT-only-accepted-on-full-frame-and-ID-validation",
+            "no-private-B-ledger-or-oracle-input",
+        ],
+        initial_tool_hashes:vec![],
+        known_protocol_families:vec!["researcher-seeded-P2-five-TLV-XOR".into()],
+        prohibited_knowledge:vec![
+            "private-P2-tags","private-P2-field-permutation",
+            "hidden-REMOTE_EVAL-opcode","hidden-RESULT-opcode",
+            "protocol-seed","B-privileged-work-status","B-gas","FOLD32-answer",
+        ],
+        research_status:"S24B_SEEDED_RECOVERY_POLICY_NOT_SELF_INVENTED_NOT_E001",
+    }
+}
+
 pub fn s22_p2_discover_and_execute()->Program{make(true,true)}
 pub fn s22_p2_no_badbody_selection()->Program{make(false,true)}
 pub fn s22_p2_no_result_shape()->Program{make(true,false)}
