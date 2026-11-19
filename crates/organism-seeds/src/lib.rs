@@ -172,3 +172,6 @@ pub mod s22_p2_remote;
 
 /// S23 researcher-seeded generic P2 executable TLV frame template.
 pub mod s23_p2_tool;
+
+/// S23 active P2 VM tool specialization, C validation, and fresh-world reuse.
+pub mod s23_p2_transfer;
