@@ -59,3 +59,16 @@ S24 并不是“个体自己修复了自己的算法”：通用安全原语、�
 [新定向 CI #44503380118](https://github.com/iFrankStudio/OCEE/actions/runs/44503380118) **success，7项通过**。真实 C 损坏 ACK：安全拒绝仍在72 tick 返回 U32(0)、B20；有界 RESULT 补救仍得到经过独立 FOLD32 验证的 U32(1)，但新成本变为 **1122 tick、A gas 18,845、其中 VM gas 14,663、B gas20**。
 
 此前 [#44502050065](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065) 的1047 tick、A 12,912、VM 8,821是**未下沉共用 RECEIVE=Empty 重试前的历史事实**，不可当作新版本成本。显式重试增加实际资源与调度成本，不能隐藏。全量回归 [#44503380220](https://github.com/iFrankStudio/OCEE/actions/runs/44503380220) 另核验。
+
+
+## 6. seed99 共享 RECEIVE 预算的历史因果重放（后继工程验收）
+
+[历史 128 预算重放与现版对照 CI #44517653790](https://github.com/iFrankStudio/OCEE/actions/runs/44517653790) **2 项测试通过**。VM Continuation.loop_counters 是按基本块 ID、跨整个 continuation 的持久计数器，不是按请求清零。旧版 S22 把远端操作码探测、B 工作 ACK 和 RESULT 查询全部汇入一个限额128的 Empty 重试块。
+
+在研究端测试里按[历史提交 6abfdfa](https://github.com/iFrankStudio/OCEE/commit/6abfdfaad6634b8be2abb9244c4e9fd339ab8854) 的**完整共享重试图**重建旧程序，观察到 seed99 旧共享计数器**确实达到128**，程序终态 U32(0)、A gas 14197、tick1284、B gas20，RESULT 没有正确回收。原先[workspace 失败 #44503380220](https://github.com/iFrankStudio/OCEE/actions/runs/44503380220) 的 seed99 结果因此有了直接的重试预算耗尽证据，而非推测。
+
+提交[0e8458c](https://github.com/iFrankStudio/OCEE/commit/0e8458c288802eb919d281c39dff9508f8b2a1f5) 在 S22 把该计数分为三个独立、持久、分别受限的 RepeatBounded：远端发现、真实 ACK 和 RESULT 查询；每个最大256，仍满足原 VM 静态上限、真实计费、无特权计数器清零。当前 seed99 的新程序结果正确，A gas18529、tick1117、B gas20；但本次**新三段计数都是0**：改变程序图、指令 gas 与世界调度，足以让它不再碰到 Empty。**不得把新 seed99 成功误报为新预算已真实承受超过128次 Empty**，也不能直接从新旧不同程序的 A gas 差额推断经济收益。
+
+[新 S22 定向 CI #44516301596](https://github.com/iFrankStudio/OCEE/actions/runs/44516301596) **3 passed**：P2 seed7/42/99 的新计费 A gas为39564/18986/18529，B 各20。[新 S23 定向 #44516301537](https://github.com/iFrankStudio/OCEE/actions/runs/44516301537) **3 passed**：兼容继承的目标 A gas 从19707降至14447。[新 S24 定向 #44516301516](https://github.com/iFrankStudio/OCEE/actions/runs/44516301516) **7 passed**：损坏 ACK 后仍可以真实 RESULT 恢复，A gas18952、tick1122、B20。请勿与旧程序哈希的气体账本混用。
+
+为了直接检验新预算的抗 Empty 能力，已在同一 P2 seed99 中加入仅改变模拟传输 message_delay=4 的独立实验，要求累计真实空接收超过原128，且每段仍符合 VM 上限、B 仍仅计费20并得到正确结果。[该扰动 CI #44518525140](https://github.com/iFrankStudio/OCEE/actions/runs/44518525140) 在撰写本段时**尚未验证**，不提前称通过。研究者实施的策略修复仍然不能计作个体内源算法发明、生命演化或 E001 确认性结果。G1/G2 NO-GO。
