@@ -158,12 +158,54 @@ pub fn s23_p2_remote_tool_transfer()->Program{
     // the actual specialized executable passes current-C BadBody testing.
     found.terminator=j("s23_make_gate",ro_args());
     let feedback=f.blocks.iter_mut().find(|v|v.id=="s22_feedback").unwrap();
-    feedback.terminator=br(656,"s22_probe_classify",vec![600,601,655],
-        "s23_route_other",vec![600,601,602,655]);
+    // A RECEIVE may return Code::Empty before C's delayed reply arrives.
+    // Check action status BEFORE JsonIndex(payload[0]); otherwise a legal
+    // empty mailbox turns into InvalidCode instead of a bounded wait.
+    let payload_instructions=std::mem::take(&mut feedback.instructions);
+    feedback.instructions=vec![
+        i(9400,lit(b"code")),
+        i(9401,Op::JsonFieldString(603,9400)),
+        i(9402,lit(b"Empty")),
+        i(9403,Op::EqBytes(9401,9402)),
+    ];
+    feedback.terminator=br(9403,"s23_receive_retry",vec![600,601,602],
+        "s23_feedback_check_ok",vec![600,601,602,603]);
     let job=f.blocks.iter_mut().find(|v|v.id=="s22_job_send").unwrap();
     job.terminator=j("s23_job_registry",vec![600,601,676]);
 
     f.blocks.extend([
+        // An ordinary empty mailbox is not a protocol response. Retry
+        // through a persisted bounded-loop header rather than indexing
+        // an empty JSON array or spinning without gas accounting.
+        block("s23_receive_retry",vec![
+            p(600,b),p(601,u),p(602,u)
+        ],vec![],Terminator::RepeatBounded{
+            limit:128,
+            body:"s23_retry_wait".into(),body_args:vec![600,601,602],
+            done:"failed".into(),done_args:vec![],
+        }),
+        block("s23_retry_wait",vec![
+            p(600,b),p(601,u),p(602,u)
+        ],vec![],y(WorldCall::Observe,vec![],"s23_retry_receive",
+            vec![600,601,602])),
+        block("s23_retry_receive",vec![
+            p(600,b),p(601,u),p(602,u),p(603,b)
+        ],vec![],y(WorldCall::Receive,vec![],"s22_feedback",
+            vec![600,601,602])),
+        block("s23_feedback_check_ok",vec![
+            p(600,b),p(601,u),p(602,u),p(603,b)
+        ],vec![
+            i(9404,lit(b"code")),
+            i(9405,Op::JsonFieldString(603,9404)),
+            i(9406,lit(b"Ok")),
+            i(9407,Op::EqBytes(9405,9406)),
+        ],br(9407,"s23_feedback_payload",vec![600,601,602,603],
+            "failed",vec![])),
+        block("s23_feedback_payload",vec![
+            p(600,b),p(601,u),p(602,u),p(603,b)
+        ],payload_instructions,
+            br(656,"s22_probe_classify",vec![600,601,655],
+                "s23_route_other",vec![600,601,602,655])),
         // Isolate cold specialization from the shared SEND/feedback graph.
         // The static verifier treats bounded header edges as cycle fences;
         // at runtime this branch can execute only once after a found opcode.
