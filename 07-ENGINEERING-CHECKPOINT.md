@@ -265,3 +265,10 @@
 - [原始全量运行 #44455627462](https://github.com/iFrankStudio/OCEE/actions/runs/44455627462) 的 `kernel` job 第一次为 cancelled；定向重跑（attempt 2）在 **2026-11-19 07:12:37–07:32:53 UTC** 再次 cancelled，耗时约20分钟，恰好触及 `.github/workflows/rust-kernel.yml` 原有 `timeout-minutes: 20`。不能把取消当成测试通过或 Rust 断言失败；也不能排除有测试卡住，须看后续完整日志与运行结果。
 - [工作流调整 ad4e515](https://github.com/iFrankStudio/OCEE/commit/ad4e515fc1b7abf7db4c7ff2acd57f0f308bfe6d) 将全量 job 的有限超时由20提升到35分钟，保留相同 `cargo test --workspace -- --show-output`、S8成本与manifest命令，不增加测试、不放宽个体 gas/存储/VM 上限。此变更触发新的工作流；**尚未取得该提交的完成 CI**。若35分钟仍未通过，必须定位慢测/挂起并优化，而非继续盲目延长。
 - [S23定向 #44455627472](https://github.com/iFrankStudio/OCEE/actions/runs/44455627472) 三项通过仍有效，但不代替完整回归。S21内层TLV `InvalidCode` 未解决；这次是研究者 CI 设施维护，不是个体自愈。G1/G2仍 NO-GO。
+
+
+### 2026-11-19 UTC — S23A 全量回归恢复：35 分钟上限内成功
+
+- [工作流运行 #44485672595](https://github.com/iFrankStudio/OCEE/actions/runs/44485672595) 对应代码/工作流提交 [`ad4e515`](https://github.com/iFrankStudio/OCEE/commit/ad4e515fc1b7abf7db4c7ff2acd57f0f308bfe6d)，GitHub Actions 已报告 `completed / success`。`kernel` job 的 workspace 测试、S8 生命周期成本报告和开发个体 manifest 三个步骤均为 `success`；此前两次 20 分钟取消已由这次完整通过取代为最新全量回归证据。运行于 2026-11-19 08:12–08:37 UTC 完成，未触及 35 分钟上限。
+- 本次通过仅证明当前工作空间测试和附加命令在该 CI 环境下完成；不证明测试外所有协议输入安全，也不证明 S21 内层 TLV `InvalidCode` 已修复。S23A 工具继承仍属人工预置生成/验证策略的有限开发集能力；未开始正式 E001，G1/G2 仍 **NO-GO**。
+- 后续聚焦 S21 的异常内层 TLV 可恢复性：先将错误反馈与 VM 终止区分，再在同一活动个体内测试受限通用图编辑、独立自测、CAS 采用与跨 episode 复用。不能把研究者实现的错误处理算作个体自主发现修复。避免为单一新增测试重复运行全量耗时 CI。
