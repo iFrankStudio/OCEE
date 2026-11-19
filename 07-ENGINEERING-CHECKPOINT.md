@@ -346,3 +346,12 @@
 - **先验来源审计**：这**不是一份单体新算法**，而是研究者先验的公共入口加两份已知协议专家的同源包，选择逻辑也由研究者给出；没有从 P1 创造出跨 P2 有用的新协议工具，没有 C/D 继承收益，更无开放式演化。其意义仅为排除后续“测试宿主按已知世界手动选专家”的混杂因子，建立同源执行与等初始能力的实验地基。
 - S26B 独立定向 #44548600143 已通过，但其全量 #44548600138 随更新 main 的新代码推送成为 **cancelled**，不得写为通过；S26C 后继完整工作空间 [#44549320903](https://github.com/iFrankStudio/OCEE/actions/runs/44549320903) **尚待完成**。G0 GO；G1/G2 **NO-GO**。
 - **下一真正决定性步骤**：在上述同源初始程序包基础上，实施由个体自己生成并在跨家族世界**功能性复用**的非字节模板工具（如经真实交互选择的通用校验/结果解析子程序），匹配 C/D pair 的 budget、seed、权限与初始化，移除继承工具作结构性反事实。若只是运行预置 P1/P2 专用库，禁止提升 G1 或 H3 结论。
+
+
+### 2026-11-19 — S27 同源初始程序包的真实配对对照：Rust 通过，分析流水线修复中
+
+- [S26C 完整 workspace #44549320903](https://github.com/iFrankStudio/OCEE/actions/runs/44549320903) 已经独立核验 **completed/success**：Rust workspace invariant、S8 cost、manifest 三步骤均通过，不能继续写成待核验。
+- [S27 配对测试](./crates/organism-seeds/tests/s27_transfer_pairs.rs) 的第一轮 [Actions #44558035166](https://github.com/iFrankStudio/OCEE/actions/runs/44558035166)：**原生 Rust 1项通过，0失败**，用时274.17秒；但独立 Python CSV 审计步骤发生 FileNotFoundError，导致**整个 workflow 为 failure**。根因是 cargo test 默认在 crate 目录执行，而测试用相对路径 target/s27_cross_family.csv 保存指标、Python 却从仓库根目录读取。已通过 [CI 修复 022df157](https://github.com/iFrankStudio/OCEE/commit/022df15700171d473c003ef0e6d3554fc63f0ae3) 使用 `github.workspace` 绝对路径；**修复后的完整流水线尚待证据**，不能写成已通过。
+- Rust 原生执行数据：**完全相同 root + S19(P1)/S23(P2) 初始程序包**，source world/protocol seed42，target P2 world128/protocol42。Target 无继承 C：**A 21,833 gas / 1,163 tick**。跨家族 D 携带 P1 自己生成的工具并保留 p1 原生命名：**A 21,895 gas / 1,163 tick**（真实导入 **62 gas**，额外 **+62**；P1 donor 工具**未被实际 EXEC**，不能声称 H3）。同家族 P2→P2 导入 D：**A 16,671 gas / 1,087 tick**（导入 **102 gas**），相对冷启动节省 **5,162 gas / 23.64%**；donor 工具真实 EXEC，冷启动有候选发现/测试，两者 B 各20。所有 source 和 target 真实 B 计算通过独立 FOLD32 验算与状态快照检查。
+- 原生日志中用于 Python 跨家族审计的成对 C/D 行：source=P1、target=P2、两组成功1，A=21833/21895、B=20/20、发送字节1162/1162、ticks=1163/1163，导入工具 causal_tool_used 0/0，目标世界初始 state hash 相同。不得把同家族正对照误填进跨家族 H3 统计。
+- **科学限制**：数据只来自匹配的一组开发 seed，个体能复用的是研究者提供的完整 P2 编码模板经过实例特化，不是自创新跨家族算法；P1→P2 工具未被消费，说明当前机制对该知识没有跨协议迁移效用。G0 GO、G1/G2 **NO-GO**；下一个真正研究点是 VM 内可生成、类型化、两家族都可消费的**协议无关功能子程序**，且要有移除工具的功能/资源反事实。避免继续用只共享文件、未调用的工具宣称迁移。
