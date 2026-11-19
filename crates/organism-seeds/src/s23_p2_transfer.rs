@@ -280,7 +280,16 @@ pub fn s23_p2_remote_tool_transfer()->Program{
             i(9062,lit(b"/self/discoveries/p2-remote-opcode")),
             i(9063,Op::ConstU32(u32::MAX)),
         ],y(WorldCall::Write,vec![9062,9061,9063],
-            "s22_read_job",ro_args())),
+            "s23_job_gate",ro_args())),
+        // A validated compatibility check transitions to a job only ONCE.
+        // This bounded boundary breaks a syntactic cycle between live
+        // compatibility feedback and the later normal B ACK feedback.
+        block("s23_job_gate",ro_reply(),vec![],
+            Terminator::RepeatBounded{
+                limit:1,body:"s22_read_job".into(),
+                body_args:vec![600,601,603],
+                done:"failed".into(),done_args:vec![],
+            }),
         block("s23_make",ro(),vec![
             i(9064,lit(&s23_seeded_p2_frame_template().canonical_bytes())),
             i(9065,lit(b"entry")),
