@@ -8,6 +8,8 @@ on:
       - "crates/organism-vm/src/lib.rs"
       - "crates/organism-seeds/src/s21_p2_tlv.rs"
       - "crates/organism-seeds/tests/s21_p2_outer_injection.rs"
+      - "crates/organism-seeds/src/s22_p2_remote.rs"
+      - "crates/organism-seeds/tests/s24_p2_recovery.rs"
   workflow_dispatch:
 
 concurrency:
@@ -30,3 +32,5 @@ jobs:
         run: cargo test -p ocee-organism-seeds --test s21_p2_outer_injection -- --show-output
       - name: Verify ordinary P2 HELLO still succeeds
         run: cargo test -p ocee-organism-seeds --test s21_p2_probe -- --show-output
+      - name: Verify real P2 remote C ACK accepts no injected extra TLV
+        run: cargo test -p ocee-organism-seeds --test s24_p2_recovery -- --show-output
