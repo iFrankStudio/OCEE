@@ -1,0 +1,28 @@
+name: S26B Frozen Public Family Router
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s26-family.yml"
+      - "crates/organism-seeds/src/s26_family.rs"
+      - "crates/organism-seeds/tests/s26_family.rs"
+      - "crates/organism-seeds/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s26-family-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  frozen-router:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify one frozen VM's publicly grounded P1/P2 differentiation
+        run: cargo test -p ocee-organism-seeds --test s26_family -- --show-output

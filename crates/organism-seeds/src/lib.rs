@@ -175,3 +175,6 @@ pub mod s23_p2_tool;
 
 /// S23 active P2 VM tool specialization, C validation, and fresh-world reuse.
 pub mod s23_p2_transfer;
+
+/// S26B: a single public-evidence P1/P2 framing router (researcher grammar priors).
+pub mod s26_family;
