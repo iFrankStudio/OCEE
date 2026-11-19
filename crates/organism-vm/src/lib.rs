@@ -63,6 +63,10 @@ pub enum Op {
     /// Generic TLV tag search and physical-order permutation; all tags
     /// are organism-supplied data, not special protocol constants.
     TlvLookup(u32,u32), TlvReorder(u32,u32),
+    /// Total, metered TLV shape preflight on untrusted bytes. Returns Bool
+    /// rather than trapping on truncation, duplicates or unexpected tags.
+    /// The expected tag order is supplied by the organism, never by the VM.
+    TlvMatchesOrder(u32,u32),
     /// Generic validated graph edit: program JSON, block name, register id, new Op JSON.
     /// It changes executable structure; selection/fitness remain organism decisions.
     RewriteOp(u32,u32,u32,u32),
@@ -275,6 +279,9 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
         Op::TlvReorder(a,order)=>{
             need(defs,*a,Type::Bytes)?;need(defs,*order,Type::Bytes)?;Ok(Type::Bytes)
         },
+        Op::TlvMatchesOrder(a,order)=>{
+            need(defs,*a,Type::Bytes)?;need(defs,*order,Type::Bytes)?;Ok(Type::Bool)
+        },
         Op::TlvEncode(tag,value)=>{
             need(defs,*tag,Type::U32)?;need(defs,*value,Type::Bytes)?;
             Ok(Type::Bytes)
@@ -457,6 +464,28 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
                 at=end;
             }
             Value::Bytes(answer.ok_or(VmError::InvalidInput)?)
+        },
+        Op::TlvMatchesOrder(source,order)=>{
+            let raw=bytes(regs,*source)?;
+            let tags=bytes(regs,*order)?;
+            let mut at=0usize;
+            let mut n=0usize;
+            let mut seen=[false;256];
+            let mut valid=tags.len()<=256;
+            while valid && at<raw.len(){
+                if raw.len()-at<3 || n>=tags.len(){valid=false;break;}
+                let tag=raw[at];
+                if tag!=tags[n] || seen[usize::from(tag)] {
+                    valid=false;
+                    break;
+                }
+                seen[usize::from(tag)]=true;
+                let len=u16::from_be_bytes([raw[at+1],raw[at+2]]) as usize;
+                if len>raw.len()-(at+3){valid=false;break;}
+                at+=3+len;
+                n+=1;
+            }
+            Value::Bool(valid && at==raw.len() && n==tags.len())
         },
         Op::TlvReorder(source,order)=>{
             let raw=bytes(regs,*source)?;
@@ -647,8 +676,9 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::JsonIndex(a,_)|Op::ReplaceByte(a,_,_)=>bytes(regs,*a)?.len(),
         Op::TlvDecode(a)=>bytes(regs,*a)?.len().saturating_mul(8),
         Op::TlvLookup(a,_)=>bytes(regs,*a)?.len().saturating_mul(2),
-        Op::TlvReorder(a,b)=>bytes(regs,*a)?.len().saturating_mul(2)
-            .saturating_add(bytes(regs,*b)?.len()),
+        Op::TlvReorder(a,b)|Op::TlvMatchesOrder(a,b)=>
+            bytes(regs,*a)?.len().saturating_mul(2)
+                .saturating_add(bytes(regs,*b)?.len()),
         Op::TlvEncode(_,a)=>bytes(regs,*a)?.len().saturating_add(3),
         Op::ByteStuffEncode(a,_,_,_)=>bytes(regs,*a)?.len().saturating_mul(2),
         Op::ByteStuffDecode(a,_,_,_)=>bytes(regs,*a)?.len(),
@@ -1079,5 +1109,29 @@ mod tests {
             Err(VmError::InvalidInput));
         assert_eq!(run_isolated(&reorder,vec![0x33,0,1],100),
             Err(VmError::InvalidInput));
+    }
+
+    #[test]
+    fn tlv_shape_preflight_is_total_metered_and_does_not_accept_duplicate_or_extra_tags(){
+        let verifier=p(vec![
+            Instruction{id:1,op:Op::ConstBytes{hex:"213141".into()}},
+            Instruction{id:2,op:Op::TlvMatchesOrder(0,1)}
+        ],Terminator::Return{value:2},Type::Bool);
+        let good=vec![0x21,0,1,0x01,0x31,0,0,0x41,0,2,0x03,0x04];
+        assert_eq!(run_isolated(&verifier,good.clone(),100).unwrap().0,
+            Value::Bool(true));
+        for bad in [
+            vec![0x21], // truncated
+            vec![0x21,0,4,0x00], // overflow length
+            [good.clone(),vec![0x7f,0,0]].concat(), // extra valid TLV
+            vec![0x21,0,1,1,0x21,0,0,0x41,0,0], // duplicate tag
+            vec![0x31,0,0,0x21,0,1,1,0x41,0,2,3,4], // wrong order
+        ] {
+            let (result,gas)=run_isolated(&verifier,bad.clone(),100).unwrap();
+            assert_eq!(result,Value::Bool(false),"bad={bad:?}");
+            assert!(gas>1);
+        }
+        // Preflight never exposes a protocol-specific tag map and never
+        // turns malformed bytes into an unchecked VM InvalidInput fault.
     }
 }
