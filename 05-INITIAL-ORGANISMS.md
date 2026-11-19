@@ -223,3 +223,7 @@ S20 初始程序开发哈希：`sha256:24d67e17ff371a29ef3c74189c3442699db73a7f9
 [完整 S23A 研究记录](./experiments/E001/DEV-S23-P2-EXECUTABLE-TRANSFER.md)，[定向 CI #44455627472](https://github.com/iFrankStudio/OCEE/actions/runs/44455627472) 三组关键实验通过。活动 VM 根据公开 P2 HELLO 和真实 C 的 BadBody 反馈得到 role tags/order、REMOTE_EVAL opcode，通过 RewriteOp 将这些**实例参数**写进**研究者已经提供完整结构**的 P2 编码器 AST。它自己计算程序哈希、经普通世界 WRITE 留存、EXEC 运行并向真实 C 发出空任务探针；只有 C 确认 BadBody 才允许注册。新世界只导入合法程序版本与 registry hash（均计费），活动 VM 仍须重新测试当前 C，兼容复用，不兼容回退并 CAS(0) 更新。
 
 完整 P2 五字段格式、XOR、字段角色假说、候选扫描范围、BadBody 判别、固定 FOLD32 工作形状、程序 AST 和插槽、兼容性/收益策略与结果校验**都是研究者先验**，不能把“参数填充+实机验收”称为陌生语法自行发明。继承操作由研究端实验驱动器执行，不是个体自主跨世界迁移；RESULT 工具并未继承。基础 VM 128块、64KiB 程序及计费上限保留；新增 compact role loop 属研究者对初始图的工程重构。S/O 正式初始哈希未冻结，G1/G2 NO-GO。
+
+## S24 P2 TLV 总函数预检查与受损 ACK 结果补救（开发）
+
+[完整 S24 记录](./experiments/E001/DEV-S24-RECOVERABLE-TLV.md)，[7项定向 CI成功](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065)。个体现在可基于自己从公开 HELLO 学出的标签及物理序，用研究者新提供的通用计费 `TlvMatchesOrder` 把额外/重复/截断的内层 TLV 映射为 `Bool(false)` 和现成失败分支，不再将这一类错误升级为 `InvalidCode`。另有研究者添加的独立 S24B 初始图，在真实 C ACK 被破坏而 B 工作已执行时，有界搜索 RESULT 并取回经独立验证的四字节答案；没有复制 B 账本或私有协议状态给活动个体。S22安全拒绝与S24B补救是不同初始化策略，不能当成个体自己发明/选择修复算法。**G0 GO，G1/G2 NO-GO**。

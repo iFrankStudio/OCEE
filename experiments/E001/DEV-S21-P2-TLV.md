@@ -70,3 +70,7 @@ S21 没有探测 P2 私有 REMOTE_EVAL/RESULT opcode，**没有提交或取回 F
 ## 后续 S22 的受限闭环（不追溯记入 S21）
 
 [S22 开发研究](./DEV-S22-P2-B-CYCLE.md)，[定向 CI #44440713315](https://github.com/iFrankStudio/OCEE/actions/runs/44440713315) 三项核心测试通过。S22 另用一份**新写的研究者初始 P2 VM 程序**，沿 S21A 的公开角色推断，扫描私有操作码并成功完成真实 B FOLD32。它不能被称作 S21B 已拥有的自主工具演化，更不能和 S20 的 P1 初始程序相加宣称跨协议单个体迁移。完整 workspace CI 仍以它自己的最终运行状态为准。
+
+## 后续 S24 恢复性修订（保留 S21 历史阴性证据）
+
+此前内层额外 TLV 注入导致 `InvalidCode` 是 S21B 当时**真实且已归档的阴性发现**，不能改写。后续研究者在 [S24](./DEV-S24-RECOVERABLE-TLV.md) 引入通用、计费的 `TlvMatchesOrder` 和验证分支；[CI #44502050065](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065) 重做同种类真实 C 注入，现在从活动 VM 常规返回 `U32(0)` 而非异常终止，并延伸到 S22/S23 的实际 C ACK 解析；独立 S24B 还在受损 ACK 后通过 RESULT 补救已完成 B 工作。这些是**研究者新增的工程修复与策略假说**，不是 S21B 当时已经学到或个体自行发现的能力。仍未证明所有外层畸形帧、未知协议或开放式自修复。

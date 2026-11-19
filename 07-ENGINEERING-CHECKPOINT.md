@@ -2,7 +2,7 @@
 
 - **日期**：2026-11-19
 - **状态**：工程原型可运行，**E001 尚未校准、未预注册、未产生科学实验结果**
-- **确认 CI**：[GitHub Actions Run 44440432805](https://github.com/iFrankStudio/OCEE/actions/runs/44440432805) — Rust workspace **104 passed / 0 failed**
+- **最近已确认全量 CI**：[GitHub Actions Run 44485672595](https://github.com/iFrankStudio/OCEE/actions/runs/44485672595) — Rust workspace **107 passed / 0 failed**（S23A 基线）；[S24 定向 CI #44502050065](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065) **7 passed / 0 failed**；新全量 [#44502050056](https://github.com/iFrankStudio/OCEE/actions/runs/44502050056) 待最终结果。
 - **适用基线**：[04 工程契约](./04-ENGINEERING-CONTRACTS.md)、[05 个体基线](./05-INITIAL-ORGANISMS.md)、[06 实验实现](./06-E001-IMPLEMENTATION.md)
 
 ## 已实现并由 CI 验证的能力
@@ -239,6 +239,12 @@
 - 同 S23A 初始程序、target world128/protocol42：**冷 19,712 A gas/1132 tick**、兼容继承 **14,452/1057**（导入102、节省26.7%）、失效继承并 CAS 重学 **20,319/1142**（导入102、负迁移+3.1%），B 均20。seed99 的独立冷启动 19,277 gas/1127 tick 也通过。
 - 先遇到128基本块和64KiB容量不足：没有保留任何放宽上限，改用研究者的五次有界角色识别共享图；共享反馈环由一次性 bounded 阶段约束。seed99 还暴露合法 RECEIVE=Empty 导致 InvalidCode，现由最多128次计费等待/重试处理，只有返回 Ok 才解析 payload。**不应将这些研究者故障排除误报成个体自行修复**。
 - 先验 P2 格式、112候选、BadBody判据、FOLD32任务和完整可执行模板均由研究者预置；只证明已知格式下实例特化与迁移节约，RESULT 尚需冷搜索，P1→P2 同初始个体迁移尚无证据。G1/G2 NO-GO。
+
+### S24 — 把异常 P2 回复转为可处理失败，并从真实 RESULT 补救任务
+
+- [S24 完整实验记录](./experiments/E001/DEV-S24-RECOVERABLE-TLV.md)，[定向 CI #44502050065](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065) **7项通过**。VM 加入研究者编写的通用总函数 `TlvMatchesOrder`，逐字节计费、输入 tag/order 为个体观察数据。S21B 回复路径在无保护 `TlvLookup/TlvReorder` 前检查，S22/S23 共用 ACK/RESULT 解析也以布尔判断拒绝不匹配内层字段。公开 C 回复额外合法内层 TLV 从过去的 `InvalidCode` 变为个体返回 `U32(0)`，不保存伪成功。
+- S24B 是单独研究者设计的有界恢复程序：C 实际处理 B 工作且已扣费20，在 ACK 交付前被研究端注入额外 TLV；个体不承认损坏 ACK，改由合法 112候选 RESULT 探测取回独立 FOLD32 确认的答案。seed42：**1047tick、12,912 A gas（VM 8,821）、B20**，没有重复 B 工作。安全拒绝版本在同一注入后72tick返回失败、B也20。
+- **限定**：修复与恢复策略均为研究者更新的初始程序和通用 VM 原语，不是活动个体的自我编程发现；外层无法解析的畸形 TLV、任意损坏字段、其它未观察故障仍不保证可恢复。S24 当前定向通过、全 workspace [#44502050056](https://github.com/iFrankStudio/OCEE/actions/runs/44502050056) 尚须核验。G1/G2 NO-GO。
 
 ## 已发现且修复的关键问题
 
