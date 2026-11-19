@@ -156,7 +156,7 @@ pub fn s23_p2_remote_tool_transfer()->Program{
     let found=f.blocks.iter_mut().find(|v|v.id=="s22_remote_found").unwrap();
     // Do not mark a newly learned opcode as a successful capability before
     // the actual specialized executable passes current-C BadBody testing.
-    found.terminator=j("s23_make",ro_args());
+    found.terminator=j("s23_make_gate",ro_args());
     let feedback=f.blocks.iter_mut().find(|v|v.id=="s22_feedback").unwrap();
     feedback.terminator=br(656,"s22_probe_classify",vec![600,601,655],
         "s23_route_other",vec![600,601,602,655]);
@@ -164,6 +164,14 @@ pub fn s23_p2_remote_tool_transfer()->Program{
     job.terminator=j("s23_job_registry",vec![600,601,676]);
 
     f.blocks.extend([
+        // Isolate cold specialization from the shared SEND/feedback graph.
+        // The static verifier treats bounded header edges as cycle fences;
+        // at runtime this branch can execute only once after a found opcode.
+        block("s23_make_gate",ro(),vec![],
+            Terminator::RepeatBounded{
+                limit:1,body:"s23_make".into(),body_args:ro_args(),
+                done:"failed".into(),done_args:vec![],
+            }),
         block("s23_read_registry",vec![p(600,b)],vec![
             i(9000,lit(b"/self/tools/p2-eval-frame")),
         ],y(WorldCall::Read,vec![9000],"s23_read_registry_reply",vec![600])),
