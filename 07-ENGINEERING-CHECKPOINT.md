@@ -329,3 +329,11 @@
 - [后继全量工作空间 #44535255224](https://github.com/iFrankStudio/OCEE/actions/runs/44535255224)，head `d1df6c58`，`kernel` job **completed/success**；`Run world and VM invariant tests`、S8 生命周期成本报告和个体 manifest 三个步骤均为 **success**。此结果是 S26A 后继代码的全量回归证据，不会倒填此前被取消的 S25 原运行。
 - **能力来源与负面结论**：P1 与 P2 的初始活动程序不同，且外来帧结构检查由研究者编写；因此本结果仅证明跨家族错误工具可安全拒绝并重学，属于**负迁移成本**而非结构正迁移、通用协议发现或自主发明。S26 C/D 配对 CSV 及统一初始 VM 尚未完成，正式 E001 未启动，**G0 GO / G1、G2 NO-GO**。
 - **下一执行检查点**：以一个冻结的跨 P1/P2 初始 VM 哈希构建原生 C/D 配对；仅迁移个体产生的对象/工具，逐条计费并记录世界审计；先做一对真实跨家族运行和工具移除反事实，再生成开发集 CSV 交由 `s26_paired_audit.py` 检查。不要复用两套不同的研究者程序冒充同源对照。
+
+### 2026-11-19 — S26A 实测负迁移成本与 S26B 同源 VM 判别
+
+- [S26A 定向 CI #44535284980](https://github.com/iFrankStudio/OCEE/actions/runs/44535284980) 的原生作业日志已独立复核：P1→P2 seed42、target world128；冷启动 **A 19,843 gas / 1,132 tick**，带 P1 错误工具继承 **A 20,045 gas / 1,137 tick**（其中写入导入成本 **62 gas**），因此可观察到 **+202 gas（约+1.02%）负迁移成本**。两组真实 B 各20 gas、独立 FOLD32 正确、P2 重新学习并 CAS 替换。此前“暂无精确 gas”由本条日志核验数字补充。不是跨语法正迁移。
+- [S26B 同源 VM 提交 aeab984](https://github.com/iFrankStudio/OCEE/commit/aeab984616035b1fff44c7f271f5994144cb958d) 和 [定向 CI #44548600143](https://github.com/iFrankStudio/OCEE/actions/runs/44548600143)：**1 项核心 Rust 测试通过**。同一冻结的活动初始程序哈希在 P0/P1/P2×开发 seed7/42/99 共9个世界运行，使用实际公开 HELLO request/response，不向个体传 Family、私有 generator、隐藏 opcode、B 账本。P0 对照正常返回未分类，无 P1/P2 伪结果；P1 识别公开的 0x7e 前后分隔符、P2 识别通用 outer TLV tag0x10，并经世界 WRITE 持久记录。P0 A gas **456/456/457**、tick4；P1 **487/487/486**、tick5；P2 **533/533/533**、tick5；B 均0。相同哈希断言与快照重放成功。
+- S26B 是**研究者播种的两种已知字节格式假说的有限选择**。它解决“必须有单个可测试初始程序入口”的前置障碍，但没有自主发明解析器、没有真正 C→B 工作，不能当成跨家族 H3 或开放式演化。S26B 全 workspace [#44548600138](https://github.com/iFrankStudio/OCEE/actions/runs/44548600138) 在本条撰写时仍须核验最终结论。
+- [S26C 活动程序包提交 8634dc4](https://github.com/iFrankStudio/OCEE/commit/8634dc4b55261d9cb8b924aa3e1df2562988e6d5)：同样的封存 router + P1 S19/P2 S23 **两份相同预先安装的程序库**，让 root 根据公开 HELLO 自行受计费 WRITE(/self/active) 切换到专用程序，必须有真实 B FOLD32 与逐条审计。专用模块全部为研究者提供而且在两世界等额安装；**即使测试通过也只是受先验限定的自主选择**。定向 [#44549321018](https://github.com/iFrankStudio/OCEE/actions/runs/44549321018) 的结果尚待验收。
+- G0 工程 GO；G1/G2 仍 **NO-GO**。后续关键是固定整个初始程序包并让它自行生成、验证、继承跨家族可用的工具，而非仅选择两份人工专家。
