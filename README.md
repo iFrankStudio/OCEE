@@ -1,6 +1,6 @@
 # OCEE — 开放式演化赛博生态世界
 
-**规范基线：v0.2.0 · 工程：P1/P2/P3 + S0–S25 开发进展；S24 全量113项通过、S25 执行中恢复定向1项通过；S25 全量核验中 · E001 尚未校准、未预注册**
+**规范基线：v0.2.0 · 工程：P1/P2/P3 + S0–S26C 开发进展；S26A 后继全量 CI 成功、S26B 与 S26C 定向 CI 成功；S26C 全量核验中 · E001 尚未校准、未预注册**
 
 OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是探索一种能够适应未知数字环境、学习使用现有软硬件与网络服务、创造新工具并持续改进自身的赛博生命培养机制。
 
@@ -104,3 +104,11 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 - **v0.2.0**：冻结执行语义和研究边界；工程已推进到 P1/P2/P3 初始实现（S24 全量113项通过；S25 定向通过、全量待核验）。**完整 VM ISA、独立结构生成学习、对照校准与持久化尚未完成，E001 没有确认性实验结果**。
 
 需要修改 VM 语义、协议语法、先验能力、资源模型、正式门槛时，请先提出明确版本化变更并评估实验可比性。
+
+
+## S26 工程进展：异构工具拒绝与同源程序包自主选择（开发集，非正式 E001）
+
+- **S26A** [异构工具负迁移](./crates/organism-seeds/tests/s26_foreign_family.rs)：P1 VM 真实生成的可执行工具导入 P2 世界，活动 P2 VM 受计费地检查、拒绝不兼容帧，重新特化/注册并实际计算 B；目标 seed42 冷启动 19,843 A gas，导入外来工具后 20,045（额外 +202），B 各20。[定向 CI](https://github.com/iFrankStudio/OCEE/actions/runs/44535284980) 和后继 [全量 CI](https://github.com/iFrankStudio/OCEE/actions/runs/44535255224) 成功。
+- **S26B** [同一冻结公开证据路由程序](./crates/organism-seeds/src/s26_family.rs)：同一初始 VM 哈希在 P0/P1/P2×3 开发种子中，识别 P1/P2 已披露结构假说并持久记录，P0 无误分类；[定向 CI](https://github.com/iFrankStudio/OCEE/actions/runs/44548600143) 通过。
+- **S26C** [同源程序包的真实 B 工作](./crates/organism-seeds/tests/s26_dispatch.rs)：两个世界均按相同成本预安装相同的 S19 P1 / S23 P2 专用库与同一个初始 root；活动 VM 仅凭公开 HELLO 选择专用程序并受计费切换 `/self/active`，随后真实 C→B 完成 FOLD32。seed42：P1 A 9,762 gas / 133 tick，P2 A 21,833 gas / 1,163 tick，B 各20；[定向 CI](https://github.com/iFrankStudio/OCEE/actions/runs/44549321018) 通过。
+- **严格边界**：S26B/C 的语法判别和两份专家程序均由研究者预设，**没有产生跨家族可复用的自创新算法**，也没有完成正式 C/D 配对继承。S26C 全量 CI [#44549320903](https://github.com/iFrankStudio/OCEE/actions/runs/44549320903) 尚待最终核验。继续坚持 **G0 GO，G1/G2 NO-GO**。
