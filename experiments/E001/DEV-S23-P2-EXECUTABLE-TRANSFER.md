@@ -46,3 +46,7 @@ S22 只在活动 VM 内保存 P2 role map、REMOTE_EVAL 与 RESULT 操作码的�
 ## 后继 S24 容错演化边界（不归功于 S23 初始个体）
 
 [后续 S24 总函数 TLV 验证与受损 ACK 的结果恢复](./DEV-S24-RECOVERABLE-TLV.md)，[CI #44502050065](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065) 7项定向通过。S24 将此前可能引发 VM InvalidCode 的额外内层 TLV 改成可正常拒绝；一个独立研究者预置的恢复程序可跳过不可信 ACK，查询并验证真实 RESULT。**这不是 S23A 个体自我发现修复**；原 S23A 继承收益与研究者 P2 先验归因保持不变。
+
+## S24 更改对 S23A 基线的可比性提示
+
+后续共用 P2 回复检查将潜在可陷阱的 `TlvReorder` 更换为同语义的有界 `TlvMatchesOrder`，因此**S23 程序哈希和实际 A 账本会随版本变化**。在 [S23 定向 #44501847890](https://github.com/iFrankStudio/OCEE/actions/runs/44501847890) **3通过/0失败**的新版本中：同一 target world128/proto42 冷启动 A **19,707**、兼容继承 **14,447**、不兼容继承 **20,314**，正/负迁移差额仍是 5,260 和607，tick分别1132/1057/1142、导入102，B各20；world99冷启动19,273 A gas。**原 S23A 19,712/14,452/20,319 记录保持为原提交的历史事实，不应与新代码的哈希混用。** 更晚的 RECEIVE=Empty 共用修复仍须以新的定向与 workspace CI 单独核验。

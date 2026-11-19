@@ -45,3 +45,11 @@ S24 并不是“个体自己修复了自己的算法”：通用安全原语、�
 本轮仅对**封装长度一致且能被外层 TLV 解码器解析、但具有额外内层字段的 C 回复**给出了可控失败和补救证据；任意断帧、恶意嵌套、畸形外层、未知长度、损坏 RESULT、认证及资源耗尽仍缺更广校准，某些异常可能依旧让既有 `TlvDecode/JsonIndex` 路径报 VM fault。不能宣称所有恶意 P2 报文均安全或保证任务恢复。
 
 下一步应在**不增加研究者特例处理**的前提下，探索把标准化失败反馈纳入个体自身可更改的控制流/工具候选，并用独立样本验证它选择、复验、保存改动和可跨 episode 转移，而非不断由研究者补手工规则。E001 正式 S/O、四组 A/B/C/D、任务收益/负迁移全面校准、预注册仍未完成，G1/G2 持续 NO-GO。
+
+## 5. 同期完整因果回归暴露的 Empty 反馈边界
+
+额外 TLV 的通用 `TlvMatchesOrder` 修改改变了少量 VM 消耗。随后 [S22 定向 #44501847870](https://github.com/iFrankStudio/OCEE/actions/runs/44501847870) 的**正常三种子 B 闭环**和**错误 RESULT 长度拒绝**依然通过，但“屏蔽 BadBody”阴性组在 seed42、第1028 tick 因普通 `RECEIVE=Empty` 被无条件 `JsonIndex(payload[0])` 而产生 `InvalidCode`，因此该 CI 整体为 **failure**。不能把另外两项成功说成整套通过；不能将其误归因到 P2 标签错误。
+
+此前 S23A 已经有一套受计费的 `RepeatBounded(128)` OBSERVE→RECEIVE 修复。提交 [6abfdfa](https://github.com/iFrankStudio/OCEE/commit/6abfdfaad6634b8be2abb9244c4e9fd339ab8854) 将相同的**研究者编写**世界动作状态检查与有界重试接入 S22 的各初始变体：只有 `RECEIVE.code==Ok` 才解析 bytes、`Empty` 走有界/可持久化等待、其它状态安全失败。S23A 仍沿用其已存在的等价重试器，通过原始 S22 生成器组合，不因重复四个块突破128-block/64KiB VM 上限。
+
+该修复正在分别由 [S22 #44503380110](https://github.com/iFrankStudio/OCEE/actions/runs/44503380110)、[S23 #44503380158](https://github.com/iFrankStudio/OCEE/actions/runs/44503380158)、[S24 #44503380118](https://github.com/iFrankStudio/OCEE/actions/runs/44503380118) 验收。**在这些后继 CI 给出最终结果前，不能称 Empty 回归已通过。** 这是先前已知的空接收时序问题在计算成本微调后被触发，不是个体自动发现的程序修复。

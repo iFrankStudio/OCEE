@@ -278,3 +278,9 @@
 - [工作流运行 #44485672595](https://github.com/iFrankStudio/OCEE/actions/runs/44485672595) 对应代码/工作流提交 [`ad4e515`](https://github.com/iFrankStudio/OCEE/commit/ad4e515fc1b7abf7db4c7ff2acd57f0f308bfe6d)，GitHub Actions 已报告 `completed / success`。`kernel` job 的 workspace 测试、S8 生命周期成本报告和开发个体 manifest 三个步骤均为 `success`；此前两次 20 分钟取消已由这次完整通过取代为最新全量回归证据。运行于 2026-11-19 08:12–08:37 UTC 完成，未触及 35 分钟上限。
 - 本次通过仅证明当前工作空间测试和附加命令在该 CI 环境下完成；不证明测试外所有协议输入安全，也不证明 S21 内层 TLV `InvalidCode` 已修复。S23A 工具继承仍属人工预置生成/验证策略的有限开发集能力；未开始正式 E001，G1/G2 仍 **NO-GO**。
 - 后续聚焦 S21 的异常内层 TLV 可恢复性：先将错误反馈与 VM 终止区分，再在同一活动个体内测试受限通用图编辑、独立自测、CAS 采用与跨 episode 复用。不能把研究者实现的错误处理算作个体自主发现修复。避免为单一新增测试重复运行全量耗时 CI。
+
+### 2026-11-19 — S24 共用 P2 回复路径回归诊断
+
+- [S24 有界恢复研究记录](./experiments/E001/DEV-S24-RECOVERABLE-TLV.md)。S21 和真实 B ACK 注入的 focused [CI #44502050065](https://github.com/iFrankStudio/OCEE/actions/runs/44502050065) 7项通过。
+- [S22 定向 #44501847870](https://github.com/iFrankStudio/OCEE/actions/runs/44501847870) **failure**：BadBody 屏蔽组 seed42 1028 tick 合法 `RECEIVE=Empty` 未处理而 `InvalidCode`。正常三 seed 及错误 RESULT 长度对照通过不能掩盖该失败。
+- [6abfdfa](https://github.com/iFrankStudio/OCEE/commit/6abfdfaad6634b8be2abb9244c4e9fd339ab8854) 已把 S23 现有有界空接收处理搬到 S22 基类，并让 S23 复用已有等价逻辑，避免重复基本块。S22/S23/S24 后继定向及全 workspace CI 待成功结果，**G1/G2 仍 NO-GO**。
