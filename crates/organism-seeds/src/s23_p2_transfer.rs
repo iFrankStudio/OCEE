@@ -107,7 +107,7 @@ pub fn s23_p2_remote_tool_transfer()->Program{
             i(9029,Op::TlvLookup(9026,9028)),
             i(9030,Op::ByteAt(9029,9023)),
         ],y(WorldCall::Send,vec![9017],"s22_wait1",
-            vec![600,9030,9031_placeholder])),
+            vec![600,9030,9114])),
         block("s23_route_other",vec![
             p(600,b),p(601,u),p(602,u),p(603,b)
         ],vec![
