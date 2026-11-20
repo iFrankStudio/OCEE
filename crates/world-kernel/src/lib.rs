@@ -616,6 +616,8 @@ impl World {
                     key != "/public/E001/compose" &&
                     // S33 development fixture, explicit read-only public ACL.
                     key != "/public/E001/compose-depth" &&
+                    // S35 explicit third public label, READ only.
+                    key != "/public/E001/compose-counterexample" &&
                     key != "/public/E001/boundary-witness" &&
                     key != "/public/E001/semantic-witness" &&
                     key != "/public/E001/semantic-audit" &&
