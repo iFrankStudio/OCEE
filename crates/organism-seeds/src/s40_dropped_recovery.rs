@@ -63,7 +63,7 @@ pub fn s40_p2_recovery_consumer()->Program{
             ins(10912,Op::JsonFieldString(10910,10911)),
             ins(10913,lit(b"Ok")),
             ins(10914,Op::EqBytes(10912,10913)),
-        ],br(10914,"failed",vec[],"failed",vec![])),
+        ],br(10914,"failed",vec![],"failed",vec![])),
     ]);
     program.validate().expect("S40 P2 bounded dropped-request recovery");
     program
