@@ -33,3 +33,11 @@ S29 已证明单一节点的跨协议转移和有限反馈选算子。**S30 新�
 - 历史依赖 [S6 搜索](../../crates/organism-seeds/src/s6_compose.rs) / [S28 同源路由](../../crates/organism-seeds/src/s28_cross_utility.rs)。
 
 **预注册状态：没有。所有 CI 结果需在直接获取原生日志后追加，不能按设计预期填写为通过。**
+
+
+## 静态图连接失败与修正（2026-11-20）
+
+- [S30 初次 CI #44676720789](https://github.com/iFrankStudio/OCEE/actions/runs/44676720789) 编译成功，但静态 VM `Program.validate()` 拒绝，`InvalidProgram("block parameter arity")`，没有进入学习世界；这并不说明组合算法有缺陷。
+- [第一次图连接修订 #44676860088](https://github.com/iFrankStudio/OCEE/actions/runs/44676860088) 仍为同样失败。将 S28 原本作为独立 entry 的单参数块接成 `s30_after` 零参数延续是必要但不充分的修复。
+- 为避免盲改，新增程序图边签名审计，运行到 [诊断 CI #44676983659](https://github.com/iFrankStudio/OCEE/actions/runs/44676983659) 精确显示两条不匹配：`s30_score1 -> apply` 和 `s30_register_ack -> apply`，实际传2、目标期待3。原因是 S6 原 `apply` 接收注册 WRITE 的第三个反馈参数，但 S30 将 WRITE 回执在 `s30_register_ack` 提前核验后，应该将 `apply` 变成只有 `hash,held_out` 两参。
+- [修复 e7a9dd5](https://github.com/iFrankStudio/OCEE/commit/e7a9dd522e8ac8d313402bbe8412046d1b4102dc) 显式修改了 `apply.params`，保留全图精确边诊断。**当时定向 CI 尚未验收，不能将这些失败版本描述为通过。**
