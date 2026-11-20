@@ -387,3 +387,13 @@
 - 同 SHA 的 [完整工作空间 #44659637322](https://github.com/iFrankStudio/OCEE/actions/runs/44659637322) 为 **completed/cancelled**，不能算全量回归通过；此处只承认定向 S27 流水线验收。该运行基于 Rust 修改 SHA，而后续文档提交 `771895c` 不改变 Rust 代码。
 - 定向成功仅证明当前断言满足，**尚未从原生日志提取修订后的 sham 调度漂移数值**；不应将先前失败的 `sham=21,839` 直接冒充新运行结果。`same` 与 `sham` 的导入成本相等，但额外 WRITE tick 仍会影响 epoch 调度；`gas(same)<gas(sham)` 不能在没有调度匹配的情况下单独作为严格因果估计。`EXEC(hash)` 也不能区分继承执行与独立重新生成的同哈希代码。
 - 下一研究任务：读取 #44659637319 原生 `S27 sham_control` 日志/工件，提取 cold/sham/same 成本和 tick；建立初始 tick、gas、epoch 边界严格匹配的可消费/不可消费工具对照，再探索真正跨 P1/P2 的协议无关工具复用。不要为通过实验植入正确算法模板。**G0 GO；G1/G2 NO-GO；E001 未预注册。**
+
+
+### 2026-11-20 — S28 受先验限定的跨家族通用可执行工具复用，原生实测通过
+
+- [研究设计与完整失败链](./experiments/E001/DEV-S28-CROSS-FAMILY-GENERIC-UTILITY.md)、[S28 Rust 根程序](./crates/organism-seeds/src/s28_cross_utility.rs)、[四轨迹因果测试](./crates/organism-seeds/tests/s28_cross_utility.rs)、[定向 CI #44670645988](https://github.com/iFrankStudio/OCEE/actions/runs/44670645988) **completed/success，1 passed 0 failed（218.17s）**。之前 [#44669843136](https://github.com/iFrankStudio/OCEE/actions/runs/44669843136) 和 [#44670196068](https://github.com/iFrankStudio/OCEE/actions/runs/44670196068) 是真实失败，不得隐藏：后者发现 sham 独立生成同哈希程序而版本 WRITE `Conflict` 被错误当作致命失败；研究者修复 [e7f515a](https://github.com/iFrankStudio/OCEE/commit/e7f515a12d338dbb7870ceb55bb4ffdf4f4593d7) 仅将已存在不可变版本的 Conflict 视为可恢复。
+- **首次已核验的协议无关程序跨家族实际 EXEC**：Source P1 活动 VM 在公开作业字节上将研究者预置的 U32 模板通过 `RewriteOp` 改写为 `Len(Bytes)`、内容哈希封存并注册、实际 EXEC，通过后继续真实 C→B；Target P2 使用**相同 root、相同 S19/S23 预安装专家库**，继承此 P1 生成的字节长度程序，在切换 P2 专家前真实 EXEC，返回正确后继续真实 C→B。source/target root hash `a12ad82a5ab980eb14f003ea2410f7263a314ac920af4ef4e3553580eba6eca0`，工具 hash `337be40be6f438c015af1f21750325b76654ccac010628c2a0fe28d08e9d81cc`。
+- target P2 world128/protocol42，实际总 A gas：**cold 22477**、**inherited 22349（import24）**、**same-cost sham 22486（import24）**、**wrong-output poison 5366（import24，未执行 B）**；D−sham **−137 gas**（约0.61%），D−cold **−128**（cold 不保证等写入调度，优先比较 sham）。cold/sham ticks 1174、inherited 1170；冷、inherit、sham 的 B gas 都是20，独立 FOLD32 正确；poison 虽真实 EXEC、却错误返回0，根 VM 拒绝切换，B gas0。**只在任务成功的世界之间比较 A 净收益**。
+- 同内容 hash 的冷生成与导入继承必须由动作和版本证据区分：sham 已存程序版本，活动根仍尝试自行生成同一程序，WRITE 收到 Conflict 并按明确策略采用，不能将 sham 的 EXEC(hash) 计为 donor 因果贡献。源 P1 VM 生成与目标 P2 VM 调用均经审计验证，不是主持者手动 EXEC。
+- **判据仍 NO-GO**：通用算子、模板、修改位置、接入 B 工作的长度12校验与 P1/P2 专家预设均来自研究者；单开发种子、单功能。不能将受先验限定的**功能迁移**称为开放式演化、自主发明或 H3 确认性通过。G0 GO，G1/G2 NO-GO。S28 代码 SHA `da96e136` 的 workspace 全量 CI 状态仍须独立核验。
+- 下一突破口：将 `Len` 唯一候选替换为有限多个 VM 可组合的通用算子策略，要求个体**从新的公开验证任务/反馈中选择**、生成并交叉验证，最小化研究者先验；在 P1→P2 目标跨不同字节长度、不同随机种子与任务类型验证，不得把 `U32(12)` 目标作为可泛化语义。
