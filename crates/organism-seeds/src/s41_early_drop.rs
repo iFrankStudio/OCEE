@@ -30,7 +30,7 @@ pub fn s41_p2_early_drop_consumer()->Program {
         .expect("S23 feedback handler");
     let Terminator::Branch{if_true,true_args,..}=&mut feedback.terminator
         else{panic!("S23 must branch on Code::Empty")};
-    assert_eq!(if_true,"s23_receive_retry");
+    assert_eq!(if_true.as_str(),"s23_receive_retry");
     assert_eq!(true_args.as_slice(),&[600,601,602]);
     *if_true="s41_check_drop".into();
 

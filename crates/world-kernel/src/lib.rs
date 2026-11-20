@@ -914,7 +914,7 @@ impl World {
                 let ephemeral=self.state.objects.iter()
                     .filter(|(key,obj)|obj.owner==actor &&
                         ["/self/results/","/self/work/","/self/discoveries/"]
-                            .iter().any(|prefix|key.starts_with(prefix)))
+                            .iter().any(|prefix|key.starts_with(*prefix)))
                     .map(|(key,_)|key.clone()).collect::<Vec<_>>();
                 for key in ephemeral {
                     if let Some(obj)=self.state.objects.remove(&key){
