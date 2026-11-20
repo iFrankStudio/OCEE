@@ -1,0 +1,32 @@
+name: S38 Task-Revision-Licensed One-Shot Probe Recovery
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s38-task-recovery.yml"
+      - "crates/organism-seeds/src/s38_task_recovery.rs"
+      - "crates/organism-seeds/tests/s38_task_recovery.rs"
+      - "crates/organism-seeds/src/lib.rs"
+      - "crates/organism-seeds/tests/s28_cross_utility.rs"
+      - "crates/world-kernel/src/lib.rs"
+      - "crates/world-kernel/src/program_host.rs"
+      - "crates/organism-vm/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s38-task-recovery-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-licensed-relearning:
+    runs-on: ubuntu-latest
+    timeout-minutes: 29
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native task revision: paid new probe, evidence CAS, changed tool, real B, one-shot budget
+        run: cargo test -p ocee-organism-seeds --test s38_task_recovery -- --show-output

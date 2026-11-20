@@ -211,3 +211,6 @@ pub mod s36_active_probe;
 
 /// S37: task-bound original probe receipts verified by kernel before candidate trust.
 pub mod s37_evidence_guard;
+
+/// S38: bounded, paid renewal of a single query when task v1 legitimately becomes v2.
+pub mod s38_task_recovery;
