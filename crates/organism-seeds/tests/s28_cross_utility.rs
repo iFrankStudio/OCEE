@@ -71,8 +71,19 @@ fn audit_exec(w:&World,h:&str)->bool{
             Some(Action::Exec{program_hash,..}) if program_hash==h))
 }
 fn verify_remote(w:&World,family:Family){
-    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
-        Some(Value::U32(1)));
+    if w.state.organisms[&ORGANISM_ID].last_return!=Some(Value::U32(1)){
+        let host=&w.state.organisms[&ORGANISM_ID];
+        let recent=w.audit.iter().rev().take(9).map(|r|
+            format!("step={} action={:?} code={:?} vm_gas={}",
+                r.step,r.action,r.result.code,r.result.vm_gas_charged))
+            .collect::<Vec<_>>();
+        panic!("S28 remote failure family={family:?} step={} A={} B={} return={:?} active={:?} block={:?} tools={:?} recent={recent:?}",
+            w.state.step,gas(w),b_gas(w),host.last_return,
+            host.active_program_hash,
+            host.vm_continuation.as_ref().map(|c|c.block.as_str()),
+            w.state.objects.keys().filter(|k|k.starts_with("/self/tools/"))
+                .collect::<Vec<_>>());
+    }
     assert_eq!(b_gas(w),20,"real C->B FOLD32, not a local fake");
     let job:WorkItem=serde_json::from_slice(
         &w.state.objects["/public/E001/job0"].bytes).unwrap();
