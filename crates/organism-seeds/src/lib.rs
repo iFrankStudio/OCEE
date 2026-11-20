@@ -214,3 +214,6 @@ pub mod s37_evidence_guard;
 
 /// S38: bounded, paid renewal of a single query when task v1 legitimately becomes v2.
 pub mod s38_task_recovery;
+
+/// S39: receipt-authorized task-version fence across actual SEND and C/B consumption.
+pub mod s39_task_fenced_remote;
