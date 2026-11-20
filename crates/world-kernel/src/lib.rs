@@ -906,6 +906,11 @@ impl World {
                 for key in [
                     "/self/results/transform-held-out",
                     "/self/results/s30-extra-held-out",
+                    // Framing-family discovery is an episode-specific
+                    // classification emitted by S26 with a create-only
+                    // WRITE. Re-evaluate it on the second attempt rather
+                    // than forge a successful CAS or reuse stale output.
+                    "/self/discoveries/framing-family",
                     "/self/work/remote-values-le",
                     "/self/work/remote-count-le",
                 ] {
