@@ -1,0 +1,28 @@
+name: S33 Evidence-Selected Structural Depth For Real B Operands
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s33-adaptive-depth.yml"
+      - "crates/organism-seeds/src/s33_adaptive_depth.rs"
+      - "crates/organism-seeds/tests/s33_adaptive_depth.rs"
+      - "crates/organism-seeds/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s33-depth-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-depth-choice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native VM topology selection, P1-P2 inherited B operand, shallow-only ablation and wrong-depth repair
+        run: cargo test -p ocee-organism-seeds --test s33_adaptive_depth -- --show-output

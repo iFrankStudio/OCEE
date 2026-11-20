@@ -196,3 +196,6 @@ pub mod s31_causal_remote;
 
 /// S32: the learned composite graph's output is a necessary remote B operand.
 pub mod s32_composite_b_operand;
+
+/// S33: in-VM feedback chooses shallow/deep graph topology for real B inputs.
+pub mod s33_adaptive_depth;
