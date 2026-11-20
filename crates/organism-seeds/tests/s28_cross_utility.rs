@@ -73,10 +73,20 @@ fn audit_exec(w:&World,h:&str)->bool{
 fn verify_remote(w:&World,family:Family){
     if w.state.organisms[&ORGANISM_ID].last_return!=Some(Value::U32(1)){
         let host=&w.state.organisms[&ORGANISM_ID];
-        let recent=w.audit.iter().rev().take(9).map(|r|
-            format!("step={} action={:?} code={:?} vm_gas={}",
-                r.step,r.action,r.result.code,r.result.vm_gas_charged))
-            .collect::<Vec<_>>();
+        let recent=w.audit.iter().rev().take(9).map(|r|{
+            let action=match &r.action{
+                Some(Action::Write{key,..})=>format!("WRITE {key}"),
+                Some(Action::Read{key,..})=>format!("READ {key}"),
+                Some(Action::Exec{program_hash,..})=>
+                    format!("EXEC {program_hash}"),
+                Some(Action::Send{..})=>"SEND".into(),
+                Some(Action::Receive{..})=>"RECEIVE".into(),
+                Some(Action::Observe{..})=>"OBSERVE".into(),
+                None=>"VM-only".into(),
+            };
+            format!("step={} {action} code={:?} vm_gas={}",
+                r.step,r.result.code,r.result.vm_gas_charged)
+        }).collect::<Vec<_>>();
         panic!("S28 remote failure family={family:?} step={} A={} B={} return={:?} active={:?} block={:?} tools={:?} recent={recent:?}",
             w.state.step,gas(w),b_gas(w),host.last_return,
             host.active_program_hash,
@@ -174,8 +184,17 @@ fn p1_generated_generic_program_executes_in_p2_and_controls_real_b_work(){
         "no-import C must construct its own validated candidate");
     assert!(!generated_in_active_vm(&carried,&tool_hash),
         "D must reuse imported version, not recreate it");
-    assert!(generated_in_active_vm(&sham,&tool_hash),
-        "equal-charge sham must reconstruct after registry lookup misses");
+    // The sham VM must *attempt* the same graph rewrite. Because the
+    // invisible import already stored that content hash as immutable code,
+    // the valid version WRITE returns Conflict, not Ok. It then registers
+    // its own freshly computed hash and EXECs this already-stored version.
+    let shared_key=format!("/self/versions/{tool_hash}");
+    assert!(sham.audit.iter().any(|r|r.result.code==Code::Conflict
+        && matches!(&r.action,
+            Some(Action::Write{key,..}) if key==&shared_key)),
+        "sham must independently regenerate an identical hash");
+    assert!(!generated_in_active_vm(&sham,&tool_hash),
+        "content address already exists; its WRITE is not a new version");
     assert_eq!(stored(&carried).0,tool_hash);
     assert_eq!(stored(&cold).0,tool_hash);
     assert!(gas(&carried)<gas(&sham),
