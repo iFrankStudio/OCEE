@@ -199,3 +199,6 @@ pub mod s32_composite_b_operand;
 
 /// S33: in-VM feedback chooses shallow/deep graph topology for real B inputs.
 pub mod s33_adaptive_depth;
+
+/// S34: incremental in-world typed graph construction (0, 1, 2 stages).
+pub mod s34_incremental_depth;

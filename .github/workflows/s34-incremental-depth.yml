@@ -1,0 +1,31 @@
+name: S34 Incremental Typed VM Graph Depth 0-1-2 With Real Remote B
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s34-incremental-depth.yml"
+      - "crates/organism-seeds/src/s34_incremental_depth.rs"
+      - "crates/organism-seeds/tests/s34_incremental_depth.rs"
+      - "crates/organism-seeds/src/lib.rs"
+      - "crates/organism-vm/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s34-incremental-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-typed-extension:
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native 0-1-2-stage construction, P1-to-P2 real B and strict negative controls
+        run: cargo test -p ocee-organism-seeds --test s34_incremental_depth -- --show-output
+      - name: Type-safe incremental graph VM primitive and rejection tests
+        run: cargo test -p ocee-organism-vm append_instructions_extends_typed_graph_and_rejects_invalid_extensions -- --show-output
