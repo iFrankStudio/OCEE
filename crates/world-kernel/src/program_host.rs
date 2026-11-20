@@ -207,6 +207,19 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
                 .map_err(|_|Code::BadRequest)?;
             Action::RestartRootFor{actor,request_id:u64::from_le_bytes(raw)}
         },
+        WorldCall::RequestOutcomeFor if args.len()==1=>{
+            let raw:[u8;8]=as_bytes(&args[0])?.try_into()
+                .map_err(|_|Code::BadRequest)?;
+            Action::RequestOutcomeFor{actor,request_id:u64::from_le_bytes(raw)}
+        },
+        WorldCall::ConfirmResponseFor if args.len()==2=>{
+            let raw:[u8;8]=as_bytes(&args[0])?.try_into()
+                .map_err(|_|Code::BadRequest)?;
+            Action::ConfirmResponseFor{
+                actor,request_id:u64::from_le_bytes(raw),
+                reply:as_bytes(&args[1])?.to_vec(),
+            }
+        },
         _=>return Err(Code::BadRequest),
     };
     Ok(action)

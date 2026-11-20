@@ -543,3 +543,8 @@
 ### 2026-11-21 — S42B 静态代码复核更正，原生验证仍阻断
 - 检查新增 `Action` 枚举后旧 S28 诊断的穷举匹配，补上两个新的 ID 绑定分支，避免 Rust E0004 编译失败。修正 S42B VM 回归断言：重启会清理**旧**请求ID，但第二轮正确新 SEND 会重新在工作区保存**新**请求ID；不得错误期待最终工作对象不存在。错峰双SEND单测在第二条刚到达之前不再把其ID误列为伪造负例，防止测试动作自身推动世界tick造成预期错位。
 - 这三项均为静态推导的测试/诊断修正，不是 Rust 本地编译或远程 CI 结果。下一步必须以原生执行结果判断 S42B 是否实际实现了 request-id 因果恢复。
+
+### 2026-11-21 — S43A 请求结果状态及已收回复因果认证（工程候选，未原生验证）
+- [S43A记录](./experiments/E001/DEV-S43A-REQUEST-OUTCOME-AND-REPLY.md) · [内核与两项最小测试](./crates/world-kernel/src/lib.rs) · [手动定向CI](./.github/workflows/s43a-request-outcome.yml)。新增受费且带实际SEND审计资格验证的 `RequestOutcomeFor`（Unknown/InFlight/Dropped/HandledNoB/CommittedB）以及 `ConfirmResponseFor`（要求真实C→A服务消息和已发生的Receive全文一致），不自动重放、不放宽权限。
+- 关键待证伪：合法P2计算即使B20已扣费而回复还在途，也不能视为任务未执行；只有真实Receive后才能认证该回复；正常协议诊断B0不是栅栏丢弃。u64消息ID保留，不等于协议内部u32工作ID。因果验证只在最近4096条审计窗口中寻找所有权/交付证据，过旧证据fail closed。
+- **没有cargo/rustc可用，也没有S41–S43A原生成功证据；不声明新生命或E001确认结果。** 先执行S43A窄CI→S42B→S42A→S41/S40，再在有需要时workspace。G0 GO、G1/G2 NO-GO、E001未预注册。

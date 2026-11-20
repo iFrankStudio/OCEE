@@ -98,6 +98,10 @@ fn verify_remote(w:&World,family:Family){
                     format!("FENCE STATUS FOR {request_id}"),
                 Some(Action::RestartRootFor{request_id,..})=>
                     format!("RESTART ROOT FOR {request_id}"),
+                Some(Action::RequestOutcomeFor{request_id,..})=>
+                    format!("REQUEST OUTCOME FOR {request_id}"),
+                Some(Action::ConfirmResponseFor{request_id,..})=>
+                    format!("CONFIRM RESPONSE FOR {request_id}"),
                 None=>"VM-only".into(),
             };
             format!("step={} {action} code={:?} vm_gas={}",

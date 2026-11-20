@@ -173,6 +173,36 @@ pub struct TransportDiagnostic {
     pub code: ParseError,
 }
 
+/// S43A: epistemic, request-scoped state derived from kernel-owned events.
+/// "CommittedB" means B gas was actually charged, NOT that the caller
+/// received an ACK, or that an application-level RESULT was verified.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum RequestState { Unknown, InFlight, Dropped, HandledNoB, CommittedB }
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub enum ReplyLocation { InTransit, Mailbox, NotQueued }
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct RequestOutcome {
+    pub request_id:u64,
+    pub state:RequestState,
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub response_message_id:Option<u64>,
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub b_gas_charged:Option<u64>,
+    #[serde(skip_serializing_if="Option::is_none")]
+    pub reply_location:Option<ReplyLocation>,
+}
+
+/// Confirmation is issued only when a real service response matching the
+/// request has actually been returned by an audited RECEIVE to this actor.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct ConfirmedReply {
+    pub request_id:u64,
+    pub response_message_id:u64,
+    pub b_gas_charged:u64,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct HelloSample {
     pub published_step: u64,
@@ -282,6 +312,11 @@ pub enum Action {
     /// These calls cannot use actor-level "latest request" fallback.
     FenceStatusFor {actor:u64,request_id:u64},
     RestartRootFor {actor:u64,request_id:u64},
+    /// S43A: paid epistemic query. Unknown is NOT proof of failure.
+    RequestOutcomeFor {actor:u64,request_id:u64},
+    /// S43A: bind the exact received Message JSON to kernel service
+    /// request/response correspondence and an actual audited RECEIVE.
+    ConfirmResponseFor {actor:u64,request_id:u64,reply:Vec<u8>},
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -720,6 +755,82 @@ impl World {
         !self.state.service_events.iter().any(|e|e.b_gas_charged>0)
     }
 
+
+    /// Bound the provenance lookup so audit growth cannot make a single
+    /// organism query unmetered in host CPU. Older evidence degrades to
+    /// Unknown/Conflict, never to fabricated success or safe retry.
+    const REQUEST_PROVENANCE_WINDOW:usize=4096;
+
+    fn recently_sent_by(&self,actor:u64,request_id:u64)->bool{
+        let receipt=request_id.to_le_bytes();
+        self.audit.iter().rev().take(Self::REQUEST_PROVENANCE_WINDOW).any(|a|
+            a.result.code==Code::Ok &&
+            a.result.payload.as_slice()==receipt.as_slice() &&
+            matches!(&a.action,Some(Action::Send{
+                actor:sender,destination:NodeId::C,..}) if *sender==actor))
+    }
+
+    fn request_outcome(&self,actor:u64,request_id:u64)->RequestOutcome{
+        let mut out=RequestOutcome{request_id,state:RequestState::Unknown,
+            response_message_id:None,b_gas_charged:None,reply_location:None};
+        if !self.recently_sent_by(actor,request_id){return out;}
+        if let Some(e)=self.state.service_events.iter().find(|e|
+            e.request_message_id==request_id){
+            out.state=if e.b_gas_charged>0{
+                RequestState::CommittedB
+            }else{RequestState::HandledNoB};
+            out.response_message_id=Some(e.response_message_id);
+            out.b_gas_charged=Some(e.b_gas_charged);
+            out.reply_location=Some(
+                if self.state.pending_deliveries.iter().any(|m|
+                    m.id==e.response_message_id && m.actor==actor &&
+                    m.source==NodeId::C && m.destination==NodeId::A){
+                    ReplyLocation::InTransit
+                }else if self.state.mailboxes.get(&NodeId::A)
+                    .into_iter().flatten().any(|m|
+                        m.id==e.response_message_id && m.actor==actor &&
+                        m.source==NodeId::C && m.destination==NodeId::A){
+                    ReplyLocation::Mailbox
+                }else{ReplyLocation::NotQueued}
+            );
+        }else if self.state.fence_drops.iter().any(|d|
+            d.actor==actor && d.message_id==request_id){
+            out.state=RequestState::Dropped;
+        }else if self.state.pending_deliveries.iter()
+            .chain(self.state.mailboxes.get(&NodeId::C).into_iter().flatten())
+            .any(|m|m.actor==actor && m.id==request_id &&
+                m.destination==NodeId::C){
+            out.state=RequestState::InFlight;
+        }
+        out
+    }
+
+    /// A service event alone is insufficient: the message must actually
+    /// have appeared in an authenticated RECEIVE result for this actor.
+    fn confirmed_response(&self,actor:u64,request_id:u64,reply:&[u8])
+        ->Option<ConfirmedReply>{
+        if !self.recently_sent_by(actor,request_id){return None;}
+        let message=serde_json::from_slice::<Message>(reply).ok()?;
+        if message.actor!=actor || message.source!=NodeId::C ||
+            message.destination!=NodeId::A {return None;}
+        let event=self.state.service_events.iter().find(|e|
+            e.request_message_id==request_id &&
+            e.response_message_id==message.id)?;
+        let observed=self.audit.iter().rev()
+            .take(Self::REQUEST_PROVENANCE_WINDOW).any(|a|{
+                if a.result.code!=Code::Ok ||
+                    !matches!(&a.action,Some(Action::Receive{
+                        actor:receiver,..}) if *receiver==actor){
+                    return false;
+                }
+                serde_json::from_slice::<Vec<Message>>(&a.result.payload)
+                    .is_ok_and(|items|items.iter().any(|m|m==&message))
+            });
+        if !observed{return None;}
+        Some(ConfirmedReply{request_id,
+            response_message_id:message.id,b_gas_charged:event.b_gas_charged})
+    }
+
     fn apply_action(&mut self, action: Action) -> ActionResult {
         let explicit_request=match &action {
             Action::FenceStatusFor{request_id,..} |
@@ -734,7 +845,9 @@ impl World {
             Action::RenewProbe{actor,..} | Action::ArmTaskFence{actor,..} |
             Action::FenceStatus{actor} | Action::RestartRoot{actor} |
             Action::FenceStatusFor{actor,..} |
-            Action::RestartRootFor{actor,..} => *actor,
+            Action::RestartRootFor{actor,..} |
+            Action::RequestOutcomeFor{actor,..} |
+            Action::ConfirmResponseFor{actor,..} => *actor,
         };
         if !self.valid_actor(actor) { return ActionResult::fail(Code::Denied); }
         match action {
@@ -863,6 +976,28 @@ impl World {
                 ActionResult::ok(serde_json::to_vec(&read).expect("mail"),1,0)
             }
             Action::Exec {program_hash,input,..} => program_host::isolated_exec(self,actor,&program_hash,&input),
+            Action::RequestOutcomeFor{request_id,..}=>{
+                // A status query costs gas even when the request is unknown.
+                let gas=2;
+                if let Err(code)=self.spend_a_gas(gas){return ActionResult::fail(code);}
+                let result=self.request_outcome(actor,request_id);
+                ActionResult::ok(serde_json::to_vec(&result).expect("request outcome"),gas,0)
+            },
+            Action::ConfirmResponseFor{request_id,reply,..}=>{
+                if reply.len()>4096 {return ActionResult::fail(Code::BadRequest);}
+                let gas=2+(reply.len() as u64).saturating_add(63)/64;
+                if let Err(code)=self.spend_a_gas(gas){return ActionResult::fail(code);}
+                let is_valid_message=serde_json::from_slice::<Message>(&reply).is_ok();
+                let confirmation=self.confirmed_response(actor,request_id,&reply);
+                let code=if confirmation.is_some(){Code::Ok}
+                    else if !is_valid_message{Code::BadRequest}
+                    else{Code::Conflict};
+                ActionResult{code,
+                    payload:confirmation.map(|v|serde_json::to_vec(&v)
+                        .expect("confirmed reply")).unwrap_or_default(),
+                    gas_charged:gas,vm_gas_charged:0,bandwidth_charged:0,
+                    exec_step:None}
+            },
             Action::Probe {input,..} => {
                 // Deliberately no arbitrary oracle: only this explicitly
                 // provisioned S36 development task can answer a query.
@@ -1396,6 +1531,149 @@ mod tests {
         assert!(w.state.service_events.is_empty());
         assert_eq!(w.state_hash(),
             World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+    }
+
+    #[test]
+    fn s43a_service_commit_is_not_reply_delivery_or_retry_permission(){
+        use ocee_protocol_sim::{Decoded,FrameKind,Operation};
+        let mut w=World::with_protocol(Config{
+            message_delay:8,..Config::default()
+        },Family::P2,42);
+        w.state.next_sequence=(u32::MAX as u64)+10;
+        let unissued=(u32::MAX as u64)+9;
+        let unknown=w.tick(Some(Action::RequestOutcomeFor{
+            actor:ORGANISM_ID,request_id:unissued}));
+        assert_eq!(unknown.code,Code::Ok);
+        assert_eq!(unknown.gas_charged,2);
+        let status:RequestOutcome=serde_json::from_slice(&unknown.payload).unwrap();
+        assert_eq!(status.state,RequestState::Unknown);
+        let mut body=3u16.to_le_bytes().to_vec();
+        for n in [1u32,2,3] {body.extend_from_slice(&n.to_le_bytes());}
+        let protocol=&w.state.protocol_service.as_ref().unwrap().protocol;
+        let wire=protocol.encode(&Decoded{
+            kind:FrameKind::Request,operation:Operation::RemoteEval,
+            request_id:7,body
+        }).unwrap();
+        let sent=w.tick(Some(Action::Send{
+            actor:ORGANISM_ID,destination:NodeId::C,bytes:wire}));
+        assert_eq!(sent.code,Code::Ok);
+        let id=u64::from_le_bytes(sent.payload.as_slice().try_into().unwrap());
+        assert!(id>u32::MAX as u64);
+        let pending=w.tick(Some(Action::RequestOutcomeFor{
+            actor:ORGANISM_ID,request_id:id}));
+        let p:RequestOutcome=serde_json::from_slice(&pending.payload).unwrap();
+        assert_eq!(p.state,RequestState::InFlight);
+        assert_eq!(p.response_message_id,None);
+
+        for _ in 0..30{
+            if !w.state.service_events.is_empty(){break;}
+            w.tick(None);
+        }
+        assert_eq!(w.state.service_events.len(),1);
+        assert_eq!(w.state.service_events[0].request_message_id,id);
+        assert_eq!(w.state.service_events[0].b_gas_charged,20);
+        let consumed=w.tick(Some(Action::RequestOutcomeFor{
+            actor:ORGANISM_ID,request_id:id}));
+        let state:RequestOutcome=serde_json::from_slice(&consumed.payload).unwrap();
+        assert_eq!(state.state,RequestState::CommittedB);
+        assert_eq!(state.b_gas_charged,Some(20));
+        assert_eq!(state.reply_location,Some(ReplyLocation::InTransit));
+        let response_id=state.response_message_id.unwrap();
+        let reply_in_wire=w.state.pending_deliveries.iter()
+            .find(|m|m.id==response_id).unwrap().clone();
+        // Even knowing the in-flight response bytes is NOT evidence of
+        // receipt. A confirmed reply needs a real audited RECEIVE.
+        let early=w.tick(Some(Action::ConfirmResponseFor{
+            actor:ORGANISM_ID,request_id:id,
+            reply:serde_json::to_vec(&reply_in_wire).unwrap()}));
+        assert_eq!(early.code,Code::Conflict);
+        assert!(early.gas_charged>=2);
+
+        for _ in 0..30{
+            if w.state.mailboxes.get(&NodeId::A)
+                .is_some_and(|m|m.iter().any(|r|r.id==response_id)){break;}
+            w.tick(None);
+        }
+        assert!(w.state.mailboxes.get(&NodeId::A)
+            .is_some_and(|m|m.iter().any(|r|r.id==response_id)));
+        let received=w.tick(Some(Action::Receive{
+            actor:ORGANISM_ID,max_count:1}));
+        assert_eq!(received.code,Code::Ok);
+        let replies:Vec<Message>=serde_json::from_slice(&received.payload).unwrap();
+        assert_eq!(replies.len(),1);
+        assert_eq!(replies[0].id,response_id);
+        let raw=serde_json::to_vec(&replies[0]).unwrap();
+        let validated=w.tick(Some(Action::ConfirmResponseFor{
+            actor:ORGANISM_ID,request_id:id,reply:raw.clone()}));
+        assert_eq!(validated.code,Code::Ok);
+        let proof:ConfirmedReply=serde_json::from_slice(&validated.payload).unwrap();
+        assert_eq!(proof.request_id,id);
+        assert_eq!(proof.response_message_id,response_id);
+        assert_eq!(proof.b_gas_charged,20);
+        let mut tampered=replies[0].clone();
+        tampered.bytes.push(0xaa);
+        assert_eq!(w.tick(Some(Action::ConfirmResponseFor{
+            actor:ORGANISM_ID,request_id:id,
+            reply:serde_json::to_vec(&tampered).unwrap()})).code,Code::Conflict);
+        assert_eq!(w.tick(Some(Action::ConfirmResponseFor{
+            actor:ORGANISM_ID,request_id:id+999,reply:raw})).code,Code::Conflict);
+        let after=w.tick(Some(Action::RequestOutcomeFor{
+            actor:ORGANISM_ID,request_id:id}));
+        let after:RequestOutcome=serde_json::from_slice(&after.payload).unwrap();
+        assert_eq!(after.state,RequestState::CommittedB);
+        assert_eq!(after.reply_location,Some(ReplyLocation::NotQueued));
+        assert_eq!(w.state.service_events.iter()
+            .map(|e|e.b_gas_charged).sum::<u64>(),20);
+        assert_eq!(w.state_hash(),
+            World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+    }
+
+    #[test]
+    fn s43a_drop_and_handled_without_b_are_not_unknown_or_success(){
+        let mut dropped=World::with_protocol(Config{
+            message_delay:2,..Config::default()
+        },Family::P2,42);
+        let task=b"task-v1".to_vec();
+        dropped.state.objects.insert("/public/E001/compose-depth".into(),
+            Object{owner:0,version:0,bytes:task.clone()});
+        dropped.state.task_fences.insert(ORGANISM_ID,hash_bytes(&task));
+        let sent=dropped.tick(Some(Action::Send{
+            actor:ORGANISM_ID,destination:NodeId::C,bytes:vec![0x10]}));
+        let id=u64::from_le_bytes(sent.payload.as_slice().try_into().unwrap());
+        let t=dropped.state.objects.get_mut("/public/E001/compose-depth").unwrap();
+        t.bytes=b"task-v2".to_vec();t.version+=1;
+        for _ in 0..12{
+            if !dropped.state.fence_drops.is_empty(){break;}
+            dropped.tick(None);
+        }
+        assert_eq!(dropped.state.fence_drops.len(),1);
+        let state=dropped.tick(Some(Action::RequestOutcomeFor{
+            actor:ORGANISM_ID,request_id:id}));
+        let o:RequestOutcome=serde_json::from_slice(&state.payload).unwrap();
+        assert_eq!(o.state,RequestState::Dropped);
+        assert_eq!(o.b_gas_charged,None);
+        assert!(dropped.state.service_events.is_empty());
+
+        let mut no_b=World::with_protocol(Config{
+            message_delay:2,..Config::default()
+        },Family::P2,42);
+        let malformed=no_b.tick(Some(Action::Send{
+            actor:ORGANISM_ID,destination:NodeId::C,bytes:vec![0x10]}));
+        let bad_id=u64::from_le_bytes(malformed.payload.as_slice().try_into().unwrap());
+        for _ in 0..12{
+            if !no_b.state.service_events.is_empty(){break;}
+            no_b.tick(None);
+        }
+        assert_eq!(no_b.state.service_events.len(),1);
+        assert_eq!(no_b.state.service_events[0].b_gas_charged,0);
+        assert!(no_b.state.service_events[0].diagnostic.is_some());
+        let q=no_b.tick(Some(Action::RequestOutcomeFor{
+            actor:ORGANISM_ID,request_id:bad_id}));
+        let o:RequestOutcome=serde_json::from_slice(&q.payload).unwrap();
+        assert_eq!(o.state,RequestState::HandledNoB);
+        assert_eq!(o.b_gas_charged,Some(0));
+        assert_eq!(no_b.state_hash(),
+            World::from_snapshot(&no_b.snapshot_json()).unwrap().state_hash());
     }
     #[test]
     fn exhausting_gas_does_not_destroy_persistent_data() {

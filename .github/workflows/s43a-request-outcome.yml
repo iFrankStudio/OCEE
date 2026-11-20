@@ -1,0 +1,19 @@
+name: S43A Real Request Outcome and Received Reply Correlation
+on:
+  workflow_dispatch:
+concurrency:
+  group: ocee-s43a-request-outcome-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-outcome-causality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: S43A actual B commit, delayed reply and full reply correlation
+        run: cargo test -p ocee-world-kernel s43a_service_commit_is_not_reply_delivery_or_retry_permission -- --show-output
+      - name: S43A task-fenced drop versus service handled with no B charge
+        run: cargo test -p ocee-world-kernel s43a_drop_and_handled_without_b_are_not_unknown_or_success -- --show-output
