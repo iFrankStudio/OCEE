@@ -27,4 +27,21 @@ S39 已通过真实消息队列的双重任务栅栏防止旧语义远程请求�
 
 [S40 P2活动VM恢复](../../crates/organism-seeds/src/s40_dropped_recovery.rs) · [S40原生测试](../../crates/organism-seeds/tests/s40_dropped_recovery.rs) · [内核原生回执及单次重启](../../crates/world-kernel/src/lib.rs) · [定向 CI](../../.github/workflows/s40-dropped-recovery.yml)。
 
-**原生数据尚待日志；不能预先把研究假设写成成功。**
+## 2026-11-20：原生验收及失败链（不隐藏失败）
+
+- **[S40 定向原生 Actions #44710108675](https://github.com/iFrankStudio/OCEE/actions/runs/44710108675)** 已 **completed/success，4 passed / 0 failed / 99.83秒**；实际被验证的源码 SHA [6480ac3](https://github.com/iFrankStudio/OCEE/commit/6480ac3f986718d6f41089df74e36e5b882a4507)。原生测试覆盖P2真实在途丢弃→重学重发且B一次、P1→P2旧工具跨家族恢复、无丢弃不得重启、丢弃后任务已恢复原指纹时不得再启动。全 workspace [#44710108719](https://github.com/iFrankStudio/OCEE/actions/runs/44710108719) 另行确认，不能把定向4/4当成全量通过。
+- **同世界真实恢复**：P2 seed55在v1先真实Send出4 U32 `REMOTE_EVAL` 请求，初始请求 **message_id=26**。研究者在Send后/C处理前改变公开任务和真实隐藏oracle至v2，内核发生真实 `TaskFenceDrop`，旧请求**未消耗任何B gas**。P2专家在原有128次有界接收等待耗尽后，实际发出 `FenceStatus`（确认自己确有被丢弃消息）并调用一次受费 **`RestartRoot` 8 A**，从原始冻结root重新运行，旧证据与工具保持可验证状态。活动VM真正在v2中从旧回执获得Renew许可、完成第二次Probe52 A，缓存从version0 CAS为1，原工具注册CAS更新、重构第四操作数 **10** 并建立新任务栅栏。随后新协议专家发出不同ID的第二条真实4 U32请求；独立C帧/B服务事件审计确认**仅第二条请求消耗B24**，旧request ID26零B，世界总B24且300额外tick没有重复结算。总 **A33,213 / 883 ticks / B24**，重启后 `/self/active` 单调递增到 **version3**。相同事件下未经恢复的 **S39有栅栏控制B0**，保留真实丢弃记录。
+- **真正跨家族来源知识**：P1 seed1用正常活动VM实际生成v1工具（来源 **A15,415**，本身正常B24），通过两次真实受费WRITE向P2 seed55导入该工具，**import29 A**。P2先用继承工具发送原生远程请求，此时研究者改变任务使消息实际丢弃。P2自己的专家发起一次恢复，根程序对保留的旧注册/旧证据真正执行再验证，受费v2环境更新并 **CAS registry version0→1**，生成新的不同内容哈希的计算图、第四U32=10，再以新任务栅栏真正完成B请求。目标 **A32,110 / 575 ticks / B24**，全世界仍只有第二条请求被B计费。来源与目标冻结初始完整root SHA256一致：`bf7fba37c48695959ecf0b014fbf81227069222e5f8df463b548dcfcb828b839`。
+- **拒绝滥用与正常对照**：无S39实际TaskFenceDrop时，`FenceStatus`返回Empty，直接请求`RestartRoot`为Denied；正常P2仍独立完成B24、不发生恢复。若S39确实丢弃消息但公开任务字节随后恢复为此前旧版本，那么当前hash与当初丢弃时的observed_hash不同，内核拒绝RestartRoot（Denied），B0；曾合法恢复一次之后再次请求必须Quota。snapshot重载哈希一致，旧消息绝不能因重新恢复被第二次消费。
+- **显式版本化而非复位规避CAS**：S26原路由硬编码`/self/active`预期版本0，S40在真正重启后版本为2。内核新增只读、受费的 `/sys/active-version`，活动S40 root通过正常 `WorldCall::Read` 获得当前真实版本，再用普通`WorldCall::Write`原子CAS把活动专家从版本2切换到版本3。没有重置版本号或跳过内核的写前验证；这不是外界直接把答案植入根程序。
+- **有限清理表的代价**：为了让真实root重复执行，受控重启只失效一组研究者明确认定的本任务派生状态：前次transform held-out回执/额外预测、两份远程B操作数/数量工作对象、以及预先写入但必须按当前回合重新发现的`/self/discoveries/framing-family`。旧的不可变程序版本、工具注册、可信内核ProbeRecord与本地证据缓存不能删除，用于真正检测失配和CAS修复。该硬编码清理表不是通用记忆/状态自动分类机制。
+
+### 保留的真实失败与修复
+- [#44706517834](https://github.com/iFrankStudio/OCEE/actions/runs/44706517834) 初版长回放因调整测试上限取消；[#44707304132](https://github.com/iFrankStudio/OCEE/actions/runs/44707304132) **2/4通过**，两组恢复B0。后检查发现 S26路由程序在重启时仍把`/self/active`期望版本固定为0，因此新增可受费读取的真实版本，初次/二次切换CAS分别匹配0/2。
+- [#44708193096](https://github.com/iFrankStudio/OCEE/actions/runs/44708193096) 修正活动版本后仍2/4，显示恢复中还有第二阻塞；[#44709096078](https://github.com/iFrankStudio/OCEE/actions/runs/44709096078) 为增强审计诊断新增的测试格式化错误 `E0277 Code缺少Display`，在 [1c3ee58](https://github.com/iFrankStudio/OCEE/commit/1c3ee589caee74447f2a6a7a53824e966a7ed2a9) 仅改为Debug格式，未改变世界行为。
+- [#44709246739](https://github.com/iFrankStudio/OCEE/actions/runs/44709246739) 的原生详尽审计明确显示：P2已真实RestartRoot（active version2）、完成第二次Probe（count2）、证据CAS（v1）、注册表CAS（v1）、新操作数WRITE、Arm新栅栏，却在随后 `Write(/self/discoveries/framing-family)` 得到 **Conflict**，最终B0。根因是第二次回合仍保留了仅允许创建一次的派生协议分类对象。修订 [45c106e](https://github.com/iFrankStudio/OCEE/commit/45c106e3153d2c9ad00d42b9e4ee4cfecbe7c090) 只将其纳入受控清理，不删旧工具或回执。
+- [#44709627497](https://github.com/iFrankStudio/OCEE/actions/runs/44709627497) 已 **3/4通过**，跨家族旧工具→重学→B一次全链原生成功；剩余失败是消融测试错误地使用**无栅栏S38**为对照，却断言它在任务漂移后B0。实际上S38仍合法计算旧语义并支付B24，这正是S39原先发现的问题。修订 [6480ac3](https://github.com/iFrankStudio/OCEE/commit/6480ac3f986718d6f41089df74e36e5b882a4507) 把对照改成确实有栅栏但不会恢复的S39，未改环境、种子、VM恢复逻辑或成功标准，随后 **4/4通过**。
+
+### 结论与必须保留的界限
+- **可以支持**：在研究者固定的单世界P2有界故障模型、v1/v2已知升级协议、一次合法续期、两次最多环境Probe，以及由冻结P1/P2协议专家运行的真实本地C/B模拟条件下，活动P2专家能从**真实消息丢弃记录**触发一次有费重启，重新向v2环境获取可信标签，CAS修复旧知识并成功重发，最终B服务恰好对新任务计费24且不重复执行丢弃的旧消息。原生源码能编译、验证并在至少两种来源条件下运行。
+- **不能支持**：通用异步失败识别、任意内存分类、服务端生产级幂等键、真正分布式 exactly-once 事务、多工作项并发恢复、任务多次变更/多轮自我强化、未知API自动学习、开放式演化或有赛博生命形成。当前128轮重试、原root存储、一次重启、清理清单、54候选语法、两条专家和任务v1/v2都是研究者先验。G0 GO；**G1/G2 NO-GO**；E001尚未预注册。下一项S41可探索减少固定超时与恢复清单，并通过内核任务事件/状态订阅做更即时、可收敛的因果通知；但不得在模型中自动替代个体作决策。
