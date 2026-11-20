@@ -107,7 +107,12 @@ pub struct WorldState {
     pub next_sequence: u64,
     pub protocol_service: Option<Service>,
     pub service_events: Vec<ServiceEvent>,
+    /// S36 development-only interactive oracle budget. Persisted for replay.
+    /// Older snapshots default to zero; unqueried world hashes stay stable.
+    #[serde(default,skip_serializing_if="probe_count_is_zero")]
+    pub probe_count: u32,
 }
+fn probe_count_is_zero(count:&u32)->bool{*count==0}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ServiceEvent {
@@ -212,6 +217,9 @@ pub enum Action {
     Receive { actor: u64, max_count: usize },
     // P2 only: deliberately not implemented as a fake success in P1.
     Exec { actor: u64, program_hash: String, input: Vec<u8> },
+    /// S36 explicit development query against a local labelled task fixture.
+    /// Unlike Read, the organism chooses the actual input at runtime.
+    Probe { actor: u64, input: Vec<u8> },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -298,6 +306,7 @@ impl World {
                 objects: BTreeMap::new(), mailboxes: BTreeMap::new(),
                 pending_deliveries: vec![], events: vec![], next_sequence: 0,
                 protocol_service: None, service_events: vec![],
+                probe_count: 0,
             },
             audit: vec![],
         }
@@ -595,7 +604,8 @@ impl World {
         let actor = match &action {
             Action::Observe {actor} | Action::Read {actor,..} |
             Action::Write {actor,..} | Action::Send {actor,..} |
-            Action::Receive {actor,..} | Action::Exec {actor,..} => *actor,
+            Action::Receive {actor,..} | Action::Exec {actor,..} |
+            Action::Probe {actor,..} => *actor,
         };
         if !self.valid_actor(actor) { return ActionResult::fail(Code::Denied); }
         match action {
@@ -694,6 +704,38 @@ impl World {
                 ActionResult::ok(serde_json::to_vec(&read).expect("mail"),1,0)
             }
             Action::Exec {program_hash,input,..} => program_host::isolated_exec(self,actor,&program_hash,&input),
+            Action::Probe {input,..} => {
+                // Deliberately no arbitrary oracle: only this explicitly
+                // provisioned S36 development task can answer a query.
+                // Restricted lengths and one charged request per episode
+                // make the process finite and all evidence audit-visible.
+                let Some(task)=self.state.objects.get("/public/E001/compose-depth")
+                    .and_then(|obj|serde_json::from_slice::<TransformTask>(&obj.bytes).ok())
+                    else {return ActionResult::fail(Code::Denied)};
+                if task.task_id!="s36-interactive-probe-v1" ||
+                    self.state.protocol_service.is_none() {
+                    return ActionResult::fail(Code::Denied);
+                }
+                if input.is_empty() || input.len()>8 {
+                    return ActionResult::fail(Code::BadRequest);
+                }
+                if self.state.probe_count>=1 {
+                    return ActionResult::fail(Code::Quota);
+                }
+                let gas=40+4*(input.len() as u64);
+                if let Err(code)=self.spend_a_gas(gas){
+                    return ActionResult::fail(code);
+                }
+                self.state.probe_count+=1;
+                // Hidden only inside the world environment, not visible
+                // to VM instructions or the publicly published task.
+                let stages=((self.state.config.seed%54)/18) as u32;
+                let output=hidden_compose(self.state.config.seed,&input)
+                    .wrapping_add(stages.wrapping_mul(input.len() as u32));
+                let example=TransformExample{input,output};
+                ActionResult::ok(
+                    serde_json::to_vec(&example).expect("probe receipt"),gas,0)
+            },
         }
     }
 

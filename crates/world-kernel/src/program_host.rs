@@ -180,6 +180,9 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
         WorldCall::Exec if args.len()==2=>Action::Exec{
             actor,program_hash:utf8(&args[0])?,input:as_bytes(&args[1])?.to_vec()
         },
+        WorldCall::Probe if args.len()==1=>Action::Probe{
+            actor,input:as_bytes(&args[0])?.to_vec()
+        },
         _=>return Err(Code::BadRequest),
     };
     Ok(action)
