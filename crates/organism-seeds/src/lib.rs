@@ -181,3 +181,6 @@ pub mod s26_family;
 
 /// S26C: common-seed family router selects existing charged specialists.
 pub mod s26_dispatch;
+
+/// S28: same VM-specialized generic tool is executed across P1/P2.
+pub mod s28_cross_utility;
