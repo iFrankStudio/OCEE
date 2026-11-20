@@ -92,6 +92,8 @@ fn verify_remote(w:&World,family:Family){
                     format!("RENEW PROBE {} bytes",evidence.len()),
                 Some(Action::ArmTaskFence{evidence,..})=>
                     format!("ARM TASK FENCE {} bytes",evidence.len()),
+                Some(Action::FenceStatus{..})=>"FENCE STATUS".into(),
+                Some(Action::RestartRoot{..})=>"RESTART ROOT".into(),
                 None=>"VM-only".into(),
             };
             format!("step={} {action} code={:?} vm_gas={}",

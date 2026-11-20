@@ -129,10 +129,16 @@ pub struct WorldState {
     pub guarded_sends: BTreeMap<u64,String>,
     #[serde(default,skip_serializing_if="Vec::is_empty")]
     pub fence_drops: Vec<TaskFenceDrop>,
+    /// S40: frozen first active root for one guarded, audited recovery.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub initial_root_hash:Option<String>,
+    #[serde(default,skip_serializing_if="BTreeMap::is_empty")]
+    pub guarded_restarts:BTreeMap<u64,u32>,
 }
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 pub struct TaskFenceDrop {
     pub message_id:u64,
+    pub actor:u64,
     pub step:u64,
     pub expected_hash:String,
     pub observed_hash:Option<String>,
@@ -264,6 +270,10 @@ pub enum Action {
     /// S39: bind this actor's subsequent C sends to the task fingerprint
     /// that issued this actual receipt; must match the current task.
     ArmTaskFence { actor: u64, evidence: Vec<u8> },
+    /// S40: scoped view of this actor's actually dropped remote C message.
+    FenceStatus {actor:u64},
+    /// One-shot request by the VM, not an automatic kernel retry.
+    RestartRoot {actor:u64},
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -353,6 +363,7 @@ impl World {
                 probe_count: 0,probe_record:None,probe_renewed_for:None,
                 task_fences:BTreeMap::new(),guarded_sends:BTreeMap::new(),
                 fence_drops:vec![],
+                initial_root_hash:None,guarded_restarts:BTreeMap::new(),
             },
             audit: vec![],
         }
@@ -606,7 +617,8 @@ impl World {
                 if observed.as_deref()!=Some(expected.as_str()) {
                     self.state.guarded_sends.remove(&message.id);
                     self.state.fence_drops.push(TaskFenceDrop{
-                        message_id:message.id,step:self.state.step,
+                        message_id:message.id,actor:message.actor,
+                        step:self.state.step,
                         expected_hash:expected,observed_hash:observed,
                     });
                     continue;
@@ -671,7 +683,8 @@ impl World {
             Action::Write {actor,..} | Action::Send {actor,..} |
             Action::Receive {actor,..} | Action::Exec {actor,..} |
             Action::Probe {actor,..} | Action::VerifyProbe{actor,..} |
-            Action::RenewProbe{actor,..} | Action::ArmTaskFence{actor,..} => *actor,
+            Action::RenewProbe{actor,..} | Action::ArmTaskFence{actor,..} |
+            Action::FenceStatus{actor} | Action::RestartRoot{actor} => *actor,
         };
         if !self.valid_actor(actor) { return ActionResult::fail(Code::Denied); }
         match action {
@@ -833,6 +846,71 @@ impl World {
                     task_hash,receipt:issued.clone()
                 });
                 ActionResult::ok(issued,gas,0)
+            },
+            Action::FenceStatus {..} => {
+                if self.state.fence_drops.iter().any(|d|d.actor==actor) &&
+                    self.state.guarded_restarts.get(&actor).copied().unwrap_or(0)==0 {
+                    if let Err(code)=self.spend_a_gas(1){return ActionResult::fail(code);}
+                    ActionResult::ok(b"Dropped".to_vec(),1,0)
+                }else {
+                    ActionResult::fail(Code::Empty)
+                }
+            },
+            Action::RestartRoot {..} => {
+                // The organism must explicitly ask. At most one restart
+                // after a real S39 drop whose version differs from TODAY.
+                if self.state.guarded_restarts.get(&actor).copied().unwrap_or(0)!=0 {
+                    return ActionResult::fail(Code::Quota);
+                }
+                let current=self.state.objects.get("/public/E001/compose-depth")
+                    .map(|o|hash_bytes(&o.bytes));
+                if !self.state.fence_drops.iter().any(|d|
+                    d.actor==actor && d.observed_hash==current &&
+                    d.observed_hash.as_deref()!=Some(d.expected_hash.as_str())){
+                    return ActionResult::fail(Code::Denied);
+                }
+                let Some(hash)=self.state.initial_root_hash.clone()
+                    else{return ActionResult::fail(Code::Denied)};
+                let root_key=format!("/self/versions/{hash}");
+                let Some(root)=self.state.objects.get(&root_key) else{
+                    return ActionResult::fail(Code::InvalidCode);
+                };
+                if root.owner!=actor {
+                    return ActionResult::fail(Code::Denied);
+                }
+                // Only a content-addressed canonical program may become
+                // active. No arbitrary restart-provided code is accepted.
+                if program_host::preflight_write(
+                    &self.state,actor,"/self/active",hash.as_bytes(),None
+                ).is_err(){return ActionResult::fail(Code::InvalidCode);}
+                let gas=8;
+                if let Err(code)=self.spend_a_gas(gas){return ActionResult::fail(code);}
+                // Explicitly invalidate ONLY these old-episode derived
+                // objects; keep the durable registry and old probe record
+                // for real target-side validation and CAS learning.
+                for key in [
+                    "/self/results/transform-held-out",
+                    "/self/results/s30-extra-held-out",
+                    "/self/work/remote-values-le",
+                    "/self/work/remote-count-le",
+                ] {
+                    if let Some(o)=self.state.objects.remove(key) {
+                        if o.owner==actor {
+                            let host=self.state.organisms.get_mut(&actor).unwrap();
+                            host.storage_used=host.storage_used.saturating_sub(o.bytes.len() as u64);
+                        }else{
+                            self.state.objects.insert(key.into(),o);
+                        }
+                    }
+                }
+                let active=self.state.objects.get_mut("/self/active").unwrap();
+                active.bytes=hash.clone().into_bytes();
+                active.version+=1;
+                program_host::after_write(&mut self.state,actor,Some(hash.clone()));
+                self.state.guarded_restarts.insert(actor,1);
+                // Old fence remains until S39 root creates a fresh one
+                // using newly verified task evidence.
+                ActionResult::ok(hash.into_bytes(),gas,0)
             },
             Action::ArmTaskFence {evidence,..} => {
                 // A real kernel-issued receipt can arm the SEND fence,

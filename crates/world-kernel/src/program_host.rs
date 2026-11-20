@@ -56,6 +56,9 @@ pub(crate) fn preflight_write(
 
 pub(crate) fn after_write(state:&mut WorldState, actor:u64, active:Option<String>) {
     if let Some(hash)=active {
+        if state.initial_root_hash.is_none() {
+            state.initial_root_hash=Some(hash.clone());
+        }
         if let Some(organism)=state.organisms.get_mut(&actor) {
             organism.active_program_hash=Some(hash);
             organism.vm_continuation=None;
@@ -192,6 +195,8 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
         WorldCall::ArmTaskFence if args.len()==1=>Action::ArmTaskFence{
             actor,evidence:as_bytes(&args[0])?.to_vec()
         },
+        WorldCall::FenceStatus if args.is_empty()=>Action::FenceStatus{actor},
+        WorldCall::RestartRoot if args.is_empty()=>Action::RestartRoot{actor},
         _=>return Err(Code::BadRequest),
     };
     Ok(action)
