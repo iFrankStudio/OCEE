@@ -18,3 +18,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Native S42A stale drop versus newer inflight request
         run: cargo test -p ocee-world-kernel s42_stale_drop_cannot_authorize_recovery_for_newer_inflight_request -- --show-output
+      - name: Native S42A missing-task authorization negative control
+        run: cargo test -p ocee-world-kernel s42_missing_public_task_never_authorizes_restart -- --show-output
