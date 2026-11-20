@@ -193,3 +193,6 @@ pub mod s30_composed_transfer;
 
 /// S31: actively computed portable tool output controls the actual remote wire body.
 pub mod s31_causal_remote;
+
+/// S32: the learned composite graph's output is a necessary remote B operand.
+pub mod s32_composite_b_operand;

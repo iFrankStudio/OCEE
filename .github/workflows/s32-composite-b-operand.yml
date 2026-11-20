@@ -1,0 +1,28 @@
+name: S32 Synthesized Composite U32 Is Real B Operand
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s32-composite-b-operand.yml"
+      - "crates/organism-seeds/src/s32_composite_b_operand.rs"
+      - "crates/organism-seeds/tests/s32_composite_b_operand.rs"
+      - "crates/organism-seeds/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s32-operand-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  causal-operand:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native P1->P2 composite graph becomes remote fourth U32, matched 16-byte mutation and semantic repair
+        run: cargo test -p ocee-organism-seeds --test s32_composite_b_operand -- --show-output
