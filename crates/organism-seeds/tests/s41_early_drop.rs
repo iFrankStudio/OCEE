@@ -845,9 +845,11 @@ fn s42b_vm_carries_real_u64_send_receipt_through_recovery_and_b_once(){
         "S42B specialist must never fall back to actor-level recovery");
     assert_eq!(w.state.fence_drops.len(),1);
     assert_eq!(w.state.fence_drops[0].message_id,old_id);
-    assert!(!w.state.objects.contains_key(PENDING_REMOTE_ID),
-        "restart expires old attempt-scoped request receipt");
     let sent=actual_remote_sends(&w);
+    let persisted=&w.state.objects[PENDING_REMOTE_ID].bytes;
+    assert_eq!(persisted.len(),8);
+    assert_eq!(u64::from_le_bytes(persisted.as_slice().try_into().unwrap()),
+        sent[1].0,"new attempt replaces the expired old request ID");
     assert_eq!(sent.len(),2);
     assert_eq!(sent[0].0,old_id);
     assert_ne!(sent[1].0,old_id);

@@ -539,3 +539,7 @@
 - [研究与因果判据](./experiments/E001/DEV-S42B-VM-REQUEST-RECEIPT.md) · [新活动P2专家](./crates/organism-seeds/src/s42b_request_receipt.rs) · [内核调用/VM ABI](./crates/world-kernel/src/lib.rs) · [单独手动CI](./.github/workflows/s42b-request-receipt.yml)。新`FenceStatusFor/RestartRootFor`接收完整u64请求ID，而非S42A最新请求猜测；VM在实际phase1 REMOTE_EVAL SEND成功后自费保存真实8字节回执，在Empty时读回同ID并用于故障查询/一次恢复。
 - 新增**待运行**两个关键测试：大于u32范围的两个受保护在途请求错峰丢弃；真实P2活动VM发送、任务漂移、同ID状态查询及重启、重新学习和B仅结算一次。内核拒绝其他受保护请求仍在途或已有B>0服务事件时恢复（当前单个体E001安全优先、可能牺牲活性）。旧S40/S41个体保持独立、未改其程序图。
 - 本轮无法原生运行，不得声称S42B测试成功或E001科学突破；恢复runner后按S42B→S42A→S41/S40→必要时workspace验证。G0 GO，G1/G2 NO-GO，E001仍未预注册。
+
+### 2026-11-21 — S42B 静态代码复核更正，原生验证仍阻断
+- 检查新增 `Action` 枚举后旧 S28 诊断的穷举匹配，补上两个新的 ID 绑定分支，避免 Rust E0004 编译失败。修正 S42B VM 回归断言：重启会清理**旧**请求ID，但第二轮正确新 SEND 会重新在工作区保存**新**请求ID；不得错误期待最终工作对象不存在。错峰双SEND单测在第二条刚到达之前不再把其ID误列为伪造负例，防止测试动作自身推动世界tick造成预期错位。
+- 这三项均为静态推导的测试/诊断修正，不是 Rust 本地编译或远程 CI 结果。下一步必须以原生执行结果判断 S42B 是否实际实现了 request-id 因果恢复。

@@ -1377,7 +1377,7 @@ mod tests {
         assert_eq!(w.tick(Some(Action::RestartRootFor{
             actor:ORGANISM_ID,request_id:id1})).code,Code::Denied);
         // Invented, truncated, and merely adjacent IDs are not evidence.
-        for wrong in [id1 as u32 as u64,id1-1,id2]{
+        for wrong in [id1 as u32 as u64,id1-1]{
             assert_eq!(w.tick(Some(Action::FenceStatusFor{
                 actor:ORGANISM_ID,request_id:wrong})).code,Code::Empty);
         }

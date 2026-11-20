@@ -94,6 +94,10 @@ fn verify_remote(w:&World,family:Family){
                     format!("ARM TASK FENCE {} bytes",evidence.len()),
                 Some(Action::FenceStatus{..})=>"FENCE STATUS".into(),
                 Some(Action::RestartRoot{..})=>"RESTART ROOT".into(),
+                Some(Action::FenceStatusFor{request_id,..})=>
+                    format!("FENCE STATUS FOR {request_id}"),
+                Some(Action::RestartRootFor{request_id,..})=>
+                    format!("RESTART ROOT FOR {request_id}"),
                 None=>"VM-only".into(),
             };
             format!("step={} {action} code={:?} vm_gas={}",
