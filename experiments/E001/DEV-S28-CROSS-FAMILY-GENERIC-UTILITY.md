@@ -30,3 +30,11 @@ S28 不再以协议编码器跨家族复用为目标，而尝试最小、可证�
 如果 P1 生成的通用可执行工具在 P2 被消费，并优于相同导入节奏的 sham，才可报告**受先验限制的跨家族功能性复用**。它仍是**研究者播种模板的 VM 改写与注册**，不是开放式演化、未知协议自动发现、算法自创新，也不能从 1 个种子推广到其它环境或推动 E001 G1。若负对照失败，保留失败日志并修订测试/策略；**不调整已测 seed 使结果好看**。
 
 [原生测试](../../crates/organism-seeds/tests/s28_cross_utility.rs) · [定向工作流](../../.github/workflows/s28-cross-utility.yml) · E001 G0 GO / G1、G2 NO-GO。
+
+
+## CI 首轮异常与内容寻址冲突（保留失败证据）
+
+- [首轮 S28 CI #44669843136](https://github.com/iFrankStudio/OCEE/actions/runs/44669843136) 的 Rust 编译通过，但测试失败，最初 `U32(0)` 没有足够详细的轨迹。增加诊断后，[第二轮 #44670196068](https://github.com/iFrankStudio/OCEE/actions/runs/44670196068) 原生日志证实真正失败的是 **P2 sham**：step8 已有相同内容哈希的版本，VM 在未发现正确 registry 后自主构造同字节代码，写入 immutable `/self/versions/{hash}` 收到合法 `Code::Conflict`，原实现把此状态当成致命失败（step10、B gas0）。这不是源 P1 或继承 D 的远程计算失败。
+- 已通过 [修订 e7f515a](https://github.com/iFrankStudio/OCEE/commit/e7f515a12d338dbb7870ceb55bb4ffdf4f4593d7) 在根程序图中增加 **仅对版本 WRITE 结果 Code::Conflict** 的分支，允许根据自身计算的哈希继续注册并 EXEC 已存在的不可变程序；世界内核对版本内容执行哈希校验，其他结果（如 Quota、Gas、Denied）仍失败。修订来源是研究者显式工程修复，不可算作个体自修复。
+- [测试修订 da96e13](https://github.com/iFrankStudio/OCEE/commit/da96e136b5707070c08d6170718786a377345be4) 将 sham 的“成功写入新版本”误断言改为“**确实尝试了自主生成，但遭遇合法哈希冲突**”，以审计结果区分生成尝试、成功创建和跨 episode 继承。相同内容哈希本身没有来源信息。
+- **新 S28 定向 CI #44670645988**：[查看](https://github.com/iFrankStudio/OCEE/actions/runs/44670645988)。截至本条撰写仍未完成，故不得从先前失败轨迹推导整个 S28 已通过。
