@@ -16,7 +16,7 @@ pub const REGISTRY:&str="/self/tools/transform-v1";
 pub const OOD_PREDICTION:&str="/self/results/s30-extra-held-out";
 
 fn bytes(s:&[u8])->Op{
-    Op::ConstBytes{hex:s.iter().map(|b|format!("{x:02x}")).collect()}
+    Op::ConstBytes{hex:s.iter().map(|b|format!("{b:02x}")).collect()}
 }
 fn p(id:u32,ty:Type)->Param{Param{id,ty}}
 fn i(id:u32,op:Op)->Instruction{Instruction{id,op}}
