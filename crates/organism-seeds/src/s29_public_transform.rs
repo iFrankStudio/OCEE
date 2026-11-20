@@ -172,9 +172,9 @@ pub fn s29_evidence_selected_root(p1:&str,p2:&str)->Program{
             i(6401,Op::JsonFieldString(106,6400)),
             i(6402,lit(b"Ok")),
             i(6403,Op::EqBytes(6401,6402)),
-        ],br(6403,"s29_check1_ok",plus(ids(),106),
+        ],br(6403,"s29_check1_ok",plus(plus(ids(),105),106),
             "failed",vec![])),
-        bl("s29_check1_ok",extended(&[(106,b)]),vec![
+        bl("s29_check1_ok",extended(&[(105,b),(106,b)]),vec![
             i(6410,lit(b"payload")),
             i(6411,Op::JsonFieldBytes(106,6410)),
             i(6412,lit(b"U32")),
