@@ -273,6 +273,23 @@ fn run_until_cached(w:&mut World){
     }
     panic!("active root never saved the queried label");
 }
+fn run_until_original_probe_scored(w:&mut World){
+    // After the first paid query+cache WRITE, its authentic Probe
+    // receipt stays in the VM continuation. Wait for that first
+    // candidate's actual third-label EXEC before contaminating the
+    // persistent cache: the NEXT candidate must READ the poisoned
+    // object, not reuse the legitimate in-flight receipt.
+    let start=w.audit.len();
+    for _ in 0..15_000{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        if w.audit.iter().skip(start).any(|a|a.result.code==Code::Ok &&
+            matches!(&a.action,Some(Action::Exec{..}))){
+            return;
+        }
+    }
+    panic!("first challenge EXEC after legitimate query never occurred");
+}
 fn fake_label(input:&[u8],output:u32)->Vec<u8>{
     serde_json::to_vec(&TransformExample{input:input.to_vec(),output})
         .unwrap()
@@ -386,7 +403,9 @@ fn s38_cross_family_v1_donor_relearned_for_new_task_and_cas_registry(){
     let (mut donor,root)=boot(Family::P1,1,true,true);
     run_until_switch_or_end(&mut donor);
     let (old_hash,old_program)=stored(&donor);
-    assert_eq!(fourth(&donor),rule(1,&[4,5,6,7,8]));
+    let donor_job:TransformTask=serde_json::from_slice(
+        &donor.state.objects["/public/E001/transform"].bytes).unwrap();
+    assert_eq!(fourth(&donor),rule(1,&donor_job.held_out_input));
     assert_eq!(donor.state.probe_count,1);
     let (mut p2,root2)=boot(Family::P2,55,true,true);
     assert_eq!(root,root2);
@@ -429,6 +448,7 @@ fn s38_nonoriginal_or_tampered_receipt_cannot_buy_new_query(){
 
     let (mut tampered,_)=boot(Family::P2,55,true,true);
     run_until_cached(&mut tampered);
+    run_until_original_probe_scored(&mut tampered);
     let fake=fake_label(&[7,8,9],6);
     assert_eq!(tampered.tick(Some(Action::Write{
         actor:ORGANISM_ID,key:EVIDENCE.into(),bytes:fake,
