@@ -21,3 +21,8 @@ S42B 的个体能保存实际 SEND 回执、按 u64 ID 查询丢弃并请求一�
 - S41/S42A/S42B仍未原生确认，本次S43A也不得记为科学突破；G0 GO，G1/G2 NO-GO，E001未校准/未预注册。
 
 [内核实现与两项反例](../../crates/world-kernel/src/lib.rs) · [VM调用契约](../../crates/organism-vm/src/lib.rs) · [主机权限映射](../../crates/world-kernel/src/program_host.rs)
+
+## S43A.2 源消息完整性指纹修复（2026-11-21，待原生验证）
+静态安全审查发现 S43A 原实现只核验 `ServiceEvent.response_message_id`、actor/source/destination 和曾在 `Receive` 中出现过的完整消息字节，却没有验证 **服务真正生成的消息字节**。研究者/受控故障注入可以在邮箱制造「同响应 ID、不同 bytes」的 Message，让它也真实经历一次 Receive，旧谓词可能误判为服务原始回应。
+
+内核现在在服务提交时，对整个 C→A `Message` 的确定性序列化计算 `response_message_hash` 并写入 kernel-owned `ServiceEvent`；`ConfirmResponseFor` 除原因果门外还验证完整 Message hash，且不得早于其 `deliver_step`。缺 hash 的旧快照无法作为成功回复的证明（fail-closed），但可继续读取历史费用。没有赋予个体修改服务账本的权限；消息正文/时间元数据也受指纹保护。新增同测试轨迹中的强负例：伪造相同 `response_message_id` 而不同 bytes，**确实执行 RECEIVE 交付后** 再确认，必须 Conflict；对同一真实已收原消息仍可 Ok。这是一项未运行的测试预期，非验收成功。

@@ -165,6 +165,11 @@ pub struct ServiceEvent {
     pub b_gas_charged: u64,
     pub response_message_id: u64,
     pub diagnostic: Option<ParseError>,
+    /// S43A.2: immutable hash of the exact kernel-produced full Message.
+    /// Old snapshot entries without the hash cannot authorize a new reply
+    /// confirmation; they remain readable for historical accounting.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub response_message_hash: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -693,16 +698,19 @@ impl World {
             self.state.nodes.get_mut(&NodeId::C).expect("node C").bandwidth_available -= bandwidth;
             let id=self.state.next_sequence;
             self.state.next_sequence+=1;
-            self.state.pending_deliveries.push(Message{
+            let response=Message{
                 id,actor:message.actor,source:NodeId::C,destination:NodeId::A,
                 bytes:payload,sent_step:self.state.step,
                 deliver_step:self.state.step.saturating_add(self.state.config.message_delay),
                 sequence_no:id,
-            });
+            };
+            let response_message_hash=hash_bytes(&serde_json::to_vec(&response)
+                .expect("kernel-created message hash"));
+            self.state.pending_deliveries.push(response);
             self.state.service_events.push(ServiceEvent{
                 step:self.state.step,request_message_id:message.id,
                 response_message_id:id,b_gas_charged:processed.b_gas_charged,
-                diagnostic,
+                diagnostic,response_message_hash:Some(response_message_hash),
             });
         }
         deferred.extend(queue);
@@ -819,6 +827,14 @@ impl World {
             .rev().take(Self::REQUEST_PROVENANCE_WINDOW)
             .find(|e|e.request_message_id==request_id &&
                 e.response_message_id==message.id)?;
+        // Requiring both an actual audited RECEIVE and the C-authored
+        // complete message fingerprint closes the same-ID/different-body
+        // spoof: a forged mailbox entry is not a service-authored reply.
+        if message.deliver_step>self.state.step {return None;}
+        let actual_hash=hash_bytes(&serde_json::to_vec(&message).ok()?);
+        if event.response_message_hash.as_deref()!=Some(actual_hash.as_str()){
+            return None;
+        }
         let observed=self.audit.iter().rev()
             .take(Self::REQUEST_PROVENANCE_WINDOW).any(|a|{
                 if a.result.code!=Code::Ok ||
@@ -1615,9 +1631,24 @@ mod tests {
         assert_eq!(proof.b_gas_charged,20);
         let mut tampered=replies[0].clone();
         tampered.bytes.push(0xaa);
+        // Stronger than a never-observed forged reply: the counterfeit
+        // genuinely passes through RECEIVE, yet must not be attributed
+        // to the service's event with the same response message ID.
+        w.state.mailboxes.entry(NodeId::A).or_default().push(tampered.clone());
+        let forged_receive=w.tick(Some(Action::Receive{
+            actor:ORGANISM_ID,max_count:1}));
+        assert_eq!(forged_receive.code,Code::Ok);
+        let observed:Vec<Message>=serde_json::from_slice(
+            &forged_receive.payload).unwrap();
+        assert_eq!(observed,vec![tampered.clone()]);
         assert_eq!(w.tick(Some(Action::ConfirmResponseFor{
             actor:ORGANISM_ID,request_id:id,
             reply:serde_json::to_vec(&tampered).unwrap()})).code,Code::Conflict);
+        // A legitimate already-received reply remains valid despite
+        // an adversarial duplicate being present in the audit log.
+        assert_eq!(w.tick(Some(Action::ConfirmResponseFor{
+            actor:ORGANISM_ID,request_id:id,
+            reply:serde_json::to_vec(&replies[0]).unwrap()})).code,Code::Ok);
         assert_eq!(w.tick(Some(Action::ConfirmResponseFor{
             actor:ORGANISM_ID,request_id:id+999,reply:raw.clone()})).code,Code::Conflict);
 

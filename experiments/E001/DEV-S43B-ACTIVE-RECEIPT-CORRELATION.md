@@ -24,3 +24,6 @@ S23 的 `s23_feedback_check_ok` 成功路径在进入原协议字节解析前被
 - 科学状态仍为 G0 GO、G1/G2 NO-GO；正式 E001 未校准、未预注册。S41→S43B均缺少本次原生CI验收，不得把候选视为发现赛博生命。
 
 [活动个体实现](../../crates/organism-seeds/src/s43b_active_receipts.rs) · [3项真正的VM回归](../../crates/organism-seeds/tests/s41_early_drop.rs) · [S43A内核](./DEV-S43A-REQUEST-OUTCOME-AND-REPLY.md)
+
+## S43A.2 依赖加固
+S43B 的 `ConfirmResponseFor` 现在不仅依赖 SEND→服务事件→RECEIVE，还依赖服务事件固定的完整消息内容哈希和实际交付时序。研究者注入同响应ID但不同正文、即使真的被RECEIVE取走，也不能把它错误当作原始ACK/RESULT。缺少旧账本指纹的快照安全拒绝确认。该改动与S43B的原生验收一起等待运行器。

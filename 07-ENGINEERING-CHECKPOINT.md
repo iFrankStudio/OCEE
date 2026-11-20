@@ -557,3 +557,7 @@
 - [研究和反例](./experiments/E001/DEV-S43B-ACTIVE-RECEIPT-CORRELATION.md) · [P2活动个体](./crates/organism-seeds/src/s43b_active_receipts.rs) · [手动窄CI](./.github/workflows/s43b-active-receipts.yml)。每个phase1 ACK / phase2 RESULT候选 SEND 的真实u64回执均由VM写入 `/self/work/s43b-message-<phase><opcode>`，接收后主动读回并调用 `ConfirmResponseFor`，只有服务因果对应的实际Receive消息可进入旧协议解析。
 - 不提高128个VM区块上限：新增5个受费确认节点，移除S43B新图中不再可达的4个S40/S41旧式角色级恢复节点；S40/S41/S42B旧图不改。3项**待运行**对照：健康P2 ACK+RESULT，真实任务漂移后新B请求再确认，注入未由服务产生的伪回复则终止而不写结果。任何未验收代码不记科学突破。
 - S43B仍受研究者预定phase/工具/可用世界API限制，非通用异步网络主体；本环境无Rust工具链且GitHub runner最近未分配，待runner恢复后S43B→S43A→S42B→S41/S40窄回归。G0 GO、G1/G2 NO-GO，E001仍未校准/预注册。
+
+### 2026-11-21 — S43A.2 同ID不同内容的伪造RECEIVE负例，待原生验证
+- 对 S43A/S43B 的源证据依赖做静态安全审查：原先的回复认证缺少服务生成正文 hash，若向A邮箱注入同 response ID、改过正文的假消息再真的 RECEIVE，旧证据链接可误通过。服务事务现在随 `ServiceEvent` 一并存完整C→A Message哈希，`ConfirmResponseFor`要求内容指纹及到期交付，旧快照缺hash则fail-closed。
+- 强化原S43A窄测试：向邮箱插入同ID修改正文，确实由Receive交付后认证仍Conflict；随后真服务消息仍可Ok，B费用与快照保持可追溯。此项为**待跑的回归断言**，不宣称已获得结果。
