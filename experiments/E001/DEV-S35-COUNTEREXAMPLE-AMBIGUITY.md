@@ -29,4 +29,16 @@ S34 已证明一个基于研究者封闭语法的活动 VM，可以依据两条�
 
 [VM 公开反例筛选](../../crates/organism-seeds/src/s35_counterexample.rs) · [原生任务/消融测试](../../crates/organism-seeds/tests/s35_counterexample.rs) · [专用 CI](../../.github/workflows/s35-counterexample.yml)。
 
-**首次 CI 状态：正在实际验收；若出现错误，应作为工程/科学真实失败原样归档，不按预期当成已证实结论。**
+## 2026-11-20 原生验证结果与严格失败历史
+
+- [**S35 定向原生 Actions #44695944146**](https://github.com/iFrankStudio/OCEE/actions/runs/44695944146) 已 **completed/success，Rust 1 passed / 0 failed / 136.54秒**，验收 Rust 源码 SHA [0a5cc6f](https://github.com/iFrankStudio/OCEE/commit/0a5cc6fcf0f78114d9cb588b8893228f3f5bc254)。固定初始完整 root SHA256：`f8467165e6acb3fdbef100abafb3921e7d1052134b340e73afa8611f927551c1`，三个来源/目标 P1/P2 世界相同；环境 challenge 是显式白名单只读路径。
+- **三深度来源→目标的真实程序选择与目标独立验收**：P1 seed1→P2 seed55，**0追加阶段**，工具 hash `ccbec864ef8a002aa15e07a541cfca57200fa8770f51020274f1b1d359aa43c5`，来源 **A14,049**、P2 **A24,991 / 252 tick / B24**，import **29 A**；P1 seed19→P2 seed73，**1阶段**，工具 hash `ba26376fb3a4613f0f0090125ef1c8349993c965087792c068a302b3a143745b`，来源 A**23,415**、P2 **A25,008 / 252 tick / B24**，import **32 A**；P1 seed37→P2 seed91，**2阶段**，工具 hash `b66d0084a3106dafbee2ae2426404c5d6c016c7016a08baf23ff13e920647931`，来源 **A33,424**、P2 **A25,015 / 252 tick / B24**，import **35 A**。来源 VM 的候选版本 WORLD WRITE 数确为**2/20/38**（排除了 B 前另行生成的 S28 Len 工具），第三标签 READ **来源每组2次，目标每组1次**。后者没有再生成来源图哈希，已审计真实 READ/EXEC、第四 U32、最终 C wire/FOLD32 和世界快照恢复。
+- **直接显现的两标签虚假泛化**：在同一个含两个歧义标签的 P2 world55，原 S34 学习器未访问第三标签，选择最先通过训练的错误程序，得到真实第四 B 操作数 **10**，而独立隐藏任务的目标值是 **48**；它仍真实完成**B gas24**的合法 FOLD32 运算，A **25,034**。所以不能以 B 成功/协议正确代替学习语义正确。
+- **修复陈旧的、前两标签全匹配的知识**：用旧 S34 **P1 活动 VM**在同样歧义样例下真实生成的错误程序，受费导入新 S35 P2 world55，导入 **29 A**。它成功通过旧两个样例，却被新环境第三个公开标签拒绝；目标自动回退至研究者原设的54候选搜索，再经受费 **CAS registry v0→v1** 替换错误哈希，恢复正确第四操作数48与真实 B FOLD32。最终 **A26,324 / 264 tick / B24**，根活动 VM 对陈旧程序与前后两个搜索候选共发出**3次**第三标签 READ。
+- **证据不可得时拒绝执行**：只删掉第三公开挑战对象、仍保留同任务与代码时，VM 读后在预注册的 fail-closed 分支终止，**A7,785 / 12 tick / B0**；无真实第四操作数、无伪成功。这不是自主搜集新证据，而是遇到缺证时按研究者先验停止。
+- **同成本继承 sham**：目标 P2 world91，两臂完整初始状态/专家/公共任务/导入程序字节一致，都经正常两次 WRITE 导入，**import 各35 A**。正确可见继承 **A25,015 / 252 tick / B24**；同成本但注册路径不可发现的 sham **A45,461 / 332 tick / B24**，可见继承净减少 **20,446 A gas，约为 sham A 总额的45.0%**；双方真实计算 B 均正确，差额主要是重搜成本而非普遍性性能定律。
+
+### 失败记录与排错
+- 首轮 [S35 CI #44695753225](https://github.com/iFrankStudio/OCEE/actions/runs/44695753225) 编译/原生 VM 运行已到来源世界的正确候选，但测试将**在第四 B 操作数写入之后另行创建的 S28 Len 版本**误算成 S35 搜索候选，错误地看到3次而非2次；没有发生所选算子/挑战语义或真实世界 VM trap。修订 [0a5cc6f](https://github.com/iFrankStudio/OCEE/commit/0a5cc6fcf0f78114d9cb588b8893228f3f5bc254) 通过 `step < WRITE(remote-values-le)` 仅统计真正的候选程序，不修改世界规则、标签、种子或 VM 决策流程。修订后全套原生通过。
+- 三条标签专门区分本研究刻意构造的别名，不意味着任何有限训练集都可识别出真实程序。第三条公开挑战**不是最终未标注泛化集**，其语义标签由研究者环境提供，必须继续将目标 world 的未标注输入与研究端独立 oracle 分离。54 候选、阶段上限、挑战触发和 CAS 回退都研究者预置。**G0 GO；G1/G2 NO-GO；E001 未预注册。** 对应代码完整 workspace [#44695944307](https://github.com/iFrankStudio/OCEE/actions/runs/44695944307) 仍需独立确认；不能把定向成功冒称全量通过。
+
