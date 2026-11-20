@@ -397,3 +397,13 @@
 - 同内容 hash 的冷生成与导入继承必须由动作和版本证据区分：sham 已存程序版本，活动根仍尝试自行生成同一程序，WRITE 收到 Conflict 并按明确策略采用，不能将 sham 的 EXEC(hash) 计为 donor 因果贡献。源 P1 VM 生成与目标 P2 VM 调用均经审计验证，不是主持者手动 EXEC。
 - **判据仍 NO-GO**：通用算子、模板、修改位置、接入 B 工作的长度12校验与 P1/P2 专家预设均来自研究者；单开发种子、单功能。不能将受先验限定的**功能迁移**称为开放式演化、自主发明或 H3 确认性通过。G0 GO，G1/G2 NO-GO。S28 代码 SHA `da96e136` 的 workspace 全量 CI 状态仍须独立核验。
 - 下一突破口：将 `Len` 唯一候选替换为有限多个 VM 可组合的通用算子策略，要求个体**从新的公开验证任务/反馈中选择**、生成并交叉验证，最小化研究者先验；在 P1→P2 目标跨不同字节长度、不同随机种子与任务类型验证，不得把 `U32(12)` 目标作为可泛化语义。
+
+
+### 2026-11-20 — S29 公开反馈选择的三算子真实跨协议验证（原生 CI 成功）
+
+- [S29 完整研究记录](./experiments/E001/DEV-S29-EVIDENCE-SELECTED-OPERATORS.md)；[Rust 活动程序](./crates/organism-seeds/src/s29_public_transform.rs)、[原生测试](./crates/organism-seeds/tests/s29_public_transform.rs)、[GitHub Actions #44673328957](https://github.com/iFrankStudio/OCEE/actions/runs/44673328957) **completed/success，1 passed、0 failed、276.42秒**。首次 [#44673179538](https://github.com/iFrankStudio/OCEE/actions/runs/44673179538) 因测试代码 Rust 所有权错误 E0382 编译失败，通过 [4be5024](https://github.com/iFrankStudio/OCEE/commit/4be5024a2dd2a89595b0aada08a6a9d078cb0043) 修复，无修改世界 seed/实验预期。
+- 世界早已发布的 `/public/E001/transform` 包含两组标注样例及 held-out 输入；S29 用同一个冻结初始 root 在真实活动 VM 中通过 `Len / XorFold / ByteAt(0)` 三候选原语对两个样例逐一比较，选择合适算子，通过 `RewriteOp` 构造不可变代码版本、受费 WRITE 注册、真实 EXEC 两例和 held-out，存储预测；研究端只在完成后用私有 oracle 校验，不把隐藏规则、seed、预期 held-out 输出传给活动 VM。根程序继续现有 S28 长度门控和 S26C P1/P2 远端专家，因此**不能把所有 B 能力归因于本次新算法选择**。
+- 三组 P1→P2（protocol seed42、不同工作 world seeds）：source42→target129 选 `Len`，目标 P2 **A 23626 / ticks1183 / import25 / B20**；source43→target130 选 `XorFold`，**A 23633 / ticks1183 / import26 / B20**；source44→target131 选 `ByteAt`，**A 23630 / ticks1183 / import26 / B20**。三种工具 hash 各不相同，源 P1 实际生成/写入，目标 P2 三次成功 EXEC 且不重新生成，held-out 预测全部独立正确，远端 FOLD32 结果全部独立正确；初始 root hash 一致。
+- 公平性：P2 world129 的可见注册 D 与相同程序字节、相同两次导入 WRITE 但不可见的 sham，两组导入均25、ticks 均1183；**D 23626 gas / sham 23780 gas = D−sham −154 A gas（约0.648%）**，sham 自己重新选择相同算子并在版本 WRITE 遭遇合法 Conflict。错误语义 XOR 工具迁入 target LEN 的 P2 world129，工具虽通过实际 EXEC 却未通过目标样例，**A6233 / ticks10 / B0**，停机无结果；此时不能假称“自动修复”，恢复机制有待研究。
+- **科学边界**：实现的是研究者提供的有限三个算子、已知修改槽位、枚举顺序和公开样例反馈下的**任务依赖程序选择 + 跨协议可执行继承**，不是超出候选的新算子/结构创造。样本数有限，目标标签及远端专家来自环境/研究者；正式 E001 未预注册。**G0 GO、G1/G2 NO-GO**。最新完整工作空间 [#44673328915](https://github.com/iFrankStudio/OCEE/actions/runs/44673328915) 尚待核验，不能用本次定向 CI 代替。
+- **下一优先问题**：当继承程序在目标公开样例下失败时，目前 fail-closed；研究“主动拒绝失配旧知识 → 重新选择其他算子 → 保存新版本 → 更新注册引用”的受计费修复，须与可见继承和等时序 sham 对照配对。随后测试需要原语组合而不仅是一元算子枚举的新任务。
