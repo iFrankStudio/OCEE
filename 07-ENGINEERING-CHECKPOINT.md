@@ -518,3 +518,11 @@
 - 通过 GitHub Actions jobs API 复查同源码的 [完整 workspace #44710108719](https://github.com/iFrankStudio/OCEE/actions/runs/44710108719)：`kernel` 作业 `completed/cancelled`，因此**全量回归没有通过的证据**；不能把 [S40 定向 #44710108675](https://github.com/iFrankStudio/OCEE/actions/runs/44710108675) 的 `native-dropped-recovery completed/success`（4/4）提升为全 workspace 成功。
 - 本次没有修改实验行为、隐藏规则或增添测试，也未重复触发耗时 CI。后续优先检查全量作业取消原因及是否由新提交抢占；如需回归，应只对最新源码进行一次必要的全量运行，不能把 cancelled 视为测试失败或通过。
 - 下个可证伪实验优先对 S40 的固定 128 轮等待与硬编码派生状态清理做受费、有限的故障归因；同时保持旧消息 B0、新消息 B24、版本/证据 CAS、快照和负面对照不变量。当前 G0 GO、G1/G2 NO-GO，正式 E001 未启动。
+
+
+### 2026-11-20 — S41开发性候选，原生运行器未分配；不记为新突破
+- [S41完整待验规范及阻断证据](./experiments/E001/DEV-S41-EARLY-DROP-LIFETIME.md) · [受限P2早期故障检测](./crates/organism-seeds/src/s41_early_drop.rs) · [4项预设因果对照](./crates/organism-seeds/tests/s41_early_drop.rs) · [原生工作流](./.github/workflows/s41-early-drop.yml)。S41是在已证实S40一次恢复B24的基础上，尝试把实际消息丢弃到自主RestartRoot之间的检测延迟从等待完128轮有界Receive，改为每次真实 `Receive Empty` 后先付费`FenceStatus`；无滴落继续原有循环，禁止内核自动重启。`FenceStatus`从此前失败不收费，改为**Ok和Empty均收1 A gas**，受既有有限重试上限保护。
+- `RestartRoot`由固定5个单一路径的清理升级为固定的生命周期前缀 `/self/results/`、`/self/work/`、`/self/discoveries/`，只清除当前owner属于actor的前回合派生对象，并相应更新storage_used；保留`/self/evidence/`历史证据、`/self/tools/`可复核工具注册、`/self/versions/`不可变程序、`/self/notes/`及其它非匹配前缀。**这种分类仍是研究者给出的策略，不能称个体自行发现因果状态依赖。**S40原monotonic CAS恢复根被抽成可复用函数，不能暗改S40旧实验。
+- 已冻结4项待验原生场景：(1) 同seed的S41/S40从真正TaskFenceDrop审计tick到RestartRoot审计tick的延迟，S41至少快40 tick，两个仍B24仅一次；未知名称的结果/工作/发现对象均被清理，独立持久私有对象不被删除；(2) P1真实旧工具跨家族导入P2 v2，新图真实CAS、正确B24；(3) 无drop时受费Empty查询但B正常、无成功恢复；(4) 历史drop但任务hash回滚时仍不得RestartRoot。每场要求世界状态hash与snapshot重载一致。
+- **原生 CI 当前被外部运行条件阻断**：[S41 #44748358687](https://github.com/iFrankStudio/OCEE/actions/runs/44748358687) attempt1与单独重试attempt2均`completed/failure`，但job `steps=[]`，`runner_id=0`，运行器根本未分配、没有Rust或测试日志；[同提交 S40 #44748358559](https://github.com/iFrankStudio/OCEE/actions/runs/44748358559)和[全workspace #44748358715](https://github.com/iFrankStudio/OCEE/actions/runs/44748358715)完全相同，不能归因于S41代码，也不能认为S41通过。私人仓库账单配额/组织Actions权限/托管runner供给需由GitHub UI进一步确认。没有可用本地cargo/rustc或外网依赖下载，现阶段不能做原生替代验证。
+- 代码静态复核后改为 `key.starts_with(*prefix)` 与 `if_true.as_str()` 以明确Rust借用类型；提交使用`[skip ci]`停止对无效Actions运行器继续产生失败流水。**S41状态=未验/不记突破；G0 GO；G1/G2 NO-GO，E001未预注册。**待runner恢复后手动S41定向→S40回归→必要时workspace，不应所有历史study对每次小修自动运行。下一阶段科学目标转为请求ID绑定的故障证据与因果派生对象淘汰，减少actor级事件和人工目录先验。
