@@ -1,12 +1,6 @@
 name: S27 Paired Tool Inheritance Evidence
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s27-transfer-pairs.yml"
-      - "crates/organism-seeds/tests/s27_transfer_pairs.rs"
-      - "experiments/E001/s26_paired_audit.py"
   workflow_dispatch:
 
 concurrency:

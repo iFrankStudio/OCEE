@@ -1,13 +1,6 @@
 name: S28 Cross-Family Functional Utility
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s28-cross-utility.yml"
-      - "crates/organism-seeds/src/s28_cross_utility.rs"
-      - "crates/organism-seeds/tests/s28_cross_utility.rs"
-      - "crates/organism-seeds/src/lib.rs"
   workflow_dispatch:
 
 concurrency:

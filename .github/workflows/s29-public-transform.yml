@@ -1,13 +1,6 @@
 name: S29 Public-Label Multi-Operator Transfer
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s29-public-transform.yml"
-      - "crates/organism-seeds/src/s29_public_transform.rs"
-      - "crates/organism-seeds/tests/s29_public_transform.rs"
-      - "crates/organism-seeds/src/lib.rs"
   workflow_dispatch:
 
 concurrency:

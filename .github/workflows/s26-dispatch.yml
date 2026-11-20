@@ -1,13 +1,6 @@
 name: S26C Frozen Bundle Active Dispatch
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s26-dispatch.yml"
-      - "crates/organism-seeds/src/s26_dispatch.rs"
-      - "crates/organism-seeds/tests/s26_dispatch.rs"
-      - "crates/organism-seeds/src/lib.rs"
   workflow_dispatch:
 
 concurrency:

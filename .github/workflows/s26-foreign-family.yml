@@ -1,12 +1,6 @@
 name: S26 Foreign-Family Tool Rejection
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s26-foreign-family.yml"
-      - "crates/organism-seeds/tests/s26_foreign_family.rs"
-      - "crates/organism-seeds/src/s23_p2_transfer.rs"
   workflow_dispatch:
 
 concurrency:
