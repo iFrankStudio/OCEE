@@ -46,7 +46,9 @@ pub fn s32_composite_operands_root(p1_hash:&str,p2_hash:&str)->Program{
         "s30_extra_saved",vec![9800]);
 
     let confirmed=f.blocks.iter_mut().find(|x|x.id=="s30_extra_saved").unwrap();
-    confirmed.params.push(p(9801,u));
+    // Yield continuation receives carried values first, then the
+    // WorldCall feedback Bytes. The original S30 block had only feedback.
+    confirmed.params=vec![p(9801,u),p(4200,b)];
     confirmed.terminator=br(4204,"s32_pack_operand",vec![9801],
         "fail",vec![]);
 
