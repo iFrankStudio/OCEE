@@ -111,8 +111,20 @@ pub struct WorldState {
     /// Older snapshots default to zero; unqueried world hashes stay stable.
     #[serde(default,skip_serializing_if="probe_count_is_zero")]
     pub probe_count: u32,
+    /// Kernel-held provenance for the latest successful development query.
+    /// Not writable via organism /self/ storage or visible through Read.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub probe_record: Option<ProbeRecord>,
 }
 fn probe_count_is_zero(count:&u32)->bool{*count==0}
+
+/// Exact environment task bytes and exact issued receipt are bound together.
+/// This is an in-kernel provenance guard, NOT a cryptographic public proof.
+#[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
+pub struct ProbeRecord {
+    pub task_hash: String,
+    pub receipt: Vec<u8>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ServiceEvent {
@@ -220,6 +232,10 @@ pub enum Action {
     /// S36 explicit development query against a local labelled task fixture.
     /// Unlike Read, the organism chooses the actual input at runtime.
     Probe { actor: u64, input: Vec<u8> },
+    /// Cross-check a /self/ cached probe receipt against the immutable
+    /// kernel-held issue record and CURRENT public task fingerprint.
+    /// Never returns the hidden label. Validation consumes A resources.
+    VerifyProbe { actor: u64, evidence: Vec<u8> },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -306,7 +322,7 @@ impl World {
                 objects: BTreeMap::new(), mailboxes: BTreeMap::new(),
                 pending_deliveries: vec![], events: vec![], next_sequence: 0,
                 protocol_service: None, service_events: vec![],
-                probe_count: 0,
+                probe_count: 0,probe_record:None,
             },
             audit: vec![],
         }
@@ -605,7 +621,7 @@ impl World {
             Action::Observe {actor} | Action::Read {actor,..} |
             Action::Write {actor,..} | Action::Send {actor,..} |
             Action::Receive {actor,..} | Action::Exec {actor,..} |
-            Action::Probe {actor,..} => *actor,
+            Action::Probe {actor,..} | Action::VerifyProbe{actor,..} => *actor,
         };
         if !self.valid_actor(actor) { return ActionResult::fail(Code::Denied); }
         match action {
@@ -709,10 +725,13 @@ impl World {
                 // provisioned S36 development task can answer a query.
                 // Restricted lengths and one charged request per episode
                 // make the process finite and all evidence audit-visible.
-                let Some(task)=self.state.objects.get("/public/E001/compose-depth")
-                    .and_then(|obj|serde_json::from_slice::<TransformTask>(&obj.bytes).ok())
+                let Some((task,task_hash))=self.state.objects
+                    .get("/public/E001/compose-depth")
+                    .and_then(|obj|serde_json::from_slice::<TransformTask>(&obj.bytes)
+                        .ok().map(|t|(t,hash_bytes(&obj.bytes))))
                     else {return ActionResult::fail(Code::Denied)};
-                if task.task_id!="s36-interactive-probe-v1" ||
+                if task.task_id!="s36-interactive-probe-v1" &&
+                    task.task_id!="s37-changed-rule-v2" ||
                     self.state.protocol_service.is_none() {
                     return ActionResult::fail(Code::Denied);
                 }
@@ -730,11 +749,44 @@ impl World {
                 // Hidden only inside the world environment, not visible
                 // to VM instructions or the publicly published task.
                 let stages=((self.state.config.seed%54)/18) as u32;
-                let output=hidden_compose(self.state.config.seed,&input)
-                    .wrapping_add(stages.wrapping_mul(input.len() as u32));
+                let output=if task.task_id=="s37-changed-rule-v2"{
+                    // Independent researcher-controlled task rule revision.
+                    (input.len() as u32).wrapping_mul(2)
+                }else{
+                    hidden_compose(self.state.config.seed,&input)
+                        .wrapping_add(stages.wrapping_mul(input.len() as u32))
+                };
                 let example=TransformExample{input,output};
-                ActionResult::ok(
-                    serde_json::to_vec(&example).expect("probe receipt"),gas,0)
+                let issued=serde_json::to_vec(&example)
+                    .expect("probe receipt");
+                self.state.probe_record=Some(ProbeRecord{
+                    task_hash,receipt:issued.clone()
+                });
+                ActionResult::ok(issued,gas,0)
+            },
+            Action::VerifyProbe {evidence,..} => {
+                // This cannot mint a new label: only validate a PREVIOUS
+                // successful Probe issued by this world. Verify after
+                // receiving an untrusted /self/ cache read, every time.
+                if evidence.len()>256 {return ActionResult::fail(Code::BadRequest);}
+                let Some(task)=self.state.objects.get("/public/E001/compose-depth")
+                    else{return ActionResult::fail(Code::NotFound)};
+                let current_hash=hash_bytes(&task.bytes);
+                // Charge for positive and negative verification, including
+                // stale tasks or self-cache forgery (but never return label).
+                let gas=2;
+                if let Err(code)=self.spend_a_gas(gas){
+                    return ActionResult::fail(code);
+                }
+                let Some(record)=self.state.probe_record.as_ref() else{
+                    return ActionResult{code:Code::NotFound,payload:vec![],
+                        gas_charged:gas,vm_gas_charged:0,
+                        bandwidth_charged:0,exec_step:None};
+                };
+                let code=if record.task_hash==current_hash &&
+                    record.receipt==evidence {Code::Ok}else{Code::Conflict};
+                ActionResult{code,payload:vec![],gas_charged:gas,
+                    vm_gas_charged:0,bandwidth_charged:0,exec_step:None}
             },
         }
     }
