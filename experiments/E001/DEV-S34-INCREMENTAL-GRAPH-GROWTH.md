@@ -27,3 +27,11 @@ S33 证明两个研究者完整预建的四指令/六指令图可被 VM 按公�
 代码：[S34 生成器](../../crates/organism-seeds/src/s34_incremental_depth.rs)；[S34 原生世界对照](../../crates/organism-seeds/tests/s34_incremental_depth.rs)；[VM 新通用编辑器](../../crates/organism-vm/src/lib.rs)；[S34 专用 CI](../../.github/workflows/s34-incremental-depth.yml)。
 
 **原生 CI 结果须从实际日志追加。首次全量编译暴露 VM 新单元测试遗漏本地 literal 构造器，已作为工程失败记录保留并修订；不可当作个体学习结果。**
+
+
+## 2026-11-20 原生验收追加（与研究预案分开）
+
+- 修复提交 [fa45749a9cce826f86b5f0f0fdb532b7bd7edde0](https://github.com/iFrankStudio/OCEE/commit/fa45749a9cce826f86b5f0f0fdb532b7bd7edde0) 将世界 WRITE 的程序版本字节从追加前寄存器 224 改为实际 `AppendInstructions` 生成的寄存器 245，使内容寻址哈希与不可变存储字节一致。此前 [#44692967512](https://github.com/iFrankStudio/OCEE/actions/runs/44692967512) 失败；这属于工程集成缺陷，不是个体自主修复。
+- [S34 定向 Actions #44693172156](https://github.com/iFrankStudio/OCEE/actions/runs/44693172156) 对应上述 SHA，已核实 **completed/success**。同一 job 的「Type-safe incremental graph VM primitive and rejection tests」与「Native 0-1-2-stage construction, P1-to-P2 real B and strict negative controls」两步骤均为 success。由此确认在固定开发 fixture、预置片段和有界候选空间内，原生测试所断言的三种深度、跨家族 B 路径、深度上限负例、等付费 sham 和失配后重学均通过；**尚未从工件独立提取每组 A gas/tick 数值，不在此杜撰数值或泛化显著性**。
+- 同 SHA 完整 workspace [#44693172200](https://github.com/iFrankStudio/OCEE/actions/runs/44693172200) 查询时仍为 in_progress；**定向通过不能替代完整回归**。后续先验收完整工作流，再提取定向原生打印的各组资源账本；若有失败，按 job/日志定位，不重复启动已有 CI。
+- 能力归因保持保守：研究者预置的 `Len;Add` 追加片段、0/1/2 阶段、18 底层组合、两条标签、P1/P2 专家及 S32 远程 ABI 均为先验。新验证的是**活动 VM 受限编辑并保存实际可执行的不同长度图**，而非自行发明新的编辑原语、任意拓扑或开放式演化。正式 E001 未预注册；G1/G2 继续 NO-GO。
