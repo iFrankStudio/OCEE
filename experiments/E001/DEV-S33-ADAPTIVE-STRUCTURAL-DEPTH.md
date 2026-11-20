@@ -22,4 +22,15 @@ S7/S8 已经在研究者指定异常输入和固定保护结构下实现了 Prep
 
 [S33 活动图](../../crates/organism-seeds/src/s33_adaptive_depth.rs) · [原生因果测试](../../crates/organism-seeds/tests/s33_adaptive_depth.rs) · [专用 CI](../../.github/workflows/s33-adaptive-depth.yml)。
 
-**CI 运行结果待原生日志验收；设计描述不等同于实验成功。**
+## 2026-11-20 定向 CI 原生证据与失败历史
+- 首次 [CI #44689632213](https://github.com/iFrankStudio/OCEE/actions/runs/44689632213) 编译成功，但运行到 VM 从 `/public/E001/compose-depth` 读取公共样例时返回 **Denied**（step5）。内核的公共只读 ACL 只允许明确列出的公共任务键。修订 [abbfacbd](https://github.com/iFrankStudio/OCEE/commit/abbfacbd01aa65682d65dbe359ad33844825988c) **仅增加这个精确路径**的 Read 权限，没有开放 `/public/` 前缀，也没有修改内核 B 服务、世界资源或操作数判据；失败属于权限缺口，不能计作学习错误。
+- [**修复后的原生 CI #44689804452**](https://github.com/iFrankStudio/OCEE/actions/runs/44689804452) 已 **completed/success**，Rust **1 passed / 0 failed，用时96.79秒**。固定初始 root hash `23a7f9d7bc49a6c77b02fe0d6d0beb06d862c63f721786b3bd05dac5e0911950`，协议专家库在全部来源/目标世界相同。
+- **必须选深层**：P1 world seed1→P2 world seed19（protocol seed42），来源 VM 在公共样例反馈后生成真正**6条指令**的图版本 hash `ba26376fb3a4613f0f0090125ef1c8349993c965087792c068a302b3a143745b`，目标 P2 使用真实两次带费 WRITE 导入，**import32 A gas**，重新验收两组目标标签、在新输入上计算第四 U32，完成 count4+远程 B FOLD32。P1 **A27,785**；目标 P2 **A24,833 / tick250 / B24**，实际 SEND/结果均经独立参考核验正确。
+- **只需浅层**：P1 world seed10→P2 world seed28，VM 选真正**4条指令**旧拓扑，程序 hash `81cd576411f67e85c2aa821146613e2db1f10dc5ff51e7c04ad92b12ee428c95`，import29 A，P1 **A20,979**；目标 P2 **A24,822 / tick250 / B24**，真实 C/B 与第四操作数正确。不同 seed 下深度确实不同，初始 root 完全相同，两个训练标注样例通过普通公开 WorldCall::Read 接收，未传隐藏奇偶规则给 VM。
+- **浅层限制消融**：把同一 VM 搜索上限限定为原来的 18 个候选，保持 P2 seed19 需深层的公共任务；终态 **A20,614 / tick44 / B0**，不产生16字节操作数。此控制表明禁用深层选项无法完成任务；为排除非穷尽搜索造成的假阴性，已另外加入“必须确实尝试全部18个浅层版本 WRITE”的断言，待增强 CI 结果核验。
+- **可见继承 vs 等成本假注册表**：同样 P2 seed19 起始状态，同导入代码/两次真实 WRITE、总导入**32 A gas**，正常可见注册 D **A24,833 / tick250**，不可见别名 sham **A39,830 / tick291**，两者真实 B 都成功，各B24。净节约 **14,997 A gas（约37.65% sham 总成本）**，来源于避免再次遍历浅层候选再进入深层结构。两组有不同终止 tick，不能把差异理解成与调度完全独立的纯算法复杂度改进。
+- **错误拓扑自主恢复**：将 source seed10 浅层图误导入需深层的 P2 world19，目标两条公开标签检测失配，VM 重新搜索深层图并通过受费 CAS **registry v0→v1**，完成真实远端任务，**A39,924 / tick292 / B24**；正确修复的新程序 hash 与深层来源图一致。恢复控制流程仍是研究者播种，不能称个体自己发明修复算法。
+- 以上全部为本地 deterministic C/B 模拟服务上的**单开发性实验**，深层模板及搜索次序是先验，不能从节约gas、选择结构或两次迁移认定开放式演化。**G0 GO；G1/G2 NO-GO**。完整 workspace CI 与定向成功须独立区分。
+
+**增强版穷尽浅层候选负对照 CI [#44690352743](https://github.com/iFrankStudio/OCEE/actions/runs/44690352743) 尚须以原生日志确认最终结论。**
+
