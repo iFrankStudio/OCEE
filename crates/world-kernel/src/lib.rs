@@ -115,6 +115,10 @@ pub struct WorldState {
     /// Not writable via organism /self/ storage or visible through Read.
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub probe_record: Option<ProbeRecord>,
+    /// One narrowly-authorized second probe on a task revision. The
+    /// renewed hash is immutable for this world and persisted in snapshots.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub probe_renewed_for: Option<String>,
 }
 fn probe_count_is_zero(count:&u32)->bool{*count==0}
 
@@ -236,6 +240,9 @@ pub enum Action {
     /// kernel-held issue record and CURRENT public task fingerprint.
     /// Never returns the hidden label. Validation consumes A resources.
     VerifyProbe { actor: u64, evidence: Vec<u8> },
+    /// S38: authorize one extra paid query for the exact allowed v2 task.
+    /// A genuine previously issued old receipt is mandatory.
+    RenewProbe { actor: u64, evidence: Vec<u8> },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -322,7 +329,7 @@ impl World {
                 objects: BTreeMap::new(), mailboxes: BTreeMap::new(),
                 pending_deliveries: vec![], events: vec![], next_sequence: 0,
                 protocol_service: None, service_events: vec![],
-                probe_count: 0,probe_record:None,
+                probe_count: 0,probe_record:None,probe_renewed_for:None,
             },
             audit: vec![],
         }
@@ -621,7 +628,8 @@ impl World {
             Action::Observe {actor} | Action::Read {actor,..} |
             Action::Write {actor,..} | Action::Send {actor,..} |
             Action::Receive {actor,..} | Action::Exec {actor,..} |
-            Action::Probe {actor,..} | Action::VerifyProbe{actor,..} => *actor,
+            Action::Probe {actor,..} | Action::VerifyProbe{actor,..} |
+            Action::RenewProbe{actor,..} => *actor,
         };
         if !self.valid_actor(actor) { return ActionResult::fail(Code::Denied); }
         match action {
@@ -738,7 +746,13 @@ impl World {
                 if input.is_empty() || input.len()>8 {
                     return ActionResult::fail(Code::BadRequest);
                 }
-                if self.state.probe_count>=1 {
+                // A successful first v1 query is not enough for v2:
+                // an explicit, one-shot authorization must be granted,
+                // bound to precisely the current v2 task fingerprint.
+                if self.state.probe_count>=1 &&
+                    !(self.state.probe_count==1 &&
+                        self.state.probe_renewed_for.as_deref()==
+                            Some(task_hash.as_str())) {
                     return ActionResult::fail(Code::Quota);
                 }
                 let gas=40+4*(input.len() as u64);
@@ -763,6 +777,43 @@ impl World {
                     task_hash,receipt:issued.clone()
                 });
                 ActionResult::ok(issued,gas,0)
+            },
+            Action::RenewProbe {evidence,..} => {
+                // Research-locked v1 -> v2 transition: changing any other
+                // task ID or tampering with an old receipt cannot mint
+                // another oracle query. The environment must present the
+                // exact v2 task at public object version 1.
+                if evidence.len()>256 {
+                    return ActionResult::fail(Code::BadRequest);
+                }
+                let Some(obj)=self.state.objects.get("/public/E001/compose-depth")
+                    else{return ActionResult::fail(Code::Denied)};
+                let Some(task)=serde_json::from_slice::<TransformTask>(&obj.bytes).ok()
+                    else{return ActionResult::fail(Code::Denied)};
+                if task.task_id!="s37-changed-rule-v2" || obj.version!=1 ||
+                    self.state.protocol_service.is_none() {
+                    return ActionResult::fail(Code::Denied);
+                }
+                if self.state.probe_count!=1 ||
+                    self.state.probe_renewed_for.is_some() {
+                    return ActionResult::fail(Code::Quota);
+                }
+                let current_hash=hash_bytes(&obj.bytes);
+                let gas=7;
+                if let Err(code)=self.spend_a_gas(gas) {
+                    return ActionResult::fail(code);
+                }
+                let code=match self.state.probe_record.as_ref(){
+                    None=>Code::NotFound,
+                    Some(record) if record.receipt!=evidence ||
+                        record.task_hash==current_hash => Code::Conflict,
+                    Some(_)=>Code::Ok,
+                };
+                if code==Code::Ok {
+                    self.state.probe_renewed_for=Some(current_hash);
+                }
+                ActionResult{code,payload:vec![],gas_charged:gas,
+                    vm_gas_charged:0,bandwidth_charged:0,exec_step:None}
             },
             Action::VerifyProbe {evidence,..} => {
                 // This cannot mint a new label: only validate a PREVIOUS

@@ -186,6 +186,9 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
         WorldCall::VerifyProbe if args.len()==1=>Action::VerifyProbe{
             actor,evidence:as_bytes(&args[0])?.to_vec()
         },
+        WorldCall::RenewProbe if args.len()==1=>Action::RenewProbe{
+            actor,evidence:as_bytes(&args[0])?.to_vec()
+        },
         _=>return Err(Code::BadRequest),
     };
     Ok(action)

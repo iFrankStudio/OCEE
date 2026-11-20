@@ -88,6 +88,8 @@ fn verify_remote(w:&World,family:Family){
                 Some(Action::Probe{input,..})=>format!("PROBE {} bytes",input.len()),
                 Some(Action::VerifyProbe{evidence,..})=>
                     format!("VERIFY PROBE {} bytes",evidence.len()),
+                Some(Action::RenewProbe{evidence,..})=>
+                    format!("RENEW PROBE {} bytes",evidence.len()),
                 None=>"VM-only".into(),
             };
             format!("step={} {action} code={:?} vm_gas={}",
