@@ -863,12 +863,17 @@ impl World {
                 ActionResult::ok(issued,gas,0)
             },
             Action::FenceStatus {..} => {
-                if self.state.fence_drops.iter().any(|d|d.actor==actor) &&
-                    self.state.guarded_restarts.get(&actor).copied().unwrap_or(0)==0 {
-                    if let Err(code)=self.spend_a_gas(1){return ActionResult::fail(code);}
-                    ActionResult::ok(b"Dropped".to_vec(),1,0)
-                }else {
-                    ActionResult::fail(Code::Empty)
+                // S41: both positive and negative failure checks have a
+                // bounded, visible price. Empty polling must not be free.
+                let gas=1;
+                if let Err(code)=self.spend_a_gas(gas){return ActionResult::fail(code);}
+                let has_drop=self.state.fence_drops.iter().any(|d|d.actor==actor) &&
+                    self.state.guarded_restarts.get(&actor).copied().unwrap_or(0)==0;
+                ActionResult{
+                    code:if has_drop{Code::Ok}else{Code::Empty},
+                    payload:if has_drop{b"Dropped".to_vec()}else{vec![]},
+                    gas_charged:gas,vm_gas_charged:0,bandwidth_charged:0,
+                    exec_step:None,
                 }
             },
             Action::RestartRoot {..} => {
@@ -900,27 +905,21 @@ impl World {
                 ).is_err(){return ActionResult::fail(Code::InvalidCode);}
                 let gas=8;
                 if let Err(code)=self.spend_a_gas(gas){return ActionResult::fail(code);}
-                // Explicitly invalidate ONLY these old-episode derived
-                // objects; keep the durable registry and old probe record
-                // for real target-side validation and CAS learning.
-                for key in [
-                    "/self/results/transform-held-out",
-                    "/self/results/s30-extra-held-out",
-                    // Framing-family discovery is an episode-specific
-                    // classification emitted by S26 with a create-only
-                    // WRITE. Re-evaluate it on the second attempt rather
-                    // than forge a successful CAS or reuse stale output.
-                    "/self/discoveries/framing-family",
-                    "/self/work/remote-values-le",
-                    "/self/work/remote-count-le",
-                ] {
-                    if let Some(o)=self.state.objects.remove(key) {
-                        if o.owner==actor {
-                            let host=self.state.organisms.get_mut(&actor).unwrap();
-                            host.storage_used=host.storage_used.saturating_sub(o.bytes.len() as u64);
-                        }else{
-                            self.state.objects.insert(key.into(),o);
-                        }
+                // S41 lifetime policy: all per-attempt owned outputs
+                // beneath these three audited namespaces expire together.
+                // This is a PREDECLARED prefix contract (not autonomous
+                // ownership inference), but it removes the brittle
+                // five-object hard-coded list. Never touch evidence,
+                // code versions, tools, active program or other scratch.
+                let ephemeral=self.state.objects.iter()
+                    .filter(|(key,obj)|obj.owner==actor &&
+                        ["/self/results/","/self/work/","/self/discoveries/"]
+                            .iter().any(|prefix|key.starts_with(prefix)))
+                    .map(|(key,_)|key.clone()).collect::<Vec<_>>();
+                for key in ephemeral {
+                    if let Some(obj)=self.state.objects.remove(&key){
+                        let host=self.state.organisms.get_mut(&actor).unwrap();
+                        host.storage_used=host.storage_used.saturating_sub(obj.bytes.len() as u64);
                     }
                 }
                 let active=self.state.objects.get_mut("/self/active").unwrap();

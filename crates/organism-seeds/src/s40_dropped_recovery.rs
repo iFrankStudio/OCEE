@@ -71,9 +71,14 @@ pub fn s40_p2_recovery_consumer()->Program{
 pub fn s40_dropped_recovery_root()->Program{
     let p1=s40_p1_consumer();
     let p2=s40_p2_recovery_consumer();
-    let mut root=s39_task_fenced_remote_root(
+    s40_root_with_specialists(
         &p1.content_hash().expect("P1 hash"),
-        &p2.content_hash().expect("P2 hash"));
+        &p2.content_hash().expect("P2 hash"))
+}
+/// S41 shares S40's paid monotonic active-version switch without
+/// copying or modifying the validated graph logic.
+pub(crate) fn s40_root_with_specialists(p1_hash:&str,p2_hash:&str)->Program{
+    let mut root=s39_task_fenced_remote_root(p1_hash,p2_hash);
     let f=&mut root.functions[0];
     // S26 originally hardcoded expected_version=0 for /self/active.
     // A legitimate S40 retry is a NEW active version (2), not a reset
