@@ -78,6 +78,10 @@ pub fn s30_composed_cross_family_root(p1_hash:&str,p2_hash:&str)->Program{
     // graph on DIFFERENT bytes coming from the target world's unary
     // transform fixture (not the fixed S6 held-out vector).
     let apply=f.blocks.iter_mut().find(|x|x.id=="apply").unwrap();
+    // S6's original apply took the registration WRITE feedback as a
+    // third parameter. S30 verifies the receipt in s30_register_ack
+    // first, so both new paths carry only (hash, held_out_bytes).
+    apply.params=vec![p(1100,b),p(1101,b)];
     apply.terminator=y(WorldCall::Exec,vec![1100,1101],
         "s30_held_reply",vec![1100]);
 
