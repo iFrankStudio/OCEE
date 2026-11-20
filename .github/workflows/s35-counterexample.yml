@@ -1,0 +1,29 @@
+name: S35 Public Counterexample Gate for Learned Program Semantics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s35-counterexample.yml"
+      - "crates/organism-seeds/src/s35_counterexample.rs"
+      - "crates/organism-seeds/tests/s35_counterexample.rs"
+      - "crates/organism-seeds/src/lib.rs"
+      - "crates/world-kernel/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s35-counterexample-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  counterexample-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native two-sample false generalization, paid public counterexample, three depths, P1-P2 reuse and CAS repair
+        run: cargo test -p ocee-organism-seeds --test s35_counterexample -- --show-output

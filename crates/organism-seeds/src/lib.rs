@@ -202,3 +202,6 @@ pub mod s33_adaptive_depth;
 
 /// S34: incremental in-world typed graph construction (0, 1, 2 stages).
 pub mod s34_incremental_depth;
+
+/// S35: public counterexample gate for two-label ambiguity and inherited program repair.
+pub mod s35_counterexample;
