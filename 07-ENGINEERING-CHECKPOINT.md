@@ -407,3 +407,13 @@
 - 公平性：P2 world129 的可见注册 D 与相同程序字节、相同两次导入 WRITE 但不可见的 sham，两组导入均25、ticks 均1183；**D 23626 gas / sham 23780 gas = D−sham −154 A gas（约0.648%）**，sham 自己重新选择相同算子并在版本 WRITE 遭遇合法 Conflict。错误语义 XOR 工具迁入 target LEN 的 P2 world129，工具虽通过实际 EXEC 却未通过目标样例，**A6233 / ticks10 / B0**，停机无结果；此时不能假称“自动修复”，恢复机制有待研究。
 - **科学边界**：实现的是研究者提供的有限三个算子、已知修改槽位、枚举顺序和公开样例反馈下的**任务依赖程序选择 + 跨协议可执行继承**，不是超出候选的新算子/结构创造。样本数有限，目标标签及远端专家来自环境/研究者；正式 E001 未预注册。**G0 GO、G1/G2 NO-GO**。最新完整工作空间 [#44673328915](https://github.com/iFrankStudio/OCEE/actions/runs/44673328915) 尚待核验，不能用本次定向 CI 代替。
 - **下一优先问题**：当继承程序在目标公开样例下失败时，目前 fail-closed；研究“主动拒绝失配旧知识 → 重新选择其他算子 → 保存新版本 → 更新注册引用”的受计费修复，须与可见继承和等时序 sham 对照配对。随后测试需要原语组合而不仅是一元算子枚举的新任务。
+
+
+### 2026-11-20 — S30 原生验证：两节点组合程序跨家族复用、失配后自主替换旧工具
+
+- [S30 实验记录](./experiments/E001/DEV-S30-COMPOSED-CROSS-FAMILY-REPAIR.md)、[活动 VM 源码](./crates/organism-seeds/src/s30_composed_transfer.rs)、[因果测试](./crates/organism-seeds/tests/s30_composed_transfer.rs)，[定向 Actions #44677074994](https://github.com/iFrankStudio/OCEE/actions/runs/44677074994) **success，Rust 1/1，94.08s**。前置失败 [#44676720789](https://github.com/iFrankStudio/OCEE/actions/runs/44676720789)、[#44676860088](https://github.com/iFrankStudio/OCEE/actions/runs/44676860088)、[#44676983659](https://github.com/iFrankStudio/OCEE/actions/runs/44676983659) 都是静态区块参数拼接错误，后续精确图边诊断和修订解决；没有篡改模拟规则或挑选更容易的种子。
+- **S30 新能力并非 S6 的重复**：将早已验证的 S6 三原语×两个二元运算形成 18 个受限组合的原生搜索，接到所有世界**完全相同的 S28/S26C root + 预置 P1/P2 专家库**，增加对携带程序的目标侧双标签再次验证、失配后的真正搜索、旧工具注册表 **CAS v0→v1**，以及用目标 seed 实际产生的不同 `transform.held_out_input` 做额外无答案输入预测。不是宿主查 hidden rule 后挑程序，P1/ P2 均经内核计费的 Exec、Write 审计。
+- P1 seed1→P2 seed19：目标 A **24,066** / ticks **245** / 继承导入 **29** / B20；P1 seed10→P2 seed28：目标 A **24,063** / ticks **245** / 继承导入 **29** / B20，初始 root hash 相同，继承的是两种不同内容哈希的多节点程序。两组来源/目标独立 held-out 与额外目标特异输入预测、远程 FOLD32 全部正确。
+- **等额、等起步时序的假对照**（P2 world19）A **24,714**，D 正常继承 A **24,066**，二者 import29，D−sham **−648 gas（约−2.62%）**，tick 245 vs 250；sham 复用哈希不等于来源继承，真正重新执行了探索。负迁移恢复：错误组合程序导入 target P2 world19，真实 EXEC 后被公开标签拒绝，VM 搜索出正确程序并 CAS v0→v1，结果 A **24,831** / **251 ticks** / B20，全部后续功能通过。相对 S29 错误语义仅失败，本次是有实际因果轨迹的恢复。
+- **重要可比性**：S30 全配对采用 A quota=100,000 gas/epoch（早期 S28/S29 使用12,000），不能跨实验拿 gas/ticks 算性能趋势或宣称无界适应。结构语法、18 候选序列、回退/修复策略和 P1/P2 专家全部研究者预设；两配对不足以支撑统计显著性。**G0 GO，G1/G2 NO-GO；E001 未预注册。** 完整 workspace CI 另行验收。
+- 下一真正研究门槛：减少固定三算子/两组合模板先验，检验任务随 episode 改变时是否能**自主提出、组合、验证**候选新图，并将选中的功能工具用于实际任务决策/通信，而不是仅为下游预置专家提供前置门控；还需跨多协议实例、资源极限、未见边界输入验证。

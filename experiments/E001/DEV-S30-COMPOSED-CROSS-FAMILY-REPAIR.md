@@ -41,3 +41,15 @@ S29 已证明单一节点的跨协议转移和有限反馈选算子。**S30 新�
 - [第一次图连接修订 #44676860088](https://github.com/iFrankStudio/OCEE/actions/runs/44676860088) 仍为同样失败。将 S28 原本作为独立 entry 的单参数块接成 `s30_after` 零参数延续是必要但不充分的修复。
 - 为避免盲改，新增程序图边签名审计，运行到 [诊断 CI #44676983659](https://github.com/iFrankStudio/OCEE/actions/runs/44676983659) 精确显示两条不匹配：`s30_score1 -> apply` 和 `s30_register_ack -> apply`，实际传2、目标期待3。原因是 S6 原 `apply` 接收注册 WRITE 的第三个反馈参数，但 S30 将 WRITE 回执在 `s30_register_ack` 提前核验后，应该将 `apply` 变成只有 `hash,held_out` 两参。
 - [修复 e7a9dd5](https://github.com/iFrankStudio/OCEE/commit/e7a9dd522e8ac8d313402bbe8412046d1b4102dc) 显式修改了 `apply.params`，保留全图精确边诊断。**当时定向 CI 尚未验收，不能将这些失败版本描述为通过。**
+
+
+## S30 原生结果：2026-11-20 最终定向验收
+
+- **[S30 GitHub Actions #44677074994](https://github.com/iFrankStudio/OCEE/actions/runs/44677074994) 已 completed/success**，job `native-composed-transfer`，原生 Rust **1 passed / 0 failed / 94.08 秒**；源代码检查点 [e7a9dd5](https://github.com/iFrankStudio/OCEE/commit/e7a9dd522e8ac8d313402bbe8412046d1b4102dc)。先前静态图失败的 CI 与最终通过的 CI 均已如上保留。
+- 冻结完整 root 哈希：`08b80931edd47e8a0baeb34d2b448c8c3f1899577bd02fc15d144e51dfdc2459`。这一个 root、P1/P2 两份等额安装的专家库同时用于所有来源与目标世界。
+- **组合样本一**：P1 world seed**1** → P2 world seed**19**（protocol seed42），由活动 VM 经真实 `RewriteOp`×3 搜索、注册和 EXEC 的工具哈希 `ccbec864ef8a002aa15e07a541cfca57200fa8770f51020274f1b1d359aa43c5`；target P2 **A 24,066 gas / 245 tick / import 29 gas / B20**，目标 VM 在切换 P2 专家之前对导入的多节点程序真实执行 **4次**（两组公开样例、组合 held-out、与来源字节不同的目标 `/public/E001/transform.held_out_input`）。
+- **组合样本二**：P1 source seed**10** → P2 target seed**28**，程序 hash `81cd576411f67e85c2aa821146613e2db1f10dc5ff51e7c04ad92b12ee428c95`；目标 **A 24,063 / 245 tick / import 29 / B20**。两组来自 S6 的不同二元组合候选和不同生成版本；所有 compose-held、额外目标专属非重复输入以及真正 B FOLD32 都经独立 researcher oracle 核验正确，快照哈希重载一致。
+- **等成本 sham**：P2 world19，保持相同初始 root、资源与导入时序、同一个程序内容，两次 WRITE 均导入 29 gas；可见 D **A 24,066 / 245 tick**，只改 registry 可发现性的 sham **A 24,714 / 250 tick**，D−sham **−648 A gas，约 −2.62%**。sham 自己再搜索并碰到不可变版本哈希冲突，不可将同 hash 误算为 donor 继承；成本差首先反映的是避免重复搜索，不等于不受调度影响的纯算法效率。
+- **错误语义自主修复**：把 source seed10 的 XOR 类组合程序输入目标 P2 world19（需要 ADD 类组合）。目标对错误程序真实执行并由公开样例检测失配，转入真实 18 候选搜索，自主生成对应 seed1 的正确哈希，通过 `WRITE(... expected_version=Some(0))` 真正 CAS 把注册从 **v0 替换到 v1**。世界最后 **A 24,831 / 251 tick / B20**，两种 held-out 与 FOLD32 独立正确。它不是研究者替换程序，不是测试宿主强制选择；但**搜索/修复控制图全部为研究者预先编写**。
+- **资源口径**：本 S30 配对统一配置 **A gas_per_epoch=100,000**；前序 S28/S29 常用 12,000。跨切片绝对 gas/ticks **不得直接比较效率**。S30 内 D/sham 使用同样初始额定配额和导入资源。
+- **科学结论限度**：这是已预设 18 个有序算子组合的反馈搜索与可执行工具封存/跨家族复用，再加本研究者设计的失配后重新搜索/注册修复策略；不是开放式无界程序发明，也不是能修改自身学习算法的自主演化。来源/目标只两个开发配对，非注册的 E001 确认性 H3。G0 GO、**G1/G2 NO-GO**。最新完整 workspace CI 应单独核验，定向通过不能冒称全量通过。
