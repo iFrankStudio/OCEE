@@ -43,3 +43,11 @@ Source 世界：P1 或 P2，world/protocol seed42；Target：P2 world128/protoco
 - `same` 与 `sham` 均真实导入 **同一份 P2 个体生成的不可变工具字节和内容哈希**；差别仅为 registry 名称：可消费的 `/self/tools/p2-eval-frame` 对比不可消费但等长的 `/self/tools/p2-eval-framf`。两个真实 WRITE 导入成本须严格相等。工具没有被删除，也没有额外给宿主隐藏答案。
 - 新断言：`sham` 不 EXEC 导入工具，走冷候选路径，A gas 等于 `cold + sham_import`，tick 等于 `cold + 2`（两次导入 WRITE）；`same` 的净成本严格低于 `sham`。所有四个世界仍须真实 B/FOLD32 正确、快照一致。这检验工具**可消费性**是否产生收益，而不是只看成功 EXEC 事件。
 - **状态：源码已提交，未获取本提交的 completed/success CI 或原生日志。** 以上是待证伪断言，不是已验证结果；若失败须依据原生审计排查，不调整断言以迎合结论。此试验只加强同家族功能复用归因，不能替代跨 P1/P2 结构迁移，亦不改变 E001 G1/G2 NO-GO。
+
+
+## 2026-11-19 S27B CI failure and provenance correction
+
+- GitHub Actions [#44595756698](https://github.com/iFrankStudio/OCEE/actions/runs/44595756698) at `eba12a6` **completed/failure**; Rust paired test failed at line 174: `sham registry must not be consumed`. The separate workspace [#44595756716](https://github.com/iFrankStudio/OCEE/actions/runs/44595756716) was **cancelled**, not passed. The Python audit and artifact upload were skipped.
+- Root cause: the sham target can independently synthesize a byte-identical P2 tool via the cold candidate path and then legitimately EXEC the same content hash. `exec_seen(sham, hash)` conflated *execution of identical bytes* with *consumption of the imported registry reference*. The earlier assertion was scientifically invalid; the failure is not evidence that the sham import was actually consumed.
+- [Fix 9c47bf5](https://github.com/iFrankStudio/OCEE/commit/9c47bf508963978931b838edc49969f31491b5f6) removes only that incorrect hash-only nonexecution assertion, retains the sham candidate-path, identical paid import, gas/tick and B/FOLD32 assertions. It does **not** change the organism, protocol, resource quotas, oracle, or expected net cost. CI for the fix is **pending verification**; until completed, S27B has no validated outcome.
+- Capability-source ledger: P2 syntax, expert, generation template, and target objective remain researcher-provided. Neither same-family transfer nor this correction demonstrates cross-family novel algorithm invention. G1/G2 NO-GO.
