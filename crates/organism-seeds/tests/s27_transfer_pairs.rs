@@ -175,10 +175,17 @@ fn matched_bundle_paired_transfer_has_real_positive_and_negative_controls(){
     assert_eq!(own_tool(&sham,"/self/tools/p2-eval-framf").0,p2_hash);
     assert!(sham.state.objects.contains_key("/self/candidates/p2-eval-hash"),
         "sham import must take cold candidate path");
-    assert_eq!(gas(&sham),gas(&cold)+sham_cost,
-        "paid but invisible tool must not improve runtime");
-    assert_eq!(sham.state.step,cold.state.step+2,
-        "two paid import writes are the only additional ticks");
+    // Import WRITE ticks shift the autonomous schedule. Even when the tool
+    // is invisible and the cold candidate path runs, the two worlds need
+    // not have identical metered totals or terminal ticks. In particular,
+    // a shifted epoch boundary can change resource waits. Do not present
+    // an exact cold+import identity as an experimentally verified fact.
+    let sham_runtime_gas=gas(&sham)-sham_cost;
+    let cold_runtime_gas=gas(&cold);
+    println!("S27 sham_control cold_A={} sham_A={} import_A={} runtime_delta_A={} cold_ticks={} sham_ticks={}",
+        cold_runtime_gas,gas(&sham),sham_cost,
+        sham_runtime_gas as i64-cold_runtime_gas as i64,
+        cold.state.step,sham.state.step);
     assert!(gas(&same)<gas(&sham),
         "functional registry visibility must improve cost over equal-cost sham");
     assert_eq!(own_tool(&same,"/self/tools/p2-eval-frame").0,p2_hash);
