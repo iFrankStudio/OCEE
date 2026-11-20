@@ -1,14 +1,6 @@
 name: S25 High-Latency VM Restart
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s25-restart.yml"
-      - "crates/organism-seeds/tests/s25_p2_restart.rs"
-      - "crates/organism-seeds/src/s22_p2_remote.rs"
-      - "crates/world-kernel/src/lib.rs"
-      - "crates/organism-vm/src/lib.rs"
   workflow_dispatch:
 
 concurrency:

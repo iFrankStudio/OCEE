@@ -1,13 +1,7 @@
 name: OCEE World Kernel
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "crates/**/*.rs"
-      - "crates/**/Cargo.toml"
-      - "Cargo.toml"
-      - ".github/workflows/rust-kernel.yml"
+  workflow_dispatch:
   pull_request:
     paths:
       - "crates/**/*.rs"

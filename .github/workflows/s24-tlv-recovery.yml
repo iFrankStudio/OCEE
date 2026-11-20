@@ -1,15 +1,6 @@
 name: S24 Recoverable TLV Boundary
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s24-tlv-recovery.yml"
-      - "crates/organism-vm/src/lib.rs"
-      - "crates/organism-seeds/src/s21_p2_tlv.rs"
-      - "crates/organism-seeds/tests/s21_p2_outer_injection.rs"
-      - "crates/organism-seeds/src/s22_p2_remote.rs"
-      - "crates/organism-seeds/tests/s24_p2_recovery.rs"
   workflow_dispatch:
 
 concurrency:

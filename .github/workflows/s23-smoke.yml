@@ -1,15 +1,6 @@
 name: S23 P2 Tool Smoke
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s23-smoke.yml"
-      - "crates/organism-seeds/src/s23_p2_tool.rs"
-      - "crates/organism-seeds/src/s23_p2_transfer.rs"
-      - "crates/organism-seeds/tests/s23_p2_transfer.rs"
-      - "crates/organism-seeds/src/s22_p2_remote.rs"
-      - "crates/organism-vm/src/lib.rs"
   workflow_dispatch:
 
 concurrency:
