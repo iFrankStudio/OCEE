@@ -876,6 +876,9 @@ mod tests {
 
     #[test]
     fn append_instructions_extends_typed_graph_and_rejects_invalid_extensions(){
+        let literal=|data:&[u8]|Op::ConstBytes{
+            hex:data.iter().map(|b|format!("{b:02x}")).collect()
+        };
         let base=p(vec![Instruction{id:1,op:Op::Len(0)}],
             Terminator::Return{value:1},Type::U32);
         let stage=vec![
