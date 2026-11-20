@@ -25,4 +25,17 @@ S36 活动 VM 已能在两个研究者提供的探针输入中选择能区分 Le
 
 [活动 VM 原生验证门](../../crates/organism-seeds/src/s37_evidence_guard.rs) · [本地世界因果实验](../../crates/organism-seeds/tests/s37_evidence_guard.rs) · [内核动作与回执](../../crates/world-kernel/src/lib.rs) · [定向 CI](../../.github/workflows/s37-evidence-guard.yml)。
 
-**原生实验结果待 CI 确认，任何预期不提前声明成功。**
+## 2026-11-20 原生 CI 实测与因果结果
+
+- **[S37 定向原生 Actions #44699875380](https://github.com/iFrankStudio/OCEE/actions/runs/44699875380) completed/success，7 passed / 0 failed / 147.39 秒**，实际原生测试源代码 commit [`0834e07`](https://github.com/iFrankStudio/OCEE/commit/0834e07c49ddd89ddef90aba1961f34291511a97)。在其之前的并行 S37 job 曾因新源码 push 被取消，不算失败或通过。全 workspace [#44699875373](https://github.com/iFrankStudio/OCEE/actions/runs/44699875373) 仍需要独立核验，不得以 S37 定向成功代表全量通过。
+- **正常三深度跨 P1→P2**，所有世界的完整初始 root SHA256 相同：`40a28629186f555211a745329bab03b1a488c9c581f591dacf9b853d126993d2`。source P1 seed1→P2 seed55 **0追加阶段**，来源 A14,645，目标 **A25,557 / 255 ticks / B24**，import29 A，工具哈希 `ccbec864ef8a002aa15e07a541cfca57200fa8770f51020274f1b1d359aa43c5`。source19→P2 73 **1阶段**，来源 A24,011，P2 **A25,574 /255/B24**，import32 A，工具 hash `ba26376fb3a4613f0f0090125ef1c8349993c965087792c068a302b3a143745b`。source37→P2 91 **2阶段**，来源 A34,020，P2 **A25,581 /255/B24**，import35 A，工具 hash `b66d0084a3106dafbee2ae2426404c5d6c016c7016a08baf23ff13e920647931`。
+- 三对来源/目标仍分别真实执行一次受费 **Probe 52 A**、缓存付费 WRITE；来源两个候选与目标继承工具分别发生真实 `VerifyProbe` **2次/1次，每次2 A** 且 Ok。目标确实执行自己的世界内未标注输入、生成正确第四 U32、发送真实 C wire、实际得到 B24 的正确 FOLD32；未仅校验哈希相等。错误旧 P1 工具导入新 P2 world55 后，主动查询+Verify纠正旧语义，真实搜索并 CAS registry **v0→v1**，最终 **A26,950 /269 ticks / B24**。额度耗尽时仍安全拒绝 **A8,232/tick13/B0**。
+- **凭空伪造证据**：研究者通过正常付费的 `/self/` Write 预放 input `[7,8,9]`、output6 的假缓存、**零次真实 Probe**。旧 S36 直接使用该假证据，真实 B24，第四操作数 **10、真实应48**；S37 `VerifyProbe` 因内核无签发记录返回 **NotFound**（收费2 A），**B0**。
+- **成功探测后真实受费 CAS 篡改**：研究者在第一次合法 Probe/缓存 WRITE 后，把同一对象以 `expected_version=Some(0)` 写入假的 output10。旧 S36 后续搜索错选 `ByteAt+Len` 类候选，实际第四操作数 **43、应48**，仍 **B24**；S37 的首次原始回执 Verify Ok，但下一个候选重读已改写缓存后 Verify **Conflict**（收费2 A），**B0**。说明不能仅靠“历史上真的执行过一次 Probe”来判断当前缓存字节可信。
+- **真实任务规则改变**：首次 Probe 成功、缓存已写入后，研究者把只读公共任务从 v1 改为 v2，并令内核真实 oracle 从 `hidden_compose+stages×Len` 变成 **`2×Len`**，同时更新任务公开标签；这是明示的模拟环境变化，**不是个体发起改写**。旧 S36 继续使用 v1 回执，第四数 **48** 而当前 v2 正确值 **10**，B 仍合法成功24；S37 对原回执与新任务字节哈希校验返回 **Conflict、B0**。此时单世界 Query 额度已经消耗，再发 Probe 确实返回 **Quota 且收费0**；S37 未解决如何自动更新额度并重新学习新任务。
+- **直接内核验收**：在世界没有成功 Probe 时任意 Validate 回执返回 **NotFound、仍收费2 A**；先实际 Probe 后原回执 Verify **Ok/2 A**，篡改标签 Verify **Conflict/2 A**，证据大于256字节返回 **BadRequest**，snapshot→restore 的内核记录及 state hash 一致，任务变更后原回执失效。
+- **继承效益同费对照**：P2 seed91 的两个世界初始状态、专家与导入版本一致，均导入同样工具且付费 **35 A**，可见继承目标 **A25,581 /255 ticks / B24**，不可见 registry sham **A46,057 /336 ticks / B24**，正常继承少用 **20,476 A gas（约44.5% sham A）**，双方仍独立查询并按内核记录核验；差额来自避免重搜，不能据此声称查询无成本或无界学习增长。
+
+### 保留的限制与后续路线
+- 这个验证过程**依赖可信的模拟内核持久化原始回执及公开任务指纹**；没有对外部签名、跨设备证据、攻击者控制内核、同世界任务在最终 Verify 后再次变化造成的 TOCTOU、或大量重复 Verify 猜测攻击作安全性证明。`VerifyProbe` 可观察 Ok/Conflict，甚至可能成为有资源成本的等值测试 oracle，因此严禁称其为密码学不可伪造凭证。
+- 研究者仍提供固定比较假设、候选输入、54种闭合图语法、最多2附加阶段和 P1/P2 专家；实验所用伪造、CAS篡改、任务变更是研究者介入而不是自主对抗。新版本安全目标仅是发现旧证据不可用并 **fail-closed**，后续应研究带版本授权的安全重新查询/适应变更规则及任务中途改变的原子验证。**G0 GO；G1/G2 NO-GO，E001未预注册。**
