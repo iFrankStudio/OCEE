@@ -73,6 +73,12 @@ pub enum Op {
     /// Prepend a list of arbitrary serialized blocks; full graph revalidated.
     /// This can introduce branches/guards but cannot bypass VM static checks.
     PrependBlocks(u32,u32),
+    /// Extend one existing Return block by appended typed instructions
+    /// and change its return register. Input is a canonical Program,
+    /// block name, JSON Vec<Instruction>, and U32 register to return.
+    /// Every intermediate program must pass full static validation; no
+    /// privileged action or remote service is exposed by this editor.
+    AppendInstructions(u32,u32,u32,u32),
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Terminator {
@@ -300,6 +306,13 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
         Op::Slice(a,start,len)=>{
             need(defs,*a,Type::Bytes)?;need(defs,*start,Type::U32)?;
             need(defs,*len,Type::U32)?;Ok(Type::Bytes)
+        },
+        Op::AppendInstructions(program,block,steps,output)=>{
+            need(defs,*program,Type::Bytes)?;
+            need(defs,*block,Type::Bytes)?;
+            need(defs,*steps,Type::Bytes)?;
+            need(defs,*output,Type::U32)?;
+            Ok(Type::Bytes)
         },
         Op::PrependBlocks(program,blocks)=>{
             need(defs,*program,Type::Bytes)?;
@@ -579,6 +592,30 @@ fn execute(op:&Op,regs:&BTreeMap<u32,Value>)->Result<Value,VmError>{
             if value>255 {return Err(VmError::Range);}
             Value::Bytes(vec![value as u8])
         },
+        Op::AppendInstructions(source,name,steps,output)=>{
+            let original=bytes(regs,*source)?;
+            let block_id=std::str::from_utf8(bytes(regs,*name)?)
+                .map_err(|_|VmError::InvalidInput)?;
+            let additions:Vec<Instruction>=serde_json::from_slice(bytes(regs,*steps)?)
+                .map_err(|_|VmError::InvalidInput)?;
+            let final_register=num(regs,*output)?;
+            let mut program:Program=serde_json::from_slice(original)
+                .map_err(|_|VmError::InvalidInput)?;
+            if program.canonical_bytes()!=original || program.validate().is_err(){
+                return Err(VmError::InvalidInput);
+            }
+            let block=program.functions[0].blocks.iter_mut()
+                .find(|b|b.id==block_id).ok_or(VmError::InvalidInput)?;
+            if !matches!(block.terminator,Terminator::Return{..}){
+                return Err(VmError::InvalidInput);
+            }
+            block.instructions.extend(additions);
+            block.terminator=Terminator::Return{value:final_register};
+            // Full verification also rejects duplicate register IDs,
+            // invalid operands, excessive length, and broken types.
+            program.validate().map_err(|_|VmError::InvalidInput)?;
+            Value::Bytes(program.canonical_bytes())
+        },
         Op::PrependBlocks(source,new_blocks)=>{
             let original=bytes(regs,*source)?;
             let additions:Vec<Block>=serde_json::from_slice(bytes(regs,*new_blocks)?)
@@ -682,6 +719,9 @@ fn gas_cost(op:&Op,regs:&BTreeMap<u32,Value>)->Result<u64,VmError>{
         Op::TlvEncode(_,a)=>bytes(regs,*a)?.len().saturating_add(3),
         Op::ByteStuffEncode(a,_,_,_)=>bytes(regs,*a)?.len().saturating_mul(2),
         Op::ByteStuffDecode(a,_,_,_)=>bytes(regs,*a)?.len(),
+        Op::AppendInstructions(a,b,c,_)=>bytes(regs,*a)?.len().saturating_mul(3)
+            .saturating_add(bytes(regs,*b)?.len())
+            .saturating_add(bytes(regs,*c)?.len()),
         Op::PrependBlocks(a,b)=>bytes(regs,*a)?.len().saturating_mul(3)
             .saturating_add(bytes(regs,*b)?.len()),
         Op::RewriteOp(a,b,_,d)=>bytes(regs,*a)?.len().saturating_mul(3)
@@ -833,6 +873,48 @@ mod tests {
         assert_eq!(run_isolated(&program,vec![1,2,3,4],100),
             Ok((Value::U32(4),2)));
     }
+
+    #[test]
+    fn append_instructions_extends_typed_graph_and_rejects_invalid_extensions(){
+        let base=p(vec![Instruction{id:1,op:Op::Len(0)}],
+            Terminator::Return{value:1},Type::U32);
+        let stage=vec![
+            Instruction{id:2,op:Op::Len(0)},
+            Instruction{id:3,op:Op::Add(1,2)},
+        ];
+        let editor=|raw:Vec<u8>,items:Vec<Instruction>,output:u32|{
+            p(vec![
+                Instruction{id:1,op:literal(&raw)},
+                Instruction{id:2,op:literal(b"entry")},
+                Instruction{id:3,op:literal(&serde_json::to_vec(&items).unwrap())},
+                Instruction{id:4,op:Op::ConstU32(output)},
+                Instruction{id:5,op:Op::AppendInstructions(1,2,3,4)},
+            ],Terminator::Return{value:5},Type::Bytes)
+        };
+        let original=base.canonical_bytes();
+        let edited=run_isolated(&editor(original.clone(),stage.clone(),3),vec![],4000)
+            .unwrap().0;
+        let Value::Bytes(raw)=edited else {panic!("new graph must be bytes")};
+        let program:Program=serde_json::from_slice(&raw).unwrap();
+        assert_eq!(program.canonical_bytes(),raw);
+        assert_eq!(program.functions[0].blocks[0].instructions.len(),3);
+        assert_eq!(run_isolated(&program,vec![1,2,3],200).unwrap().0,Value::U32(6));
+        assert_ne!(base.content_hash().unwrap(),program.content_hash().unwrap());
+
+        // Type safety: inputs, duplicate registers and declared return
+        // must still satisfy the complete verifier.
+        let wrong=vec![Instruction{id:2,op:Op::Add(0,1)}];
+        assert_eq!(run_isolated(&editor(original.clone(),wrong,2),vec![],4000),
+            Err(VmError::InvalidInput));
+        let duplicate=vec![Instruction{id:1,op:Op::ConstU32(99)}];
+        assert_eq!(run_isolated(&editor(original.clone(),duplicate,1),vec![],4000),
+            Err(VmError::InvalidInput));
+        assert_eq!(run_isolated(&editor(original.clone(),stage.clone(),99),vec![],4000),
+            Err(VmError::InvalidInput));
+        let no_op=run_isolated(&editor(original,vec![],1),vec![],4000).unwrap().0;
+        assert_eq!(no_op,Value::Bytes(base.canonical_bytes()));
+    }
+
     #[test]
     fn mutation_creates_a_new_valid_version() {
         let base=p(vec![Instruction{id:1,op:Op::ConstU32(4)}],
