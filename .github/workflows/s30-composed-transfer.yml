@@ -1,0 +1,28 @@
+name: S30 Composed Cross-Family Learning and Repair
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s30-composed-transfer.yml"
+      - "crates/organism-seeds/src/s30_composed_transfer.rs"
+      - "crates/organism-seeds/tests/s30_composed_transfer.rs"
+      - "crates/organism-seeds/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s30-composed-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-composed-transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native two-node VM program synthesis, P1->P2 reuse, equal-charge sham, and CAS semantic repair
+        run: cargo test -p ocee-organism-seeds --test s30_composed_transfer -- --show-output
