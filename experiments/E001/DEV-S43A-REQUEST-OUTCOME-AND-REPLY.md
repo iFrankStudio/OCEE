@@ -12,7 +12,7 @@ S42B 的个体能保存实际 SEND 回执、按 u64 ID 查询丢弃并请求一�
 - `RequestOutcomeFor` 提供单个 Bytes 入参，`ConfirmResponseFor` 提供两个 Bytes 入参，透过现有静态类型验证、`WorldCall` 与 `program_host` 转换。错长 ID 拒绝。只增加查询/验收动作，不自动重启或重放请求，不修改研究者提供的 S40–S42B 活动个体程序与历史协议专家。
 
 ## 两项定向原生反例（均未运行）
-1. **执行后回复在途**：真实大于U32上限的 SEND ID，合法 P2 `REMOTE_EVAL` 从 `InFlight` 到 B20 已扣费的 `CommittedB`，此刻响应仍在C→A传输，直接伪装收到响应不能验收。只有真的 Receive 之后，对相同 request ID、response message ID、完整 reply bytes 的确认才 Ok；篡改 reply 和伪造 request ID 均 Conflict。回复消费后状态仍为 `CommittedB`（不可因为邮箱空而当作未执行）。
+1. **执行后回复在途**：真实大于U32上限的 SEND ID，合法 P2 `REMOTE_EVAL` 从 `InFlight` 到 B20 已扣费的 `CommittedB`，此刻响应仍在C→A传输，直接伪装收到响应不能验收。只有真的 Receive 之后，对相同 request ID、response message ID、完整 reply bytes 的确认才 Ok；篡改 reply 和伪造 request ID 均 Conflict。回复消费后状态仍为 `CommittedB`（不可因为邮箱空而当作未执行）。同一协议u32工作ID再次经新内核u64 SEND提交，服务去重导致本次B0；**第一次收到的合法回复不能认证第二次请求**。
 2. **未执行与已处理B0分离**：真正任务漂移产生 `TaskFenceDrop`、B0，判 `Dropped`；另一个无任务栅栏世界发送无效帧，服务实际返回诊断且 B0，判 `HandledNoB` 而不是 `Dropped` / `CommittedB`。未发送ID只得 `Unknown`。
 
 ## 限制及后续

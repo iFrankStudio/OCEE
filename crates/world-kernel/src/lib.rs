@@ -774,8 +774,9 @@ impl World {
         let mut out=RequestOutcome{request_id,state:RequestState::Unknown,
             response_message_id:None,b_gas_charged:None,reply_location:None};
         if !self.recently_sent_by(actor,request_id){return out;}
-        if let Some(e)=self.state.service_events.iter().find(|e|
-            e.request_message_id==request_id){
+        if let Some(e)=self.state.service_events.iter()
+            .rev().take(Self::REQUEST_PROVENANCE_WINDOW)
+            .find(|e|e.request_message_id==request_id){
             out.state=if e.b_gas_charged>0{
                 RequestState::CommittedB
             }else{RequestState::HandledNoB};
@@ -793,8 +794,9 @@ impl World {
                     ReplyLocation::Mailbox
                 }else{ReplyLocation::NotQueued}
             );
-        }else if self.state.fence_drops.iter().any(|d|
-            d.actor==actor && d.message_id==request_id){
+        }else if self.state.fence_drops.iter()
+            .rev().take(Self::REQUEST_PROVENANCE_WINDOW)
+            .any(|d|d.actor==actor && d.message_id==request_id){
             out.state=RequestState::Dropped;
         }else if self.state.pending_deliveries.iter()
             .chain(self.state.mailboxes.get(&NodeId::C).into_iter().flatten())
@@ -813,9 +815,10 @@ impl World {
         let message=serde_json::from_slice::<Message>(reply).ok()?;
         if message.actor!=actor || message.source!=NodeId::C ||
             message.destination!=NodeId::A {return None;}
-        let event=self.state.service_events.iter().find(|e|
-            e.request_message_id==request_id &&
-            e.response_message_id==message.id)?;
+        let event=self.state.service_events.iter()
+            .rev().take(Self::REQUEST_PROVENANCE_WINDOW)
+            .find(|e|e.request_message_id==request_id &&
+                e.response_message_id==message.id)?;
         let observed=self.audit.iter().rev()
             .take(Self::REQUEST_PROVENANCE_WINDOW).any(|a|{
                 if a.result.code!=Code::Ok ||
@@ -1555,7 +1558,7 @@ mod tests {
             request_id:7,body
         }).unwrap();
         let sent=w.tick(Some(Action::Send{
-            actor:ORGANISM_ID,destination:NodeId::C,bytes:wire}));
+            actor:ORGANISM_ID,destination:NodeId::C,bytes:wire.clone()}));
         assert_eq!(sent.code,Code::Ok);
         let id=u64::from_le_bytes(sent.payload.as_slice().try_into().unwrap());
         assert!(id>u32::MAX as u64);
@@ -1616,7 +1619,31 @@ mod tests {
             actor:ORGANISM_ID,request_id:id,
             reply:serde_json::to_vec(&tampered).unwrap()})).code,Code::Conflict);
         assert_eq!(w.tick(Some(Action::ConfirmResponseFor{
-            actor:ORGANISM_ID,request_id:id+999,reply:raw})).code,Code::Conflict);
+            actor:ORGANISM_ID,request_id:id+999,reply:raw.clone()})).code,Code::Conflict);
+
+        // The same protocol-level u32 job ID is submitted AGAIN with a new
+        // kernel-level u64 message ID. The service deduplicates B work;
+        // the first reply must NOT confirm the second transport request.
+        let duplicate=w.tick(Some(Action::Send{
+            actor:ORGANISM_ID,destination:NodeId::C,bytes:wire}));
+        assert_eq!(duplicate.code,Code::Ok);
+        let second_id=u64::from_le_bytes(
+            duplicate.payload.as_slice().try_into().unwrap());
+        assert_ne!(second_id,id);
+        for _ in 0..30{
+            if w.state.service_events.len()==2{break;}
+            w.tick(None);
+        }
+        assert_eq!(w.state.service_events.len(),2);
+        let repeated=w.tick(Some(Action::RequestOutcomeFor{
+            actor:ORGANISM_ID,request_id:second_id}));
+        let repeated:RequestOutcome=serde_json::from_slice(&repeated.payload).unwrap();
+        assert_eq!(repeated.state,RequestState::HandledNoB);
+        assert_eq!(repeated.b_gas_charged,Some(0));
+        assert_ne!(repeated.response_message_id,state.response_message_id);
+        assert_eq!(w.tick(Some(Action::ConfirmResponseFor{
+            actor:ORGANISM_ID,request_id:second_id,reply:raw}))
+            .code,Code::Conflict);
         let after=w.tick(Some(Action::RequestOutcomeFor{
             actor:ORGANISM_ID,request_id:id}));
         let after:RequestOutcome=serde_json::from_slice(&after.payload).unwrap();

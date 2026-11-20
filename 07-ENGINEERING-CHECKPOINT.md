@@ -548,3 +548,7 @@
 - [S43A记录](./experiments/E001/DEV-S43A-REQUEST-OUTCOME-AND-REPLY.md) · [内核与两项最小测试](./crates/world-kernel/src/lib.rs) · [手动定向CI](./.github/workflows/s43a-request-outcome.yml)。新增受费且带实际SEND审计资格验证的 `RequestOutcomeFor`（Unknown/InFlight/Dropped/HandledNoB/CommittedB）以及 `ConfirmResponseFor`（要求真实C→A服务消息和已发生的Receive全文一致），不自动重放、不放宽权限。
 - 关键待证伪：合法P2计算即使B20已扣费而回复还在途，也不能视为任务未执行；只有真实Receive后才能认证该回复；正常协议诊断B0不是栅栏丢弃。u64消息ID保留，不等于协议内部u32工作ID。因果验证只在最近4096条审计窗口中寻找所有权/交付证据，过旧证据fail closed。
 - **没有cargo/rustc可用，也没有S41–S43A原生成功证据；不声明新生命或E001确认结果。** 先执行S43A窄CI→S42B→S42A→S41/S40，再在有需要时workspace。G0 GO、G1/G2 NO-GO、E001未预注册。
+
+### 2026-11-21 — S43A 静态复核：同协议ID不同消息ID的交叉回复负例
+- 在已提交的S43A窄测试中追加**同一项测试内的关键对照**：合法P2 RemoteEval采用相同协议层u32工作ID重复SEND，内核分配不同u64消息ID，服务去重不再次扣B；把第一条实际收到的有效回复用于第二条请求的 `ConfirmResponseFor` 必须Conflict。防止把同一协议工作ID误当全局传输请求身份。将服务事件/栅栏丢弃证据扫描限制为最近4096条，以使单次查询成本有界；过旧状态降级Unknown/Conflict。
+- 这仍是待原生验收代码；不得称跨网络 exactly-once、内核/VM单测通过或正式E001结果。验证状态/科学门槛不变。
