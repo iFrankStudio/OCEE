@@ -1,16 +1,6 @@
 name: S36 Active Disagreement Probe and One-Query World Oracle
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s36-active-probe.yml"
-      - "crates/organism-seeds/src/s36_active_probe.rs"
-      - "crates/organism-seeds/tests/s36_active_probe.rs"
-      - "crates/organism-seeds/src/lib.rs"
-      - "crates/world-kernel/src/lib.rs"
-      - "crates/world-kernel/src/program_host.rs"
-      - "crates/organism-vm/src/lib.rs"
   workflow_dispatch:
 
 concurrency:

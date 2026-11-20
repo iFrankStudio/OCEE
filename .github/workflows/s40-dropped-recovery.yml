@@ -1,17 +1,6 @@
 name: S40 Dropped Task Retry Via Autonomous VM Root Relearning
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s40-dropped-recovery.yml"
-      - "crates/organism-seeds/src/s40_dropped_recovery.rs"
-      - "crates/organism-seeds/tests/s40_dropped_recovery.rs"
-      - "crates/organism-seeds/src/lib.rs"
-      - "crates/organism-seeds/tests/s28_cross_utility.rs"
-      - "crates/world-kernel/src/lib.rs"
-      - "crates/world-kernel/src/program_host.rs"
-      - "crates/organism-vm/src/lib.rs"
   workflow_dispatch:
 
 concurrency:
