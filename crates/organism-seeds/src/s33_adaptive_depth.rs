@@ -83,13 +83,15 @@ pub fn s33_adaptive_depth_root(p1_hash:&str,p2_hash:&str)->Program{
         ins(242,Op::JsonFieldBytes(240,241)),
     ];
     candidate.instructions.splice(0..0,setup);
-    let find=|id:u32|candidate.instructions.iter().position(|x|x.id==id)
-        .expect("S6 candidate register id present");
-    let n209=find(209);candidate.instructions[n209].op=Op::Mod(237,208);
-    let n210=find(210);candidate.instructions[n210].op=Op::Div(237,208);
-    let n213=find(213);candidate.instructions[n213].op=Op::Div(237,212);
-    let n222=find(222);candidate.instructions[n222].op=
-        Op::RewriteOp(242,218,219,214);
+    for node in &mut candidate.instructions {
+        node.op=match node.id{
+            209=>Op::Mod(237,208),
+            210=>Op::Div(237,208),
+            213=>Op::Div(237,212),
+            222=>Op::RewriteOp(242,218,219,214),
+            _=>node.op.clone(),
+        };
+    }
 
     root.validate().expect("S33 adaptive topology selection root");
     root
