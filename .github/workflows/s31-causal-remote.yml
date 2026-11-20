@@ -1,0 +1,28 @@
+name: S31 VM-Generated Tool Controls Real Remote Payload
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s31-causal-remote.yml"
+      - "crates/organism-seeds/src/s31_causal_remote.rs"
+      - "crates/organism-seeds/tests/s31_causal_remote.rs"
+      - "crates/organism-seeds/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s31-causal-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  causal-real-wire:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Real P1/P2 B frames must carry VM-computed count plus same-cost mutated count ablation
+        run: cargo test -p ocee-organism-seeds --test s31_causal_remote -- --show-output
