@@ -451,3 +451,201 @@ fn s36_changed_probe_bank_affects_vm_branch_not_hidden_answer(){
     println!("S36 probe bank first_distinguishing used first proposal; real B24 A={}",
         a_gas(&w));
 }
+
+
+fn boot_legacy_s36(family:Family,seed:u64)->(World,String){
+    let p1=s32_p1_composite_consumer();
+    let p2=s32_p2_composite_consumer();
+    let root=s36_active_probe_root(
+        &p1.content_hash().unwrap(),&p2.content_hash().unwrap());
+    let hash=root.content_hash().unwrap();
+    let mut w=World::with_protocol(Config{
+        seed,a_gas_per_epoch:100_000,..Config::default()
+    },family,42);
+    install_public_fixtures(&mut w,seed);
+    for program in [p1,p2,root]{
+        put(&mut w,format!("/self/versions/{}",
+            program.content_hash().unwrap()),program.canonical_bytes());
+    }
+    put(&mut w,"/self/active".into(),hash.clone().into_bytes());
+    (w,hash)
+}
+fn run_until_cached(w:&mut World){
+    for _ in 0..15_000{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        if w.audit.last().is_some_and(|a|a.result.code==Code::Ok &&
+            matches!(&a.action,Some(Action::Write{key,..})
+                if key==EVIDENCE)){
+            return;
+        }
+    }
+    panic!("active root never saved the queried label");
+}
+fn fake_label(input:&[u8],output:u32)->Vec<u8>{
+    serde_json::to_vec(&TransformExample{input:input.to_vec(),output})
+        .unwrap()
+}
+fn change_world_task_rule(w:&mut World){
+    // Explicit researcher-side privileged intervention; no /public WRITE
+    // is available to the organism. This genuinely changes the kernel
+    // oracle rule, not merely the task description.
+    let obj=w.state.objects.get_mut(DEPTH_TASK).expect("task fixture");
+    let mut task:TransformTask=serde_json::from_slice(&obj.bytes).unwrap();
+    assert_eq!(task.task_id,"s36-interactive-probe-v1");
+    task.task_id="s37-changed-rule-v2".into();
+    for ex in &mut task.examples{ex.output=2*ex.input.len() as u32;}
+    obj.bytes=serde_json::to_vec(&task).unwrap();
+    obj.version+=1;
+}
+fn task_truth(w:&World,input:&[u8])->u32{
+    let task:TransformTask=serde_json::from_slice(
+        &w.state.objects[DEPTH_TASK].bytes).unwrap();
+    if task.task_id=="s37-changed-rule-v2"{
+        2*input.len() as u32
+    }else{rule(w.state.config.seed,input)}
+}
+
+/// An organism-owned cache object can be forged without any paid query.
+/// The old S36 root will trust it and successfully perform B with the
+/// wrong operand. The S37 root must refuse it using kernel provenance.
+#[test]
+fn s37_preloaded_forgery_rejected_but_legacy_s36_trusts_wrong_label(){
+    let (mut guard,_)=boot(Family::P2,55,true,true);
+    let (mut legacy,_)=boot_legacy_s36(Family::P2,55);
+    let fake=fake_label(&[7,8,9],6);
+    put(&mut guard,EVIDENCE.into(),fake.clone());
+    put(&mut legacy,EVIDENCE.into(),fake);
+    run_until_switch_or_end(&mut guard);finish(&mut guard);
+    assert_eq!(probe_actions(&guard),0);
+    assert_eq!(verification_calls(&guard),1);
+    assert_eq!(verification_code(&guard,Code::NotFound),1);
+    assert_eq!(b_gas(&guard),0);
+    assert!(!guard.state.objects.contains_key(REMOTE_VALUES));
+    assert_eq!(guard.state.objects["/self/active"].version,0);
+
+    run_until_switch_or_end(&mut legacy);finish(&mut legacy);
+    real_b(&legacy,Family::P2);
+    assert_eq!(probe_actions(&legacy),0);
+    assert_eq!(verification_calls(&legacy),0);
+    let job:TransformTask=serde_json::from_slice(
+        &legacy.state.objects["/public/E001/transform"].bytes).unwrap();
+    let got=fourth(&legacy);
+    let truth=task_truth(&legacy,&job.held_out_input);
+    assert_ne!(got,truth);
+    println!("S37 preloaded forged cache: old_S36_B24_wrong={} oracle={} guarded_B0_verified_NotFound",
+        got,truth);
+}
+
+/// The first search candidate receives an authentic probe label and is
+/// refuted. Then an adversarial owner changes the saved evidence through
+/// a real paid CAS write. S37 must reject on the second candidate's READ.
+/// S36 accepts a later wrong candidate and computes B with a false value.
+#[test]
+fn s37_post_query_cas_tamper_rejected_but_legacy_accepts_bad_operand(){
+    let (mut guard,_)=boot(Family::P2,55,true,true);
+    let (mut legacy,_)=boot_legacy_s36(Family::P2,55);
+    run_until_cached(&mut guard);
+    run_until_cached(&mut legacy);
+    let forged=fake_label(&[7,8,9],10);
+    for w in [&mut guard,&mut legacy]{
+        let r=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:EVIDENCE.into(),
+            bytes:forged.clone(),expected_version:Some(0),
+        }));
+        assert_eq!(r.code,Code::Ok);
+        assert_eq!(w.state.objects[EVIDENCE].version,1);
+    }
+    run_until_switch_or_end(&mut guard);finish(&mut guard);
+    assert_eq!(probe_actions(&guard),1);
+    assert_eq!(verification_calls(&guard),2);
+    assert_eq!(verification_code(&guard,Code::Ok),1);
+    assert_eq!(verification_code(&guard,Code::Conflict),1);
+    assert_eq!(b_gas(&guard),0);
+    assert!(!guard.state.objects.contains_key(REMOTE_VALUES));
+    run_until_switch_or_end(&mut legacy);finish(&mut legacy);
+    real_b(&legacy,Family::P2);
+    let job:TransformTask=serde_json::from_slice(
+        &legacy.state.objects["/public/E001/transform"].bytes).unwrap();
+    assert_ne!(fourth(&legacy),rule(55,&job.held_out_input));
+    println!("S37 paid CAS tamper: old_S36_B24_wrong={} true={} guarded_B0_VerifyConflict",
+        fourth(&legacy),rule(55,&job.held_out_input));
+}
+
+/// The world changes the task's actual oracle formula while the first
+/// paid probe receipt is in flight. The old answer must NOT be applied
+/// to this new task. Single-query budget means S37 stops rather than
+/// inventing a new label it cannot yet afford.
+#[test]
+fn s37_task_version_change_invalidates_paid_receipt(){
+    let (mut guard,_)=boot(Family::P2,55,true,true);
+    let (mut legacy,_)=boot_legacy_s36(Family::P2,55);
+    run_until_cached(&mut guard);
+    run_until_cached(&mut legacy);
+    let issued=guard.state.probe_record.as_ref().unwrap().clone();
+    change_world_task_rule(&mut guard);
+    change_world_task_rule(&mut legacy);
+    assert_eq!(guard.state.probe_record.as_ref().unwrap(),&issued);
+    assert_eq!(guard.state.objects[DEPTH_TASK].bytes,
+        legacy.state.objects[DEPTH_TASK].bytes);
+    run_until_switch_or_end(&mut guard);finish(&mut guard);
+    assert_eq!(verification_code(&guard,Code::Conflict),1);
+    assert_eq!(b_gas(&guard),0);
+    assert!(!guard.state.objects.contains_key(REMOTE_VALUES));
+    let extra=guard.tick(Some(Action::Probe{
+        actor:ORGANISM_ID,input:vec![7,8,9],
+    }));
+    assert_eq!(extra.code,Code::Quota);
+    assert_eq!(extra.gas_charged,0);
+    run_until_switch_or_end(&mut legacy);finish(&mut legacy);
+    real_b(&legacy,Family::P2);
+    let job:TransformTask=serde_json::from_slice(
+        &legacy.state.objects["/public/E001/transform"].bytes).unwrap();
+    let old=fourth(&legacy);
+    let correct=task_truth(&legacy,&job.held_out_input);
+    assert_ne!(old,correct);
+    println!("S37 genuine oracle task drift: legacy_B24_old={} v2_truth={} guarded_B0_Conflict",
+        old,correct);
+}
+
+/// Kernel guard never fabricates labels. It matches only a record issued
+/// by a successful earlier Probe of this exact world and this task hash.
+#[test]
+fn s37_kernel_verification_requires_actual_original_receipt(){
+    let (mut w,_)=boot(Family::P2,55,true,true);
+    let arbitrary=fake_label(&[7,8,9],9);
+    let first=w.tick(Some(Action::VerifyProbe{
+        actor:ORGANISM_ID,evidence:arbitrary.clone(),
+    }));
+    assert_eq!(first.code,Code::NotFound);
+    assert_eq!(first.gas_charged,2);
+    assert!(w.state.probe_record.is_none());
+    let issued=w.tick(Some(Action::Probe{
+        actor:ORGANISM_ID,input:vec![7,8,9],
+    }));
+    assert_eq!(issued.code,Code::Ok);
+    assert_eq!(issued.gas_charged,52);
+    assert_eq!(w.state.probe_count,1);
+    let yes=w.tick(Some(Action::VerifyProbe{
+        actor:ORGANISM_ID,evidence:issued.payload.clone(),
+    }));
+    assert_eq!(yes.code,Code::Ok);
+    assert_eq!(yes.gas_charged,2);
+    let modified=w.tick(Some(Action::VerifyProbe{
+        actor:ORGANISM_ID,evidence:fake_label(&[7,8,9],10),
+    }));
+    assert_eq!(modified.code,Code::Conflict);
+    assert_eq!(modified.gas_charged,2);
+    assert_eq!(w.tick(Some(Action::VerifyProbe{
+        actor:ORGANISM_ID,evidence:vec![0;257],
+    })).code,Code::BadRequest);
+    let copy=World::from_snapshot(&w.snapshot_json()).unwrap();
+    assert_eq!(copy.state_hash(),w.state_hash());
+    assert_eq!(copy.state.probe_record,w.state.probe_record);
+    change_world_task_rule(&mut w);
+    let stale=w.tick(Some(Action::VerifyProbe{
+        actor:ORGANISM_ID,evidence:issued.payload,
+    }));
+    assert_eq!(stale.code,Code::Conflict);
+    assert_eq!(stale.gas_charged,2);
+}
