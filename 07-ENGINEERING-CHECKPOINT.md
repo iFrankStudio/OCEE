@@ -531,3 +531,6 @@
 ### 2026-11-20 — CI预算治理，完整保留可复核性，不绕过S41未验状态
 - 新增 [CI-REPLAY-POLICY.md](./CI-REPLAY-POLICY.md) 并将历史 S22–S40 定向工作流的 main push 触发改为手动`workflow_dispatch`，早期S4/S6原本已为手动；保留**当前S41推送定向触发**和**完整workspace在PR上自动检查、main上手动触发**。旧的Cargo执行命令/测试数据和GitHub Actions原生历史完全保留。动机：过去更改同一共享world-kernel/src/lib.rs或organism-seeds/src/lib.rs触发十多个原生作业，浪费私有仓库运行额度且导致早期长任务被自动取消。
 - [S41 #44748358687](https://github.com/iFrankStudio/OCEE/actions/runs/44748358687) 两个attempt仍`runner_id=0, steps=[]`；[S40 #44748358559](https://github.com/iFrankStudio/OCEE/actions/runs/44748358559)及[全workspace #44748358715](https://github.com/iFrankStudio/OCEE/actions/runs/44748358715)同样未执行任何步骤。仓库owner需确认Actions预算/账户设置或托管运行器调度情况；没有可用编译/运行时不得谎报任何S41本地/原生成功。治理修改使用`[skip ci]`提交避免继续触发被账户环境阻断的jobs。**S41仍处于工程候选而非科学突破，G0 GO/G1/G2 NO-GO、E001未预注册。**
+### 2026-11-20 — S42A：旧drop→最新受保护请求ID 的因果门（待原生验证）
+- [S42A开发记录](./experiments/E001/DEV-S42A-REQUEST-CAUSAL-FENCE.md) · [内核实现及反例](./crates/world-kernel/src/lib.rs) · [手动CI](./.github/workflows/s42a-request-fence.yml)。从S40/S41代码静态审查识别 actor 级历史丢弃会误导当前在途请求恢复的风险。新`last_guarded_send` 随成功栅栏 SEND 持久化，`FenceStatus` 和 `RestartRoot` 都必须与最新真实消息ID、当前公开task hash匹配。
+- 已提交一项内核负面对照（两条错峰受保护SEND、早丢一条、最新仍在途时拒绝旧drop触发重启；最新也丢弃时才返回可恢复状态），**尚无cargo/rustc及GitHub原生结果**。暂不修改原有S40/S41模型、不假报B计费结果。恢复runner后优先 S42A→S41→S40 定向，必要时workspace；G0 GO，G1/G2 NO-GO，正式E001未预注册。

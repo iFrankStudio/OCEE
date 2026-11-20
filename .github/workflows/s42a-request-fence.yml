@@ -1,0 +1,20 @@
+name: S42A Latest Guarded Request Drop Causality
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s42a-request-fence-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-request-causality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native S42A stale drop versus newer inflight request
+        run: cargo test -p ocee-world-kernel s42_stale_drop_cannot_authorize_recovery_for_newer_inflight_request -- --show-output

@@ -129,6 +129,10 @@ pub struct WorldState {
     pub guarded_sends: BTreeMap<u64,String>,
     #[serde(default,skip_serializing_if="Vec::is_empty")]
     pub fence_drops: Vec<TaskFenceDrop>,
+    /// S42A: most recent successful guarded C request per actor, persisted
+    /// so stale drops cannot authorize recovery of a newer in-flight send.
+    #[serde(default,skip_serializing_if="BTreeMap::is_empty")]
+    pub last_guarded_send:BTreeMap<u64,u64>,
     /// S40: frozen first active root for one guarded, audited recovery.
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub initial_root_hash:Option<String>,
@@ -362,7 +366,7 @@ impl World {
                 protocol_service: None, service_events: vec![],
                 probe_count: 0,probe_record:None,probe_renewed_for:None,
                 task_fences:BTreeMap::new(),guarded_sends:BTreeMap::new(),
-                fence_drops:vec![],
+                fence_drops:vec![],last_guarded_send:BTreeMap::new(),
                 initial_root_hash:None,guarded_restarts:BTreeMap::new(),
             },
             audit: vec![],
@@ -677,6 +681,20 @@ impl World {
         Ok(())
     }
 
+    /// Conservative S42A gate: a real drop must correspond to the LAST
+    /// successfully sent guarded request, under the still-current task.
+    /// The VM does not yet explicitly carry the request ID (S42B work).
+    fn has_latest_recoverable_drop(&self,actor:u64)->bool{
+        let Some(&latest)=self.state.last_guarded_send.get(&actor)
+            else{return false;};
+        let current=self.state.objects.get("/public/E001/compose-depth")
+            .map(|o|hash_bytes(&o.bytes));
+        self.state.fence_drops.iter().any(|d|
+            d.actor==actor && d.message_id==latest &&
+            d.observed_hash==current &&
+            d.observed_hash.as_deref()!=Some(d.expected_hash.as_str()))
+    }
+
     fn apply_action(&mut self, action: Action) -> ActionResult {
         let actor = match &action {
             Action::Observe {actor} | Action::Read {actor,..} |
@@ -798,6 +816,7 @@ impl World {
                 self.state.pending_deliveries.push(m);
                 if let Some(task_hash)=bound {
                     self.state.guarded_sends.insert(id,task_hash);
+                    self.state.last_guarded_send.insert(actor,id);
                 }
                 ActionResult::ok(id.to_le_bytes().to_vec(),gas,bandwidth)
             }
@@ -867,7 +886,7 @@ impl World {
                 // bounded, visible price. Empty polling must not be free.
                 let gas=1;
                 if let Err(code)=self.spend_a_gas(gas){return ActionResult::fail(code);}
-                let has_drop=self.state.fence_drops.iter().any(|d|d.actor==actor) &&
+                let has_drop=self.has_latest_recoverable_drop(actor) &&
                     self.state.guarded_restarts.get(&actor).copied().unwrap_or(0)==0;
                 ActionResult{
                     code:if has_drop{Code::Ok}else{Code::Empty},
@@ -882,11 +901,7 @@ impl World {
                 if self.state.guarded_restarts.get(&actor).copied().unwrap_or(0)!=0 {
                     return ActionResult::fail(Code::Quota);
                 }
-                let current=self.state.objects.get("/public/E001/compose-depth")
-                    .map(|o|hash_bytes(&o.bytes));
-                if !self.state.fence_drops.iter().any(|d|
-                    d.actor==actor && d.observed_hash==current &&
-                    d.observed_hash.as_deref()!=Some(d.expected_hash.as_str())){
+                if !self.has_latest_recoverable_drop(actor){
                     return ActionResult::fail(Code::Denied);
                 }
                 let Some(hash)=self.state.initial_root_hash.clone()
@@ -1186,6 +1201,67 @@ mod tests {
             "a refused action must not leak the hidden output as a witness");
         assert!(!world.state.objects.contains_key("/public/E001/semantic-audit"),
             "a refused action must not leak the secondary simulated answer");
+    }
+
+    #[test]
+    fn s42_stale_drop_cannot_authorize_recovery_for_newer_inflight_request(){
+        // Fixture directly arms a known task hash. S39 independently tests
+        // that an organism cannot forge an ArmTaskFence capability.
+        let mut w=World::with_protocol(Config{
+            message_delay:8,..Config::default()
+        },Family::P2,42);
+        let original=b"task-v1".to_vec();
+        w.state.objects.insert("/public/E001/compose-depth".into(),
+            Object{owner:0,version:0,bytes:original.clone()});
+        w.state.task_fences.insert(ORGANISM_ID,hash_bytes(&original));
+        let send=||Action::Send{actor:ORGANISM_ID,
+            destination:NodeId::C,bytes:vec![0x10]};
+        let first=w.tick(Some(send()));
+        assert_eq!(first.code,Code::Ok);
+        let first_id=u64::from_le_bytes(first.payload.as_slice().try_into().unwrap());
+        for _ in 0..4{w.tick(None);}
+        let second=w.tick(Some(send()));
+        assert_eq!(second.code,Code::Ok);
+        let second_id=u64::from_le_bytes(second.payload.as_slice().try_into().unwrap());
+        assert!(second_id>first_id);
+        assert_eq!(w.state.last_guarded_send.get(&ORGANISM_ID),Some(&second_id));
+
+        // World revision occurs after BOTH accepted sends, before either
+        // service commitment. The first drop is not the latest request.
+        let task=w.state.objects.get_mut("/public/E001/compose-depth").unwrap();
+        task.bytes=b"task-v2".to_vec();task.version+=1;
+        for _ in 0..12{
+            if !w.state.fence_drops.is_empty(){break;}
+            w.tick(None);
+        }
+        assert_eq!(w.state.fence_drops.len(),1);
+        assert_eq!(w.state.fence_drops[0].message_id,first_id);
+        assert!(w.state.guarded_sends.contains_key(&second_id));
+        assert!(!w.has_latest_recoverable_drop(ORGANISM_ID));
+        let stale=w.tick(Some(Action::FenceStatus{actor:ORGANISM_ID}));
+        assert_eq!(stale.code,Code::Empty);
+        assert_eq!(stale.gas_charged,1);
+        assert_eq!(w.tick(Some(Action::RestartRoot{
+            actor:ORGANISM_ID
+        })).code,Code::Denied);
+
+        // Only after the newer request is itself actually dropped may
+        // FenceStatus report an eligible cause; no B operation executed.
+        for _ in 0..12{
+            if w.state.fence_drops.len()==2{break;}
+            w.tick(None);
+        }
+        assert_eq!(w.state.fence_drops.len(),2);
+        assert_eq!(w.state.fence_drops[1].message_id,second_id);
+        assert!(w.has_latest_recoverable_drop(ORGANISM_ID));
+        let restored=World::from_snapshot(&w.snapshot_json()).unwrap();
+        assert_eq!(w.state_hash(),restored.state_hash());
+        assert_eq!(restored.state.last_guarded_send[&ORGANISM_ID],second_id);
+        let fresh=w.tick(Some(Action::FenceStatus{actor:ORGANISM_ID}));
+        assert_eq!(fresh.code,Code::Ok);
+        assert_eq!(fresh.gas_charged,1);
+        assert!(w.state.service_events.is_empty());
+        assert!(w.state.guarded_restarts.is_empty());
     }
 
     #[test]
