@@ -136,7 +136,14 @@ fn challenge_reads(w:&World)->usize{
     ).count()
 }
 fn candidate_writes(w:&World)->usize{
-    w.audit.iter().filter(|a|a.step>=4 &&
+    // The root later generates a separate S28 Len utility. Its version
+    // WRITE must NOT be counted as another S35 search candidate.
+    // Every searched candidate is written before the synthesized fourth
+    // operand is stored in REMOTE_VALUES.
+    let finish=w.audit.iter().find(|a|
+        matches!(&a.action,Some(Action::Write{key,..})
+            if key==REMOTE_VALUES)).map(|a|a.step).unwrap_or(u64::MAX);
+    w.audit.iter().filter(|a|a.step>=4 && a.step<finish &&
         matches!(&a.action,Some(Action::Write{key,..})
             if key.starts_with("/self/versions/"))).count()
 }
