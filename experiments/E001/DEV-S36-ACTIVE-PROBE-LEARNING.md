@@ -32,4 +32,20 @@ S35 证明，仅靠两条公开样例会错误识别程序，即使真实远程 
 
 [S36 VM 行为](../../crates/organism-seeds/src/s36_active_probe.rs) · [原生因果与世界测试](../../crates/organism-seeds/tests/s36_active_probe.rs) · [真实世界接口](../../crates/world-kernel/src/lib.rs) · [专用 CI](../../.github/workflows/s36-active-probe.yml)。
 
-**设计与判据先行记录；尚未从 CI 获取最终验收前，不把预期当作结果。**
+## 2026-11-20 原生验收：付费自选输入查询真正改变学习结果
+
+- [**S36 定向原生 CI #44697820767**](https://github.com/iFrankStudio/OCEE/actions/runs/44697820767) **completed/success，Rust 3 passed / 0 failed / 119.97秒**，验收源代码 SHA [`e0e7bf7`](https://github.com/iFrankStudio/OCEE/commit/e0e7bf7ac0c4651bed739634dddb2e5fd9619ee8)。三个测试覆盖跨P1/P2继承/修复/对照、世界单查询计费和权限、首个输入即有区分度时的探针选择。初始 root hash 在全部三个源目标配对相同：`0c4a108457eb67dcc5c86c26d0b3528a376e9139dd6a2e0ae9a5ddf232410a37`。
+- **深度0**：P1 seed1→P2 seed55，P1 A **14,502**；P2 **A25,445 / 254 ticks / B24**，目标 import **29 A**，工具 hash `ccbec864ef8a002aa15e07a541cfca57200fa8770f51020274f1b1d359aa43c5`。**深度1**：seed19→seed73，P1 A **23,868**；P2 **A25,462 / 254 ticks / B24**，import32 A，工具 hash `ba26376fb3a4613f0f0090125ef1c8349993c965087792c068a302b3a143745b`。**深度2**：seed37→seed91，P1 A **33,877**；P2 **A25,469 / 254 ticks / B24**，import35 A，工具 hash `b66d0084a3106dafbee2ae2426404c5d6c016c7016a08baf23ff13e920647931`。
+- 三组每个来源与目标世界都确有 **一次真实 `Action::Probe{input:[7,8,9]}`**，内核收费 A **52** 且 `probe_count==1`、一次普通受费证据 WRITE；来源第一个错误候选被查询反馈驳倒后，第二个候选从缓存 READ 证据，目标继承的正确工具也独立查询，**未重复获取环境标签**。来源实际新程序搜索版本 WRITE 数仍为 **2/20/38**，目标 P2 没有再生成已导入程序；输出在目标未标注新输入、真实 C wire、B FOLD32 及世界快照审计均正确。
+- **不主动查询的旧 S34 消融**：同样两条训练标签，旧 P2 world55 生成的第四操作数 **10** 而隐藏正确值 **48**，仍合法执行 B **24 gas**，A **25,031**。这是任务语义错误但远程计算正常成功的实证；不能把 B 的正常响应误解为 learned behavior 正确。
+- **继承的错误双标签知识**：旧 P1 在模糊标签下真实生成的错误工具，按正常 WRITE 导入 S36 P2 world55，目标仅用一次 Query 得到有区分度的标签，实际执行后拒绝旧哈希、缓存标签并重新搜索、受费 **CAS registry v0→v1**，恢复正确第四操作数48，最终 **A26,776 / 266 ticks / B24**。
+- **查询额度耗尽**：研究者将目标环境 `probe_count` 预置1而不给任何缓存，VM 实际尝试一次 Probe 得 `Quota` 后 fail-closed：**A8,151 / 13 ticks / B0**，没有伪造学习结果。世界内核的直接检查还原生覆盖：无 S36 任务 `Denied`、空/超长 `BadRequest`、有效探针 `Ok` 且确实收费52 A、第二次 `Quota` 且不扣费，snapshot/state hash 保持一致。
+- **探针银行机制反事实**：将有区分度的 `[7,8,9]` 放在第一个建议位置，VM 会直接采用首个而非必须走第二选项，实际目标 P2 完成 B24、A **26,533**；这只是研究者改变候选银行证明动态分支有效，不代表从开放输入空间发明探针。
+- **等成本 P2 world91 可见继承/不可见注册表 sham**：相同源工具导入费各 **35 A**、双方均一次查询、双方 B24。可见继承 **A25,469 / 254 ticks**；sham 重新搜索 **A45,914 / 334 ticks**，净节约 **20,445 A gas（约44.53% sham A）**。费用差异主要来自避免搜索，不意味着主动查询本身免费的或可得长期收益。
+
+### 工程回归发现
+- 新增 `Action::Probe` 后 [完整 workspace #44697820771](https://github.com/iFrankStudio/OCEE/actions/runs/44697820771) 和 [S28 定向 #44697820921](https://github.com/iFrankStudio/OCEE/actions/runs/44697820921) **首次失败**，原因不是运行语义回归：S28 测试专用于诊断的 `match Action` 未穷尽枚举新增的 Probe，Rust `E0004` 拒绝编译。修复 [`667f9afd`](https://github.com/iFrankStudio/OCEE/commit/667f9afd7c8ab804b3352864060d28f1081c16c3) **只补充 S28 审计日志的 Probe 格式化分支**，不改变旧模拟/VM/世界动作的行为。修复版 [S28 #44698286230](https://github.com/iFrankStudio/OCEE/actions/runs/44698286230) 和 [全量 #44698286285](https://github.com/iFrankStudio/OCEE/actions/runs/44698286285) 需要从对应原生日志确认最终成功与否；不得把首次失败忽略。
+
+### 严格科学限制及后续目标
+- 本次主动性仅存在于**研究者预设的 Len 与 XorFold 两个假设、两个探针建议和一次本地可信标签查询**之间。并未实现通用多候选集合的信息增益评估、连续自适应多轮查询，也没有对抗式证据认证。缓存 `/self/evidence/s36-active-probe` 没有密码学任务版本/实例绑定，**当任务在同世界中发生变化、缓存遭篡改或跨上下文迁移时可能被错误复用**；这些应作为 S37 首要可证伪风险，而非掩盖。
+- 它验证了从预先发布第三监督样例，转向运行中有成本的环境交互、记录/复用反馈并对错误继承执行 CAS 修复的机制；没有证据表明未知 API 发现、开放式自我演化或赛博生命已经出现。**G0 GO；G1/G2 NO-GO；正式 E001 尚未预注册。**
