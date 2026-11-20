@@ -208,3 +208,6 @@ pub mod s35_counterexample;
 
 /// S36: activity-selected diagnostic probes to one metered simulated environment label oracle.
 pub mod s36_active_probe;
+
+/// S37: task-bound original probe receipts verified by kernel before candidate trust.
+pub mod s37_evidence_guard;

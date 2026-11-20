@@ -1,0 +1,32 @@
+name: S37 Kernel-Bound Probe Evidence and Task Freshness
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s37-evidence-guard.yml"
+      - "crates/organism-seeds/src/s37_evidence_guard.rs"
+      - "crates/organism-seeds/tests/s37_evidence_guard.rs"
+      - "crates/organism-seeds/src/lib.rs"
+      - "crates/organism-seeds/tests/s28_cross_utility.rs"
+      - "crates/world-kernel/src/lib.rs"
+      - "crates/world-kernel/src/program_host.rs"
+      - "crates/organism-vm/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s37-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-attested-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 29
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native task-fingerprint proof, P1-P2 B and provenance failure controls
+        run: cargo test -p ocee-organism-seeds --test s37_evidence_guard -- --show-output
