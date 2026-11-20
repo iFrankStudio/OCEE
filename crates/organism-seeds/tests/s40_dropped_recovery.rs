@@ -452,7 +452,7 @@ fn drive_bounded(w:&mut World,n:usize){
 
 fn recovery_diagnostics(w:&World)->String{
     let last=w.audit.iter().rev().take(16)
-        .map(|a|format!("{}:{:?}:{}",
+        .map(|a|format!("{}:{:?}:{:?}",
             a.step,
             a.action.as_ref().map(|x|match x{
                 Action::Read{key,..}=>format!("Read({key})"),
