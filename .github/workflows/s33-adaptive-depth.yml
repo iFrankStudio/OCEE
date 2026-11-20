@@ -1,14 +1,6 @@
 name: S33 Evidence-Selected Structural Depth For Real B Operands
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s33-adaptive-depth.yml"
-      - "crates/organism-seeds/src/s33_adaptive_depth.rs"
-      - "crates/world-kernel/src/lib.rs"
-      - "crates/organism-seeds/tests/s33_adaptive_depth.rs"
-      - "crates/organism-seeds/src/lib.rs"
   workflow_dispatch:
 
 concurrency:

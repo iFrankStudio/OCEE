@@ -1,13 +1,6 @@
 name: S30 Composed Cross-Family Learning and Repair
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s30-composed-transfer.yml"
-      - "crates/organism-seeds/src/s30_composed_transfer.rs"
-      - "crates/organism-seeds/tests/s30_composed_transfer.rs"
-      - "crates/organism-seeds/src/lib.rs"
   workflow_dispatch:
 
 concurrency:

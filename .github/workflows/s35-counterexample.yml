@@ -1,14 +1,6 @@
 name: S35 Public Counterexample Gate for Learned Program Semantics
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s35-counterexample.yml"
-      - "crates/organism-seeds/src/s35_counterexample.rs"
-      - "crates/organism-seeds/tests/s35_counterexample.rs"
-      - "crates/organism-seeds/src/lib.rs"
-      - "crates/world-kernel/src/lib.rs"
   workflow_dispatch:
 
 concurrency:
