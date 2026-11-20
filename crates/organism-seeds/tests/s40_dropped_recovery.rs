@@ -370,9 +370,12 @@ fn s38_post_recovery_invariants(w:&World,seed:u64){
 
 
 fn old_boot(family:Family,seed:u64)->(World,String){
+    // Real pre-S40 reference: S39 HAS task fences but NO dropped-message
+    // recovery. An unfenced S38 reference would legitimately B24 with
+    // stale semantics and is the wrong negative control for this claim.
     let p1=s32_p1_composite_consumer();
     let p2=s32_p2_composite_consumer();
-    let root=s38_task_recovery_root(
+    let root=s39_task_fenced_remote_root(
         &p1.content_hash().unwrap(),&p2.content_hash().unwrap());
     let hash=root.content_hash().unwrap();
     let mut w=World::with_protocol(Config{
