@@ -552,3 +552,8 @@
 ### 2026-11-21 — S43A 静态复核：同协议ID不同消息ID的交叉回复负例
 - 在已提交的S43A窄测试中追加**同一项测试内的关键对照**：合法P2 RemoteEval采用相同协议层u32工作ID重复SEND，内核分配不同u64消息ID，服务去重不再次扣B；把第一条实际收到的有效回复用于第二条请求的 `ConfirmResponseFor` 必须Conflict。防止把同一协议工作ID误当全局传输请求身份。将服务事件/栅栏丢弃证据扫描限制为最近4096条，以使单次查询成本有界；过旧状态降级Unknown/Conflict。
 - 这仍是待原生验收代码；不得称跨网络 exactly-once、内核/VM单测通过或正式E001结果。验证状态/科学门槛不变。
+
+### 2026-11-21 — S43B 活动VM在解析ACK/RESULT前做真SEND→RECEIVE因果确认（静态候选）
+- [研究和反例](./experiments/E001/DEV-S43B-ACTIVE-RECEIPT-CORRELATION.md) · [P2活动个体](./crates/organism-seeds/src/s43b_active_receipts.rs) · [手动窄CI](./.github/workflows/s43b-active-receipts.yml)。每个phase1 ACK / phase2 RESULT候选 SEND 的真实u64回执均由VM写入 `/self/work/s43b-message-<phase><opcode>`，接收后主动读回并调用 `ConfirmResponseFor`，只有服务因果对应的实际Receive消息可进入旧协议解析。
+- 不提高128个VM区块上限：新增5个受费确认节点，移除S43B新图中不再可达的4个S40/S41旧式角色级恢复节点；S40/S41/S42B旧图不改。3项**待运行**对照：健康P2 ACK+RESULT，真实任务漂移后新B请求再确认，注入未由服务产生的伪回复则终止而不写结果。任何未验收代码不记科学突破。
+- S43B仍受研究者预定phase/工具/可用世界API限制，非通用异步网络主体；本环境无Rust工具链且GitHub runner最近未分配，待runner恢复后S43B→S43A→S42B→S41/S40窄回归。G0 GO、G1/G2 NO-GO，E001仍未校准/预注册。

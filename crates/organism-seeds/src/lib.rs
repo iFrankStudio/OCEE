@@ -226,3 +226,7 @@ pub mod s41_early_drop;
 
 /// S42B: VM-held full-width remote SEND ID gates failure lookup and recovery.
 pub mod s42b_request_receipt;
+
+/// S43B: P2 specialist confirms the exact received ACK/RESULT against
+/// the actual preceding SEND's full-width transport message receipt.
+pub mod s43b_active_receipts;

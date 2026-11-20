@@ -1,0 +1,21 @@
+name: S43B Active VM ACK RESULT Request Receipt Correlation
+on:
+  workflow_dispatch:
+concurrency:
+  group: ocee-s43b-active-receipts-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-active-confirm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: S43B healthy ACK RESULT confirmed by active VM
+        run: cargo test -p ocee-organism-seeds --test s41_early_drop s43b_active_vm_confirms_real_ack_and_result_from_its_send_ids -- --show-output
+      - name: S43B real drop re-learning new ACK RESULT
+        run: cargo test -p ocee-organism-seeds --test s41_early_drop s43b_active_vm_after_real_task_drop_relearns_and_confirms_new_ack_and_result -- --show-output
+      - name: S43B unowned mailbox response rejected before ACK RESULT
+        run: cargo test -p ocee-organism-seeds --test s41_early_drop s43b_injected_unowned_reply_is_not_accepted_even_if_receive_returns_ok -- --show-output

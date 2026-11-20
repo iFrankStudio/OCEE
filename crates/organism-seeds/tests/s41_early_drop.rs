@@ -862,3 +862,118 @@ fn s42b_vm_carries_real_u64_send_receipt_through_recovery_and_b_once(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+
+fn boot_s43b(seed:u64)->World{
+    use ocee_organism_seeds::s43b_active_receipts::{
+        s43b_p2_confirmed_reply_consumer,s43b_confirmed_reply_root};
+    let p1=s40_p1_consumer();
+    let p2=s43b_p2_confirmed_reply_consumer();
+    let root=s43b_confirmed_reply_root();
+    let hash=root.content_hash().unwrap();
+    let mut w=World::with_protocol(Config{
+        seed,a_gas_per_epoch:100_000,..Config::default()
+    },Family::P2,42);
+    install_public_fixtures(&mut w,seed);
+    for program in [p1,p2,root]{
+        put(&mut w,format!("/self/versions/{}",
+            program.content_hash().unwrap()),program.canonical_bytes());
+    }
+    put(&mut w,"/self/active".into(),hash.into_bytes());
+    w
+}
+fn confirmed_reply_ids(w:&World)->Vec<(u64,Code)>{
+    w.audit.iter().filter_map(|entry|match &entry.action{
+        Some(Action::ConfirmResponseFor{request_id,..})=>
+            Some((*request_id,entry.result.code)),
+        _=>None,
+    }).collect()
+}
+#[test]
+fn s43b_active_vm_confirms_real_ack_and_result_from_its_send_ids(){
+    use ocee_organism_seeds::s43b_active_receipts::REQUEST_KEY_PREFIX;
+    let mut w=boot_s43b(55);
+    finish(&mut w);
+    real_b(&w,Family::P2);
+    assert_eq!(b_gas(&w),24);
+    assert!(w.state.guarded_restarts.is_empty());
+    let ack=actual_remote_sends(&w);
+    assert_eq!(ack.len(),1);
+    let remote_id=ack[0].0;
+    let confirmations=confirmed_reply_ids(&w);
+    assert!(confirmations.iter().any(|(id,code)|
+        *id==remote_id && *code==Code::Ok),
+        "the actual B ACK must be confirmed before wire decoding");
+    let protocol=&w.state.protocol_service.as_ref().unwrap().protocol;
+    let result_ids=w.audit.iter().filter_map(|a|{
+        let Some(Action::Send{bytes,..})=&a.action else{return None};
+        if a.result.code!=Code::Ok{return None}
+        let Ok(frame)=protocol.decode(bytes)else{return None};
+        if frame.operation!=Operation::Result{return None}
+        Some(u64::from_le_bytes(a.result.payload[..8].try_into().unwrap()))
+    }).collect::<Vec<_>>();
+    assert!(!result_ids.is_empty(),"P2 must query actual RESULT");
+    assert!(result_ids.iter().any(|id|confirmations.iter()
+        .any(|(found,code)|found==id && *code==Code::Ok)),
+        "at least one real RESULT response must be ID-confirmed");
+    assert!(confirmations.iter().all(|(_,code)|*code==Code::Ok));
+    assert!(w.state.objects.keys().any(|key|
+        key.starts_with(REQUEST_KEY_PREFIX)),
+        "VM must persist a phase/opcode-scoped real send receipt");
+    assert!(!w.audit.iter().any(|a|matches!(&a.action,
+        Some(Action::RequestOutcomeFor{..}))),
+        "S43B only confirms actual received messages; not host auto-status");
+}
+#[test]
+fn s43b_active_vm_after_real_task_drop_relearns_and_confirms_new_ack_and_result(){
+    let mut w=boot_s43b(55);
+    let old_id=real_job_send_id(&mut w);
+    change_world_task_rule(&mut w);
+    recover_to_completed_b(&mut w);
+    assert_eq!(w.state.fence_drops.len(),1);
+    assert_eq!(w.state.fence_drops[0].message_id,old_id);
+    assert_eq!(w.state.guarded_restarts.get(&ORGANISM_ID),Some(&1));
+    assert_eq!(b_gas(&w),24);
+    let sent=actual_remote_sends(&w);
+    assert_eq!(sent.len(),2);
+    let new_id=sent[1].0;
+    assert_ne!(new_id,old_id);
+    let confirmed=confirmed_reply_ids(&w);
+    assert!(confirmed.iter().any(|(id,code)|
+        *id==new_id && *code==Code::Ok));
+    assert!(!confirmed.iter().any(|(id,_)|*id==old_id),
+        "dropped request has no real service response to confirm");
+    assert!(w.audit.iter().any(|a|matches!(&a.action,
+        Some(Action::RestartRootFor{request_id,..}) if *request_id==old_id)
+        && a.result.code==Code::Ok));
+    real_b(&w,Family::P2);
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
+#[test]
+fn s43b_injected_unowned_reply_is_not_accepted_even_if_receive_returns_ok(){
+    let mut w=boot_s43b(55);
+    let id=real_job_send_id(&mut w);
+    // Researcher-only negative control: an untrusted mailbox item can
+    // be delivered by RECEIVE, but never has a true C service event.
+    let forged=ocee_world_kernel::Message{
+        id:u64::MAX-5,actor:ORGANISM_ID,
+        source:NodeId::C,destination:NodeId::A,
+        bytes:vec![0xde,0xad,0xbe,0xef],
+        sent_step:w.state.step,deliver_step:w.state.step,
+        sequence_no:u64::MAX-5,
+    };
+    w.state.mailboxes.entry(NodeId::A).or_default().insert(0,forged);
+    finish(&mut w);
+    assert!(w.audit.iter().any(|a|matches!(&a.action,
+        Some(Action::ConfirmResponseFor{request_id,..}) if *request_id==id)
+        && a.result.code==Code::Conflict),
+        "active VM must ask S43A to reject a forged reply");
+    assert!(!w.state.objects.contains_key(
+        "/self/results/p2-remote-eval-ack"));
+    assert!(!w.state.objects.contains_key(
+        "/self/results/p2-job0/value_le"));
+    assert!(w.state.guarded_restarts.is_empty());
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
