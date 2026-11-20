@@ -417,3 +417,15 @@
 - **等额、等起步时序的假对照**（P2 world19）A **24,714**，D 正常继承 A **24,066**，二者 import29，D−sham **−648 gas（约−2.62%）**，tick 245 vs 250；sham 复用哈希不等于来源继承，真正重新执行了探索。负迁移恢复：错误组合程序导入 target P2 world19，真实 EXEC 后被公开标签拒绝，VM 搜索出正确程序并 CAS v0→v1，结果 A **24,831** / **251 ticks** / B20，全部后续功能通过。相对 S29 错误语义仅失败，本次是有实际因果轨迹的恢复。
 - **重要可比性**：S30 全配对采用 A quota=100,000 gas/epoch（早期 S28/S29 使用12,000），不能跨实验拿 gas/ticks 算性能趋势或宣称无界适应。结构语法、18 候选序列、回退/修复策略和 P1/P2 专家全部研究者预设；两配对不足以支撑统计显著性。**G0 GO，G1/G2 NO-GO；E001 未预注册。** 完整 workspace CI 另行验收。
 - 下一真正研究门槛：减少固定三算子/两组合模板先验，检验任务随 episode 改变时是否能**自主提出、组合、验证**候选新图，并将选中的功能工具用于实际任务决策/通信，而不是仅为下游预置专家提供前置门控；还需跨多协议实例、资源极限、未见边界输入验证。
+
+
+### 2026-11-20 — S31 首次原生实测：VM 所生成程序的输出进入真实 C→B RemoteEval 数据路径
+
+- [完整 S31 实验记录](./experiments/E001/DEV-S31-CAUSAL-REMOTE-INPUT.md) / [活动根与两份协议专家](./crates/organism-seeds/src/s31_causal_remote.rs) / [原生反事实](./crates/organism-seeds/tests/s31_causal_remote.rs) / [GitHub Actions #44685083680](https://github.com/iFrankStudio/OCEE/actions/runs/44685083680) **completed/success，单核心原生 Rust 1 passed / 0 failed / 50.63s**。实现与测试 SHA 9b47efa10a004017dae2b1f091ca00d70766de16，后续文档不修改 Rust 测试。
+- **消除真实远端请求的一个人工数据常量**：S19 P1 专家原来硬编码 [17,0,0,0,3,0]，S23 P2 专家硬编码 [3,0]。S31 修改专家：必须经真实 WorldCall::Read 消费同一份 /self/work/remote-count-le；这个对象由根活动 VM 使用 S28 研究者模板经真实 RewriteOp、不可变 WRITE、受费 EXEC 的 Len(Bytes) 程序计算 Len(values_le)，再经 Div(...,4)、PackU16Le 和受费 WRITE 得到。所有家族专家均不含固定 count3 字面量作为实际请求来源。即便曾经的 S30 多节点工具继续独立学习，真正进入 B 参数的是 **S28 生成的通用 Len 程序结果**，不能说 S30 复合程序已经直接控制 B 运算。
+- 同一初始 root hash **398d412d7d5629f14a20289385e278f7073f6a3bc29848341a99a979f6e00be5**，两套专家库等额安装；P1 source seed1 自主 S30 生成的工具 hash ccbec864ef8a002aa15e07a541cfca57200fa8770f51020274f1b1d359aa43c5 真实导入 P2 seed19，且该工具仍被 P2 的目标组合验证使用。原生审计确认根 VM 的 Len 成功 EXEC **先于** prepared-count WRITE，后续专家成功 READ，原始 C SEND 可由所在模拟服务的协议解码器解析，得到 RemoteEval 的 count3 + 原始12字节 values_le。P1 **A12,893 gas / B20**；P2 **A24,289 / B20**，独立 FOLD32 成功，快照哈希重载一致。
+- **严格匹配的因果反事实**：两份相同 P2 world19、相同 donor 导入，root 自主切换完成后、B 尚未执行时先断言世界 state hash 一致；再在两臂分别通过研究者**实验干预**对同一对象进行一次正常、CAS expected_version=0、相同2字节长度和**各3 A gas**的世界 WRITE，唯一差异是保留 count3 vs 改写成 count2。控制组实际发送正确 count3 + values_le，最终 **A24,292 / tick248 / B20**；篡改组实际发送错误 count2 + 完全相同 values_le，B 原生返回 **BadBody**、**B gas0**，无合法远程结果，轨迹 **A14,482 / tick110**。低 A 是失败提前终止，非性能提升。这里篡改是宿主控制的因果消融而非个体自主攻击/修复。
+- 该实验为跨家族共享工具数值成果进入真实远程工作输入提供强于“已 EXEC/已封存”的**实际 on-wire 因果证据**。但 Len 模板、4字节 U32 字宽、协议专家、完整 S30 学习/修复图均是研究者先验；B 仍是**本地确定性模拟服务**，不是现实互联网；单开发配对+一次反事实不能升级正式 E001/H3，更不等于赛博生命已诞生。**G0 GO；G1/G2 NO-GO，E001 未预注册。**
+- [同 SHA 完整 workspace CI #44685083679](https://github.com/iFrankStudio/OCEE/actions/runs/44685083679) 目前仍需核验最终结论；最新 S26B/C、S30 与 S31 定向 CI 通过，不能用它们冒称全量工作空间通过。历史 [S30 workspace #44677074963](https://github.com/iFrankStudio/OCEE/actions/runs/44677074963) 最终为 completed/cancelled，并非成功。
+- 下一关键方向：让已有 S30 活动 VM 从输入/输出例子合成的 **多节点组合程序输出直接决定远程任务参数/操作数**；同时在更广泛任务大小、不同协议实例与错误学习工具下验证恢复，避免“只把研究者播种的 Len 插入数据链”被误读为开放式程序创新。
+
