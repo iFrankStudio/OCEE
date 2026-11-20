@@ -451,7 +451,10 @@ fn drive_bounded(w:&mut World,n:usize){
 
 
 fn recover_to_completed_b(w:&mut World){
-    for _ in 0..16_000 {
+    // Prevent a broken recovery path from silently executing 16k costly
+    // serialized-tick loops. A valid single bounded P2 wait, then root
+    // relearning and the second REMOTE_EVAL completes far before this cap.
+    for _ in 0..2_000 {
         let r=w.tick_autonomous(ORGANISM_ID);
         assert!(!matches!(r.code,Code::Denied|Code::InvalidCode),
             "bad VM recovery step {} {:?} active_v={} cont={:?}",
