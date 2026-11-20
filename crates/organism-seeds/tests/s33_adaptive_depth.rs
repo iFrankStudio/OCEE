@@ -205,6 +205,14 @@ fn s33_labels_select_real_program_depth_and_p1_to_p2_work(){
     assert_eq!(b_gas(&shallow),0);
     assert_eq!(shallow.state.objects["/self/active"].version,0);
     assert!(!shallow.state.objects.contains_key(REMOTE_VALUES));
+    // Exclude the three initial program boot WRITEs. A failure to solve
+    // after fewer than 18 attempts might merely be an unrelated trap.
+    // Require the whole shallow grammar to be tried and rejected.
+    let shallow_trials=shallow.audit.iter().filter(|e|e.step>=4 &&
+        matches!(&e.action,Some(Action::Write{key,..})
+            if key.starts_with("/self/versions/"))).count();
+    assert_eq!(shallow_trials,18,
+        "negative depth control must exhaust all 18 shallow candidates");
     println!("S33 shallow_only negative A={} ticks={} B=0",
         a_gas(&shallow),shallow.state.step);
 
