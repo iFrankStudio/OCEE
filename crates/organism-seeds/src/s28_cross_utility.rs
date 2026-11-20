@@ -102,7 +102,19 @@ pub fn s28_cross_family_root(p1_hash:&str,p2_hash:&str)->Program{
             i(5305,lit(b"Ok")),
             i(5306,Op::EqBytes(5304,5305)),
         ],br(5306,"s28_register",vec![5300,5301],
-            "failed",vec![])),
+            "s28_version_conflict",vec![5300,5301,5304])),
+        // The immutable version can already be present when a fresh VM
+        // independently generates a byte-identical content hash. World
+        // preflight ensures /self/versions/{hash} is an authenticated code
+        // version; only this specific Conflict is an acceptable outcome.
+        // All unrelated WRITE errors still terminate instead of being
+        // reinterpreted as successful learning.
+        block("s28_version_conflict",vec![
+            p(5310,b),p(5311,b),p(5312,b)
+        ],vec![
+            i(5313,lit(b"Conflict")),
+            i(5314,Op::EqBytes(5312,5313)),
+        ],br(5314,"s28_register",vec![5310,5311],"failed",vec![])),
         block("s28_register",vec![p(5400,b),p(5401,b)],vec![
             i(5402,lit(UTILITY_REGISTRY.as_bytes())),
             i(5403,Op::ConstU32(u32::MAX)),
