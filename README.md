@@ -217,3 +217,6 @@ S38 已能在任务v1→v2变化后重新付费学习，却没有保护“验证
 ## S41 开发候选：早期受费故障检测与可验证的生命周期清理（原生未验）
 [S41完整机制、四项预设验收与GitHub runner阻断证据](./experiments/E001/DEV-S41-EARLY-DROP-LIFETIME.md)。已实现P2专家在收到真实空接收反馈后提前询问 `FenceStatus`（不论有无丢弃都真实收费1 A），真正存在S39 TaskFenceDrop才主动请求S40的一次受控重启；没有丢弃则继续原128轮受限等待。`RestartRoot`不再硬编码五个临时结果名称，而按**研究者预先限定的三个命名空间前缀**释放当前个体所有本回合输出：`/self/results/`、`/self/work/`、`/self/discoveries/`，保留真实查询历史、工具注册、不可变代码以及其他私有记忆。对照测试加入未预列出的派生路径，要求真实C/B故障恢复比S40至少快40 ticks，旧消息B0、新消息B24仅一次、CAS及存储计量完整。
 **未获得原生实验结果**：对应[S41 GitHub Actions #44748358687](https://github.com/iFrankStudio/OCEE/actions/runs/44748358687) 两次attempt均在runner分配前约2秒失败，无steps/无Rust日志；同提交的S40和workspace也如此。工程代码已push，静态复核不等于Rust验证。需先恢复私有仓库GitHub-hosted runners后进行定向原生验收。研究闸门继续**G0 GO；G1/G2 NO-GO；E001未预注册**。
+
+### CI 运行预算与旧实验复核
+私有仓库多个历史工作流同时运行会消耗大量GitHub Actions时长。现行规则详见 [CI-REPLAY-POLICY.md](./CI-REPLAY-POLICY.md)：**S41当前定向研究保留push自动检查；S22–S40等历史验证保留手动`workflow_dispatch`；完整workspace保留PR自动检查和main手动全量复核。** 2026-11-20 的托管runner未分配问题尚未排除，S41尚无原生通过证据。
