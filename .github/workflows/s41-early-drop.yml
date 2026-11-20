@@ -1,0 +1,30 @@
+name: S41 Paid Early Drop Detection and Namespace-Lifetime Replay
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s41-early-drop.yml"
+      - "crates/organism-seeds/src/s41_early_drop.rs"
+      - "crates/organism-seeds/src/s40_dropped_recovery.rs"
+      - "crates/organism-seeds/tests/s41_early_drop.rs"
+      - "crates/organism-seeds/src/lib.rs"
+      - "crates/world-kernel/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s41-early-drop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  native-early-repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: "Native S41 early vs S40 timeout, real B once and prefix-lifetime evidence"
+        run: cargo test -p ocee-organism-seeds --test s41_early_drop -- --show-output

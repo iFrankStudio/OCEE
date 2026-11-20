@@ -220,3 +220,6 @@ pub mod s39_task_fenced_remote;
 
 /// S40: a running specialist recognizes a dropped S39 request and requests one verified root restart.
 pub mod s40_dropped_recovery;
+
+/// S41: on-empty paid drop detection and namespace-lifetime replay under real C/B.
+pub mod s41_early_drop;
