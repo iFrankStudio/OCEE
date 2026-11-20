@@ -184,3 +184,6 @@ pub mod s26_dispatch;
 
 /// S28: same VM-specialized generic tool is executed across P1/P2.
 pub mod s28_cross_utility;
+
+/// S29: label-driven VM selection among generic operator candidates.
+pub mod s29_public_transform;
