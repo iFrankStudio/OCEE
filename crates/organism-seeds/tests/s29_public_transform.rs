@@ -162,7 +162,7 @@ fn active_p1_selects_three_ops_and_p2_reuses_sealed_programs_on_new_inputs(){
             operator,source_seed,target_seed,hash,
             gas(&inherited),inherited.state.step,import_gas);
         if source_seed==42 {first_donor=Some((hash,program));}
-        if source_seed==43 {xor_donor=Some((hash,program));}
+        else if source_seed==43 {xor_donor=Some((hash,program));}
     }
     assert_eq!(source_hashes.len(),1,"all tasks use same initial root");
     assert_eq!(chosen.len(),3,"labels must produce THREE distinct executable algorithms");
