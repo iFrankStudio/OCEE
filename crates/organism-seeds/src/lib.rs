@@ -217,3 +217,6 @@ pub mod s38_task_recovery;
 
 /// S39: receipt-authorized task-version fence across actual SEND and C/B consumption.
 pub mod s39_task_fenced_remote;
+
+/// S40: a running specialist recognizes a dropped S39 request and requests one verified root restart.
+pub mod s40_dropped_recovery;
