@@ -450,11 +450,39 @@ fn drive_bounded(w:&mut World,n:usize){
 }
 
 
+fn recovery_diagnostics(w:&World)->String{
+    let last=w.audit.iter().rev().take(16)
+        .map(|a|format!("{}:{:?}:{}",
+            a.step,
+            a.action.as_ref().map(|x|match x{
+                Action::Read{key,..}=>format!("Read({key})"),
+                Action::Write{key,..}=>format!("Write({key})"),
+                Action::Send{..}=>"Send".into(),
+                Action::Exec{..}=>"Exec".into(),
+                Action::Probe{..}=>"Probe".into(),
+                Action::VerifyProbe{..}=>"Verify".into(),
+                Action::RenewProbe{..}=>"Renew".into(),
+                Action::ArmTaskFence{..}=>"Arm".into(),
+                Action::FenceStatus{..}=>"Status".into(),
+                Action::RestartRoot{..}=>"Restart".into(),
+                _=>"Other".into(),
+            }),a.result.code)).collect::<Vec<_>>();
+    format!("step={} active_v={} restarts={:?} drop={} probe_count={} reg_v={:?} evidence_v={:?} next_B={} cont={:?} last_return={:?} last_actions={last:?}",
+        w.state.step,w.state.objects["/self/active"].version,
+        w.state.guarded_restarts,w.state.fence_drops.len(),
+        w.state.probe_count,w.state.objects.get(REGISTRY).map(|x|x.version),
+        w.state.objects.get(EVIDENCE).map(|x|x.version),
+        b_gas(w),
+        w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
+            .map(|c|(&c.block,c.pc,c.finished)),
+        w.state.organisms[&ORGANISM_ID].last_return)
+}
+
 fn recover_to_completed_b(w:&mut World){
-    // Prevent a broken recovery path from silently executing 16k costly
-    // serialized-tick loops. A valid single bounded P2 wait, then root
-    // relearning and the second REMOTE_EVAL completes far before this cap.
-    for _ in 0..2_000 {
+    // A bounded P2 timeout (128 polls) and one complete relearning fit
+    // within 1200 further steps. Fail immediately if the VM terminates
+    // without B, retaining actual audited stage/codes for diagnosis.
+    for _ in 0..1_200 {
         let r=w.tick_autonomous(ORGANISM_ID);
         assert!(!matches!(r.code,Code::Denied|Code::InvalidCode),
             "bad VM recovery step {} {:?} active_v={} cont={:?}",
@@ -466,8 +494,14 @@ fn recover_to_completed_b(w:&mut World){
             w.state.objects["/self/active"].version==3 &&
             w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
                 .is_some_and(|c|c.finished){break;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
+            .is_some_and(|c|c.finished) {
+            panic!("S40 terminated without new B: {}",
+                recovery_diagnostics(w));
+        }
     }
-    assert_eq!(b_gas(w),24,"one accepted new-version B job");
+    assert_eq!(b_gas(w),24,"S40 recovery did not complete: {}",
+        recovery_diagnostics(w));
     assert_eq!(w.state.objects["/self/active"].version,3);
     assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
         .is_some_and(|c|c.finished));
