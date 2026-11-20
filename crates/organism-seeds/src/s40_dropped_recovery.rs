@@ -71,7 +71,46 @@ pub fn s40_p2_recovery_consumer()->Program{
 pub fn s40_dropped_recovery_root()->Program{
     let p1=s40_p1_consumer();
     let p2=s40_p2_recovery_consumer();
-    s39_task_fenced_remote_root(
+    let mut root=s39_task_fenced_remote_root(
         &p1.content_hash().expect("P1 hash"),
-        &p2.content_hash().expect("P2 hash"))
+        &p2.content_hash().expect("P2 hash"));
+    let f=&mut root.functions[0];
+    // S26 originally hardcoded expected_version=0 for /self/active.
+    // A legitimate S40 retry is a NEW active version (2), not a reset
+    // to zero. Read the real version via a narrow read-only metadata
+    // endpoint and perform the same charged CAS with the current value.
+    let sw=f.blocks.iter_mut().find(|b|b.id=="switch_active").unwrap();
+    sw.instructions=vec![ins(10701,lit(b"/sys/active-version"))];
+    sw.terminator=y(WorldCall::Read,vec![10701],
+        "s40_active_version_reply",vec![700]);
+    f.blocks.extend([
+        blk("s40_active_version_reply",vec![
+            p(10710,Type::Bytes),p(10711,Type::Bytes)
+        ],vec![
+            ins(10712,lit(b"code")),
+            ins(10713,Op::JsonFieldString(10711,10712)),
+            ins(10714,lit(b"Ok")),
+            ins(10715,Op::EqBytes(10713,10714)),
+        ],br(10715,"s40_active_version_payload",
+            vec![10710,10711],"switch_reply",vec![10711])),
+        blk("s40_active_version_payload",vec![
+            p(10720,Type::Bytes),p(10721,Type::Bytes)
+        ],vec![
+            ins(10722,lit(b"payload")),
+            ins(10723,Op::JsonFieldBytes(10721,10722)),
+            ins(10724,lit(b"version")),
+            ins(10725,Op::JsonFieldU32(10723,10724)),
+        ],Terminator::Jump{
+            target:"s40_commit_active".into(),
+            args:vec![10720,10725]
+        }),
+        blk("s40_commit_active",vec![
+            p(10730,Type::Bytes),p(10731,Type::U32)
+        ],vec![
+            ins(10732,lit(b"/self/active")),
+        ],y(WorldCall::Write,vec![10732,10730,10731],
+            "switch_reply",vec![])),
+    ]);
+    root.validate().expect("S40 monotonic self-active versioned dispatch");
+    root
 }
