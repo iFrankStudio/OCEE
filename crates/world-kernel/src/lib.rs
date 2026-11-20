@@ -687,12 +687,14 @@ impl World {
     fn has_latest_recoverable_drop(&self,actor:u64)->bool{
         let Some(&latest)=self.state.last_guarded_send.get(&actor)
             else{return false;};
-        let current=self.state.objects.get("/public/E001/compose-depth")
-            .map(|o|hash_bytes(&o.bytes));
+        // A missing task is not a valid new task revision. In particular,
+        // None == None must never authorize a root restart.
+        let Some(current)=self.state.objects.get("/public/E001/compose-depth")
+            .map(|o|hash_bytes(&o.bytes)) else{return false;};
         self.state.fence_drops.iter().any(|d|
             d.actor==actor && d.message_id==latest &&
-            d.observed_hash==current &&
-            d.observed_hash.as_deref()!=Some(d.expected_hash.as_str()))
+            d.observed_hash.as_deref()==Some(current.as_str()) &&
+            current!=d.expected_hash)
     }
 
     fn apply_action(&mut self, action: Action) -> ActionResult {
@@ -1262,6 +1264,42 @@ mod tests {
         assert_eq!(fresh.gas_charged,1);
         assert!(w.state.service_events.is_empty());
         assert!(w.state.guarded_restarts.is_empty());
+    }
+
+    #[test]
+    fn s42_missing_public_task_never_authorizes_restart(){
+        let mut w=World::with_protocol(Config{
+            message_delay:2,..Config::default()
+        },Family::P2,42);
+        let task=b"task-v1".to_vec();
+        w.state.objects.insert("/public/E001/compose-depth".into(),
+            Object{owner:0,version:0,bytes:task.clone()});
+        w.state.task_fences.insert(ORGANISM_ID,hash_bytes(&task));
+        let sent=w.tick(Some(Action::Send{
+            actor:ORGANISM_ID,destination:NodeId::C,bytes:vec![0x10]
+        }));
+        assert_eq!(sent.code,Code::Ok);
+        let id=u64::from_le_bytes(sent.payload.as_slice().try_into().unwrap());
+        // The environment removes the public task before service consumption.
+        w.state.objects.remove("/public/E001/compose-depth");
+        for _ in 0..12{
+            if !w.state.fence_drops.is_empty(){break;}
+            w.tick(None);
+        }
+        assert_eq!(w.state.fence_drops.len(),1);
+        assert_eq!(w.state.fence_drops[0].message_id,id);
+        assert_eq!(w.state.fence_drops[0].observed_hash,None);
+        assert!(!w.has_latest_recoverable_drop(ORGANISM_ID));
+        let status=w.tick(Some(Action::FenceStatus{actor:ORGANISM_ID}));
+        assert_eq!(status.code,Code::Empty);
+        assert_eq!(status.gas_charged,1);
+        assert_eq!(w.tick(Some(Action::RestartRoot{
+            actor:ORGANISM_ID
+        })).code,Code::Denied);
+        assert!(w.state.guarded_restarts.is_empty());
+        assert!(w.state.service_events.is_empty());
+        let reloaded=World::from_snapshot(&w.snapshot_json()).unwrap();
+        assert_eq!(w.state_hash(),reloaded.state_hash());
     }
 
     #[test]
