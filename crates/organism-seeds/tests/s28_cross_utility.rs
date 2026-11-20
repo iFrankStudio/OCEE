@@ -82,6 +82,10 @@ fn verify_remote(w:&World,family:Family){
                 Some(Action::Send{..})=>"SEND".into(),
                 Some(Action::Receive{..})=>"RECEIVE".into(),
                 Some(Action::Observe{..})=>"OBSERVE".into(),
+                // S36 adds a development-only query action. Include it in
+                // diagnostic formatting, even when this S28 world never
+                // issues a probe. No S28 behavioral change is intended.
+                Some(Action::Probe{input,..})=>format!("PROBE {} bytes",input.len()),
                 None=>"VM-only".into(),
             };
             format!("step={} {action} code={:?} vm_gas={}",
