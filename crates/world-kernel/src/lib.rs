@@ -697,6 +697,21 @@ impl World {
                 ActionResult::ok(view, 1, 0)
             }
             Action::Read {key,..} => {
+                // S40: ordinary metered per-actor metadata. This isn't a
+                // writable object, and exposes no code or secret data.
+                // It permits a restarted VM to use correct monotonic CAS
+                // rather than assuming /self/active always has version 0.
+                if key=="/sys/active-version" {
+                    let Some(obj)=self.state.objects.get("/self/active") else{
+                        return ActionResult::fail(Code::NotFound);
+                    };
+                    if obj.owner!=actor{return ActionResult::fail(Code::Denied);}
+                    let payload=serde_json::to_vec(
+                        &serde_json::json!({"version":obj.version}))
+                        .expect("active version response");
+                    if let Err(code)=self.spend_a_gas(1){return ActionResult::fail(code);}
+                    return ActionResult::ok(payload,1,0);
+                }
                 let Some(obj) = self.state.objects.get(&key) else {
                     return ActionResult::fail(Code::NotFound);
                 };
