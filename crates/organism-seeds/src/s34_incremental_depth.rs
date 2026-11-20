@@ -82,6 +82,13 @@ pub fn s34_incremental_depth_root(p1_hash:&str,p2_hash:&str)->Program{
         .expect("S6 hash prelude");
     candidate.instructions.insert(insert_at,
         ins(245,Op::AppendInstructions(224,218,242,244)));
+    // Content-addressed WRITE must persist the SAME extended canonical
+    // bytes hashed above. Using the pre-extension register 224 here
+    // correctly fails the world kernel's immutable hash preflight.
+    let Terminator::Yield{call:_,args,..}=&mut candidate.terminator
+        else {panic!("S34 candidate must write program version")};
+    assert_eq!(args.as_slice(),&[230,224,231]);
+    *args=vec![230,245,231];
     root.validate().expect("S34 incremental typed construction root");
     root
 }
