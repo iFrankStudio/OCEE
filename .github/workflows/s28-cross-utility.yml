@@ -1,0 +1,28 @@
+name: S28 Cross-Family Functional Utility
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s28-cross-utility.yml"
+      - "crates/organism-seeds/src/s28_cross_utility.rs"
+      - "crates/organism-seeds/tests/s28_cross_utility.rs"
+      - "crates/organism-seeds/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s28-cross-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  cross-family:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Real VM-generated P1 utility imported and executed by P2 under four causality conditions
+        run: cargo test -p ocee-organism-seeds --test s28_cross_utility -- --show-output
