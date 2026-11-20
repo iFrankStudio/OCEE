@@ -222,6 +222,40 @@ pub fn s30_composed_cross_family_root(p1_hash:&str,p2_hash:&str)->Program{
             i(4204,Op::EqBytes(4202,4203)),
         ],br(4204,"s30_after",vec![],"fail",vec![])),
     ]);
+    // Before the VM's full typed verification, report a *precise* graph
+    // edge mismatch instead of only "block parameter arity". Useful when
+    // grafting previously separately validated research modules.
+    let blocks=&root.functions[0].blocks;
+    let mut mismatches=Vec::<String>::new();
+    for from in blocks {
+        let mut destinations=Vec::<(&str,usize)>::new();
+        match &from.terminator {
+            Terminator::Return{..}=>{},
+            Terminator::Jump{target,args}=>destinations.push((target,args.len())),
+            Terminator::Branch{if_true,true_args,if_false,false_args,..}=>{
+                destinations.push((if_true,true_args.len()));
+                destinations.push((if_false,false_args.len()));
+            },
+            Terminator::RepeatBounded{body,body_args,done,done_args,..}=>{
+                destinations.push((body,body_args.len()));
+                destinations.push((done,done_args.len()));
+            },
+            Terminator::Yield{next,next_args,..}=>{
+                destinations.push((next,next_args.len()+1));
+            },
+        }
+        for (to,n) in destinations {
+            if let Some(target)=blocks.iter().find(|t|t.id==to) {
+                if target.params.len()!=n {
+                    mismatches.push(format!(
+                        "{} -> {to}: delivered {n}, target expects {}",
+                        from.id,target.params.len()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(mismatches.is_empty(),"S30 grafted graph edge mismatch: {mismatches:?}");
     root.validate().expect("S30 S6 search + P1/P2 router and repair must typecheck");
     root
 }
