@@ -31,3 +31,13 @@ S28 由研究者直接提供 `Len(Bytes)` 作为唯一正确模板和固定长�
 局限：即使全过，本实验也只证明**有限候选中的反馈驱动选择+可执行工具跨家族迁移**；未检验三原语之外的新功能发现、组合型算法的生成、自动变更验证目标、未知类型语言/服务的一般适应性，也没有开放式演化。保持 G0 GO，G1/G2 NO-GO。
 
 [核心 Rust 实现](../../crates/organism-seeds/src/s29_public_transform.rs) · [原生因果测试](../../crates/organism-seeds/tests/s29_public_transform.rs) · [专用 CI](../../.github/workflows/s29-public-transform.yml)。
+
+
+## 2026-11-20 原生实验验收
+
+- 首次 [S29 CI #44673179538](https://github.com/iFrankStudio/OCEE/actions/runs/44673179538) **失败于 Rust 测试编译**：测试保存不同源 donor 的两个独立 if 重复 move 非 Copy 的 hash/program。通过 [4be5024](https://github.com/iFrankStudio/OCEE/commit/4be5024a2dd2a89595b0aada08a6a9d078cb0043) 改为互斥 else-if 后未更改科学判据或世界 seed。失败记录保留。
+- [修订后的 **S29 定向原生 CI #44673328957**](https://github.com/iFrankStudio/OCEE/actions/runs/44673328957) 已直接核验 **completed/success**，原生 Rust **1 passed、0 failed，用时276.42秒**。初始冻结 root hash 的相同性、候选内容 hash 三种不同、两例 EXEC + held-out EXEC 三次成功、P1 来源 VM 的版本写入、P2 目标消费已导入版本而不自行再次生成，以及状态快照重载均由原生测试断言。
+- 配对 `P1_source_world_seed→P2_target_world_seed`（protocol seed 固定42）：`42→129` 自动选择 `Len(0)`，P2 **A 23,626 gas / 1,183 tick，导入25 A gas**，程序 hash `7a48ca2633bc9429c65eab3c0e9c459be956f88e4fb2176e510a9e5fb29a1496`；`43→130` 自动选择 `XorFold(0)`，P2 **A 23,633 / 1,183 tick，导入26**，hash `f0b263f8537295bdaff2afb92bda6527ab91324a3ec26f45f650d6fe70569837`；`44→131` 自动选择 `ByteAt(0,1)`（研究者模板的 id1 恒为0），P2 **A 23,630 / 1,183 tick，导入26**，hash `91168ca0cb6a15ae4bcc19a8fe104313e9c3aabad7e261658628400566f5d757`。三组的 held-out 字节序列与各自 P1 来源不同，三组预测均经研究端私有 `hidden_transform` 比对正确，真实 C→B FOLD32 的 B gas 均为20且结果独立正确。
+- **同源等成本 sham**，P2 world129：带可见的 P1 length tool D **A 23,626**，同程序导入却不可见的 sham **A 23,780**，两者导入 **25 A gas**、世界终止 tick 都 **1,183**，因此 D−sham **−154 A gas（约−0.648%）**。sham 确实自主重新选择相同算子，发生已存在版本的内容哈希冲突；不能把 sham 的成功 EXEC(hash) 误记为来自 donor 的真实继承。
+- **异语义消融**：将来源 `XorFold` 程序作为合法可执行工具导入目标 `Len` 的 P2 world129，活动 VM 先真实 EXEC，因返回值与目标世界公开标签不符而停止，最终 **A 6,233 / 10 ticks、B gas0、无 held-out 预测**。它证明当前程序会拒绝错误的继承工具，但不会自动丢弃工具、重新选择合适程序；错误语义下的恢复仍有缺口。
+- **严格因果范围**：S29 用到世界内核已有的公开双样例，不是新增后门；选择由活动 VM 的普通原语和 Branch 实现。只是研究者预给三原语、算法搜索顺序、图模板和固定目标校验；所谓 held-out 是**单个新的输入**，不是长时间变化的开放环境。三种 seed 各1组，不能推断统计显著性、开放式演化或正式 E001 的 H3。保持 **G0 GO，G1/G2 NO-GO**。S29 与 S28 代码的全 workspace CI 须与定向工作流区分，不能用取消的运行充当完成。
