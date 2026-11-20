@@ -1,0 +1,31 @@
+name: S36 Active Disagreement Probe and One-Query World Oracle
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s36-active-probe.yml"
+      - "crates/organism-seeds/src/s36_active_probe.rs"
+      - "crates/organism-seeds/tests/s36_active_probe.rs"
+      - "crates/organism-seeds/src/lib.rs"
+      - "crates/world-kernel/src/lib.rs"
+      - "crates/world-kernel/src/program_host.rs"
+      - "crates/organism-vm/src/lib.rs"
+  workflow_dispatch:
+
+concurrency:
+  group: ocee-s36-active-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  real-interactive-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native bounded active probe, true world Query feedback, P1-P2 transfer, false generalization, CAS and one-budget fail closed
+        run: cargo test -p ocee-organism-seeds --test s36_active_probe -- --show-output

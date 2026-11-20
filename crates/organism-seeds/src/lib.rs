@@ -205,3 +205,6 @@ pub mod s34_incremental_depth;
 
 /// S35: public counterexample gate for two-label ambiguity and inherited program repair.
 pub mod s35_counterexample;
+
+/// S36: activity-selected diagnostic probes to one metered simulated environment label oracle.
+pub mod s36_active_probe;
