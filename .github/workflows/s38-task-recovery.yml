@@ -28,5 +28,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Native task revision: paid new probe, evidence CAS, changed tool, real B, one-shot budget
+      - name: "Native task revision - paid new probe, evidence CAS, changed tool, real B, one-shot budget"
         run: cargo test -p ocee-organism-seeds --test s38_task_recovery -- --show-output
