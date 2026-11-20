@@ -111,8 +111,24 @@ pub fn s38_task_recovery_root(p1_hash:&str,p2_hash:&str)->Program {
             inst(8813,Op::JsonFieldString(8811,8812)),
             inst(8814,lit(b"Ok")),
             inst(8815,Op::EqBytes(8813,8814)),
-        ],br(8815,"s37_verify_prepare",
+        ],br(8815,"s38_fresh_verify_prepare",
             [ids(8800),vec![8810]].concat(),"fail",vec![])),
+        // The second verification is deliberately A DIFFERENT block.
+        // Returning to S37's original verification branch would allow an
+        // unbounded reauthorization cycle and is correctly rejected by
+        // the static VM control-flow checker.
+        blk("s38_fresh_verify_prepare",ext(9000,&[(9010,b)]),vec![
+            inst(9011,lit(b"payload")),
+            inst(9012,Op::JsonFieldBytes(9010,9011)),
+        ],y(WorldCall::VerifyProbe,vec![9012],
+            "s38_fresh_verify_result",[ids(9000),vec![9010]].concat())),
+        blk("s38_fresh_verify_result",ext(9100,&[(9110,b),(9111,b)]),vec![
+            inst(9112,lit(b"code")),
+            inst(9113,Op::JsonFieldString(9111,9112)),
+            inst(9114,lit(b"Ok")),
+            inst(9115,Op::EqBytes(9113,9114)),
+        ],br(9115,"s35_probe_parse",
+            [ids(9100),vec![9110]].concat(),"fail",vec![])),
     ]);
     root.validate().expect("S38 typed one-shot task revision recovery");
     root
