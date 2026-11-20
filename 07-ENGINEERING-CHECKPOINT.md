@@ -429,3 +429,10 @@
 - [同 SHA 完整 workspace CI #44685083679](https://github.com/iFrankStudio/OCEE/actions/runs/44685083679) 目前仍需核验最终结论；最新 S26B/C、S30 与 S31 定向 CI 通过，不能用它们冒称全量工作空间通过。历史 [S30 workspace #44677074963](https://github.com/iFrankStudio/OCEE/actions/runs/44677074963) 最终为 completed/cancelled，并非成功。
 - 下一关键方向：让已有 S30 活动 VM 从输入/输出例子合成的 **多节点组合程序输出直接决定远程任务参数/操作数**；同时在更广泛任务大小、不同协议实例与错误学习工具下验证恢复，避免“只把研究者播种的 Len 插入数据链”被误读为开放式程序创新。
 
+
+
+### 2026-11-20 — S32：跨家族学得多节点程序结果真实决定远程 B 操作数
+- [完整实验记录](./experiments/E001/DEV-S32-COMPOSITE-REAL-B-OPERAND.md)；[VM 实现](./crates/organism-seeds/src/s32_composite_b_operand.rs)；[原生对照](./crates/organism-seeds/tests/s32_composite_b_operand.rs)；[定向 CI #44686613065](https://github.com/iFrankStudio/OCEE/actions/runs/44686613065) **completed/success，1 passed/0 failed/84.59s**。首次 [#44686476742](https://github.com/iFrankStudio/OCEE/actions/runs/44686476742) 静态类型失败，修订 [e619b212](https://github.com/iFrankStudio/OCEE/commit/e619b212ddbd9faefe3c2914431f577c7df7810c) 修正 WorldCall carried U32/feedback Bytes 顺序后成功。
+- 冻结初始 root hash `ad0e5ab7840e26c464442fc4283accc098e04f113bd879df20542856b291b39d`，研究者预给 S30 18组合搜索、S31 Len 与两份 P1/P2 专家。P1 source seed1→P2 target19 学得图输出第四 U32 **52**；source10→target28 输出 **35**。目标 P2 两组 A **24,493** / ticks **250** / B **24** / donor import29，真实 SEND 载有四操作数，远端结果与独立 fold32 一致。程序通过真实 WRITE 和 EXEC 产生，而非 host 计算。
+- 严格匹配反事实：干预前两个 P2 world19 state hash 完全一致，两条均经单次16字节 CAS 写入收费**各3 gas**，仅翻转第四 U32 的1 bit；两条 B 均成功、B gas均24、总A均24,496，真实答案 **1,534,416,407→1,534,416,415（+8）**。生成组合工具的输出**首次直接影响 B 数学答案**；不能把研究者干预算成个体自主修复。
+- 错误旧程序导入 P2 world19，真实样例重检→18候选重学→CAS registry v0→v1，最终第四值52、B24、A25,259、ticks256。研究者预置的语法、任务追加规则、ABI、协议专家仍不可称为自发创造；两个开发 seed 对不支持统计确认。**G0 GO，G1/G2 NO-GO**，正式 E001 尚未预注册。完整 workspace 需独立验证。
