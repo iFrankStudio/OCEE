@@ -614,6 +614,8 @@ impl World {
                 if key != "/public/C/hello" && key != "/public/E001/job0" &&
                     key != "/public/E001/transform" &&
                     key != "/public/E001/compose" &&
+                    // S33 development fixture, explicit read-only public ACL.
+                    key != "/public/E001/compose-depth" &&
                     key != "/public/E001/boundary-witness" &&
                     key != "/public/E001/semantic-witness" &&
                     key != "/public/E001/semantic-audit" &&
