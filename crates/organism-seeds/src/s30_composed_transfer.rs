@@ -87,6 +87,10 @@ pub fn s30_composed_cross_family_root(p1_hash:&str,p2_hash:&str)->Program{
     let mut tail=downstream.functions.into_iter().next().unwrap().blocks;
     let entry_pos=tail.iter().position(|x|x.id=="entry").unwrap();
     tail[entry_pos].id="s30_after".into();
+    // The S28 root entry originally has the VM's one Bytes entry
+    // parameter. Here it is a zero-argument continuation reached after
+    // S6's search/validation. Its instructions use no entry argument.
+    tail[entry_pos].params.clear();
     f.blocks.extend(tail);
 
     f.blocks.extend([
