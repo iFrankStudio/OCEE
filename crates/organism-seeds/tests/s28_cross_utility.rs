@@ -86,6 +86,8 @@ fn verify_remote(w:&World,family:Family){
                 // diagnostic formatting, even when this S28 world never
                 // issues a probe. No S28 behavioral change is intended.
                 Some(Action::Probe{input,..})=>format!("PROBE {} bytes",input.len()),
+                Some(Action::VerifyProbe{evidence,..})=>
+                    format!("VERIFY PROBE {} bytes",evidence.len()),
                 None=>"VM-only".into(),
             };
             format!("step={} {action} code={:?} vm_gas={}",
