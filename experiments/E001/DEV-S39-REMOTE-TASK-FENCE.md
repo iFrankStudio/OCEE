@@ -24,4 +24,16 @@ S37 在每次接受缓存证据前向内核 VerifyProbe，S38 在环境任务从
 
 [S39活动VM建栅栏](../../crates/organism-seeds/src/s39_task_fenced_remote.rs) · [内核SEND/C处理双点检查](../../crates/world-kernel/src/lib.rs) · [4项原生因果测试](../../crates/organism-seeds/tests/s39_task_fence.rs) · [专用CI](../../.github/workflows/s39-task-fence.yml)。
 
-**真实结果按CI日志追加。**
+## 2026-11-20 原生验收：消息发送与服务消费两阶段真实竞态
+
+- [**定向原生 S39 CI #44704534899**](https://github.com/iFrankStudio/OCEE/actions/runs/44704534899) 已 **completed/success，4 passed / 0 failed / 104.06 秒**；验收 Rust 代码 SHA [`2f9a0b7`](https://github.com/iFrankStudio/OCEE/commit/2f9a0b71bddbb559714763790005255f2a15e58b)。正常继承、v2合法再学习、Send前TOCTOU、Send后C处理前TOCTOU、内核凭证伪造与授权失败等均由真实tick执行。同期 [S38 回归 #44704534991](https://github.com/iFrankStudio/OCEE/actions/runs/44704534991) 也 completed/success，但全 workspace [#44704534900](https://github.com/iFrankStudio/OCEE/actions/runs/44704534900) 尚需单独核验。
+- **共同冻结根和正常 P1→P2**：S39 初始 root hash `23c42373289b15c801a9b48d5c2599d478d6da447ac9750c0d1d1de8410c651e` 在 P1 seed1 / P2 seed55 完全相同。P1 真正生成组合程序、真实经两次付费 WRITE 导入 P2（import29 A）。两世界独立付费 Probe/缓存校验/生成真实 B 第四数，VM 成功发出一次内核 `ArmTaskFence`（3 A）后，协议专家 Send、C 队列服务消费全部合法，实际 B gas **每组24**。P1 A **15,237**、P2 A **26,150**；成功消费的受保护消息记录被正常清理，`fence_drops=空`，世界快照一致。
+- **正常v1→v2重新学习仍可用**：P2 seed55 在首次付费查询/持久缓存后遭研究者许可的 v2任务规则变化，按S38真实路径续期7 A、第二次主动Probe52 A、证据CAS v0→v1、原始回执再次核验，接着活动S39根对**新任务v2的回执**Arm新指纹栅栏，真实算出 v2 第四数 **10**，C/B实际执行成功 **A26,794 / 262 ticks / B24**；守护机制并未误阻断合法升级。
+- **Send前任务漂移**：S39世界先实际执行到 `ArmTaskFence` Ok，而S38对照先真正创建同一 v1旧操作数；随后研究者变更任务v2。S39之后真实 `Action::Send` 被内核在入队和资源扣费之前返回 **Conflict**，没有成功发送、没有新增队列项，**B0**；S38无栅栏对照则成功发送，真实B gas **24**，第四操作数旧值 **48** 而v2真实目标为 **10**。
+- **SEND之后、C/B消费前漂移**：原生测试分别观察到两个世界真实 `Action::Send`，其内容可由当前协议解析为 **REMOTE_EVAL，4个U32，18字节body**；两组实际消息id均为 **26**，已进入 `pending_deliveries`，此时还未发生与该请求相关的B gas。研究者随后修改公开任务v2并改变环境真实oracle；S39世界内核在 `process_service_inbox` 检查该 id 保存的任务hash 与当前hash不同，直接丢弃请求并将 `TaskFenceDrop{message_id:26,expected_hash,observed_hash,step}` 留在世界状态，不将消息交给B协议服务，不发生B计费，**B0**。无栅栏 S38 对照则消耗 **B24** 并计算旧操作数 **48**（v2正确 **10**），证明仅发送时验证仍不足以避免在途竞态。
+- **直接内核动作验证**：没有任何原始签发的 world 提交假回执请求Arm，返回 NotFound并收费3 A；合法Probe之后用伪造回执Arm返回Conflict并收费3 A；持真实原回执且任务未更改时可Arm成功；随后任务改变，原回执不再可用于更新栅栏，显式直接构造的Send仍Conflict，**不消耗发送费、不消耗C带宽、不产生排队消息**。世界快照→还原与状态哈希一致。
+
+### 科学边界与后续缺口
+- 此测试只覆盖**明确由当前个体先用真实回执建栅栏**的消息。没有栅栏的旧程序和建栅栏前已经入队的消息，不会被自动追溯保护；因此它不等于让任何数字服务默认具备任务一致性。
+- 这里的第二次检查位于**同一个确定性世界内核内**，在真正服务消费及B资源扣费之前，是可信模拟内核的串行原子边界；不等于现实互联网里的跨进程分布式事务。`process_service_inbox` 处理完成后再修改公共任务不能自动回滚已经完成的B输出。还没有覆盖恶意内核、消息指纹被改写、网络分区、重试/超时造成的复杂幂等性、在服务内部执行期间的并发变更、用户侧实际外部副作用。
+- 专家、两输入的主动Probe银行、任务v1/v2、候选54图、一次续期和内核栅栏均为研究者先验。S39仅是对**特定TOCTOU故障**的原生因果实验，不能被用作自主演化、通用环境适应、真实网络自动运行或通过E001 H3的证据。**G0 GO；G1/G2 NO-GO，E001未预注册。** 下一值得优先探索的 S40 是受保护消息的**失败后恢复和幂等重试**：识别C拒绝原因、在版本更新后再学/再发并确保不会重复B计费；仍必须坚持任务级资源账本与因果消融。
