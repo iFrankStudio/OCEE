@@ -90,6 +90,8 @@ fn verify_remote(w:&World,family:Family){
                     format!("VERIFY PROBE {} bytes",evidence.len()),
                 Some(Action::RenewProbe{evidence,..})=>
                     format!("RENEW PROBE {} bytes",evidence.len()),
+                Some(Action::ArmTaskFence{evidence,..})=>
+                    format!("ARM TASK FENCE {} bytes",evidence.len()),
                 None=>"VM-only".into(),
             };
             format!("step={} {action} code={:?} vm_gas={}",

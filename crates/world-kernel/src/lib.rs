@@ -119,7 +119,25 @@ pub struct WorldState {
     /// renewed hash is immutable for this world and persisted in snapshots.
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub probe_renewed_for: Option<String>,
+    /// S39: a task version fence created by an organism using a genuinely
+    /// issued environment receipt. Only the kernel can establish a fence.
+    #[serde(default,skip_serializing_if="BTreeMap::is_empty")]
+    pub task_fences: BTreeMap<u64,String>,
+    /// Each pending C message carries an independent version requirement.
+    /// The kernel checks it again at service consumption, not only SEND.
+    #[serde(default,skip_serializing_if="BTreeMap::is_empty")]
+    pub guarded_sends: BTreeMap<u64,String>,
+    #[serde(default,skip_serializing_if="Vec::is_empty")]
+    pub fence_drops: Vec<TaskFenceDrop>,
 }
+#[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
+pub struct TaskFenceDrop {
+    pub message_id:u64,
+    pub step:u64,
+    pub expected_hash:String,
+    pub observed_hash:Option<String>,
+}
+
 fn probe_count_is_zero(count:&u32)->bool{*count==0}
 
 /// Exact environment task bytes and exact issued receipt are bound together.
@@ -243,6 +261,9 @@ pub enum Action {
     /// S38: authorize one extra paid query for the exact allowed v2 task.
     /// A genuine previously issued old receipt is mandatory.
     RenewProbe { actor: u64, evidence: Vec<u8> },
+    /// S39: bind this actor's subsequent C sends to the task fingerprint
+    /// that issued this actual receipt; must match the current task.
+    ArmTaskFence { actor: u64, evidence: Vec<u8> },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -330,6 +351,8 @@ impl World {
                 pending_deliveries: vec![], events: vec![], next_sequence: 0,
                 protocol_service: None, service_events: vec![],
                 probe_count: 0,probe_record:None,probe_renewed_for:None,
+                task_fences:BTreeMap::new(),guarded_sends:BTreeMap::new(),
+                fence_drops:vec![],
             },
             audit: vec![],
         }
@@ -573,6 +596,22 @@ impl World {
         let mut deferred=Vec::<Message>::new();
         for _ in 0..8 {
             let Some(message)=queue.pop_front() else {break;};
+            // One more integrity check at ACTUAL B-service consumption.
+            // The task can change after a perfectly valid SEND, while the
+            // message waits in the network queue. A stale guarded request
+            // is never given to the protocol service or charged B gas.
+            if let Some(expected)=self.state.guarded_sends.get(&message.id).cloned(){
+                let observed=self.state.objects.get("/public/E001/compose-depth")
+                    .map(|obj|hash_bytes(&obj.bytes));
+                if observed.as_deref()!=Some(expected.as_str()) {
+                    self.state.guarded_sends.remove(&message.id);
+                    self.state.fence_drops.push(TaskFenceDrop{
+                        message_id:message.id,step:self.state.step,
+                        expected_hash:expected,observed_hash:observed,
+                    });
+                    continue;
+                }
+            }
             let available_b=self.state.nodes.get(&NodeId::B).expect("node B").gas_available;
             let mut trial=self.state.protocol_service.as_ref().expect("service").clone();
             let processed=trial.handle(message.actor,self.state.step,&message.bytes,available_b);
@@ -589,6 +628,9 @@ impl World {
                 deferred.push(message);
                 break;
             }
+            // Consume the fence on the same successful service commit; keep
+            // it intact when a request is deferred by bandwidth.
+            self.state.guarded_sends.remove(&message.id);
             // Commit service state, B gas, link budget and outbound message together.
             self.state.protocol_service=Some(trial);
             self.state.nodes.get_mut(&NodeId::B).expect("node B").gas_available -=
@@ -629,7 +671,7 @@ impl World {
             Action::Write {actor,..} | Action::Send {actor,..} |
             Action::Receive {actor,..} | Action::Exec {actor,..} |
             Action::Probe {actor,..} | Action::VerifyProbe{actor,..} |
-            Action::RenewProbe{actor,..} => *actor,
+            Action::RenewProbe{actor,..} | Action::ArmTaskFence{actor,..} => *actor,
         };
         if !self.valid_actor(actor) { return ActionResult::fail(Code::Denied); }
         match action {
@@ -695,6 +737,17 @@ impl World {
             }
             Action::Send {destination,bytes,..} => {
                 if destination != NodeId::C { return ActionResult::fail(Code::Denied); }
+                // S39 policy applies only once the organism itself has
+                // established a fence from its real cached probe evidence.
+                // Legacy unarmed worlds retain identical SEND behavior.
+                let bound=self.state.task_fences.get(&actor).cloned();
+                if let Some(ref expected)=bound {
+                    let current=self.state.objects.get("/public/E001/compose-depth")
+                        .map(|obj|hash_bytes(&obj.bytes));
+                    if current.as_deref()!=Some(expected.as_str()){
+                        return ActionResult::fail(Code::Conflict);
+                    }
+                }
                 if bytes.len() > self.state.config.max_message_bytes {
                     return ActionResult::fail(Code::BadRequest);
                 }
@@ -715,6 +768,9 @@ impl World {
                     sequence_no:id,
                 };
                 self.state.pending_deliveries.push(m);
+                if let Some(task_hash)=bound {
+                    self.state.guarded_sends.insert(id,task_hash);
+                }
                 ActionResult::ok(id.to_le_bytes().to_vec(),gas,bandwidth)
             }
             Action::Receive {max_count,..} => {
@@ -777,6 +833,26 @@ impl World {
                     task_hash,receipt:issued.clone()
                 });
                 ActionResult::ok(issued,gas,0)
+            },
+            Action::ArmTaskFence {evidence,..} => {
+                // A real kernel-issued receipt can arm the SEND fence,
+                // but cannot authorize use in a different task version.
+                if evidence.len()>256 {return ActionResult::fail(Code::BadRequest);}
+                let current=self.state.objects.get("/public/E001/compose-depth")
+                    .map(|obj|hash_bytes(&obj.bytes));
+                let gas=3;
+                if let Err(code)=self.spend_a_gas(gas){return ActionResult::fail(code);}
+                let code=match (self.state.probe_record.as_ref(),current.as_ref()){
+                    (None,_)=>Code::NotFound,
+                    (Some(record),Some(hash)) if record.receipt==evidence &&
+                        record.task_hash==*hash=>Code::Ok,
+                    _=>Code::Conflict,
+                };
+                if code==Code::Ok {
+                    self.state.task_fences.insert(actor,current.unwrap());
+                }
+                ActionResult{code,payload:vec![],gas_charged:gas,
+                    vm_gas_charged:0,bandwidth_charged:0,exec_step:None}
             },
             Action::RenewProbe {evidence,..} => {
                 // Research-locked v1 -> v2 transition: changing any other
