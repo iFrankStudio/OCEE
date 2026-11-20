@@ -795,3 +795,68 @@ fn s41_reverted_task_stale_drop_does_not_authorize_replay(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+
+#[test]
+fn s42b_vm_carries_real_u64_send_receipt_through_recovery_and_b_once(){
+    use ocee_organism_seeds::s42b_request_receipt::{
+        s42b_explicit_request_root,s42b_p2_explicit_request_consumer,
+        PENDING_REMOTE_ID,
+    };
+    let p1=s40_p1_consumer();
+    let p2=s42b_p2_explicit_request_consumer();
+    let root=s42b_explicit_request_root();
+    let root_hash=root.content_hash().unwrap();
+    let mut w=World::with_protocol(Config{
+        seed:55,a_gas_per_epoch:100_000,..Config::default()
+    },Family::P2,42);
+    install_public_fixtures(&mut w,55);
+    // Ensure the VM's Bytes ABI preserves all 64 bits of the real ID.
+    w.state.next_sequence=(u32::MAX as u64)+100;
+    for program in [p1,p2,root]{
+        put(&mut w,format!("/self/versions/{}",
+            program.content_hash().unwrap()),program.canonical_bytes());
+    }
+    put(&mut w,"/self/active".into(),root_hash.into_bytes());
+    let old_id=real_job_send_id(&mut w);
+    assert!(old_id>u32::MAX as u64);
+    change_world_task_rule(&mut w);
+    recover_to_completed_b(&mut w);
+    assert_eq!(b_gas(&w),24);
+    assert_eq!(w.state.guarded_restarts.get(&ORGANISM_ID),Some(&1));
+    let statuses=w.audit.iter().filter_map(|a|match &a.action{
+        Some(Action::FenceStatusFor{request_id,..})=>Some((a,*request_id)),
+        _=>None,
+    }).collect::<Vec<_>>();
+    assert!(!statuses.is_empty(),"active VM must use explicit ID status");
+    assert!(statuses.iter().all(|(a,id)|*id==old_id &&
+        a.result.gas_charged==1));
+    assert!(statuses.iter().any(|(a,_)|a.result.code==Code::Ok));
+    let restarts=w.audit.iter().filter_map(|a|match &a.action{
+        Some(Action::RestartRootFor{request_id,..})=>Some((a,*request_id)),
+        _=>None,
+    }).collect::<Vec<_>>();
+    assert_eq!(restarts.len(),1);
+    assert_eq!(restarts[0].1,old_id);
+    assert_eq!(restarts[0].0.result.code,Code::Ok);
+    assert_eq!(restarts[0].0.result.gas_charged,8);
+    assert!(!w.audit.iter().any(|a|matches!(&a.action,
+        Some(Action::FenceStatus{..}|Action::RestartRoot{..}))),
+        "S42B specialist must never fall back to actor-level recovery");
+    assert_eq!(w.state.fence_drops.len(),1);
+    assert_eq!(w.state.fence_drops[0].message_id,old_id);
+    assert!(!w.state.objects.contains_key(PENDING_REMOTE_ID),
+        "restart expires old attempt-scoped request receipt");
+    let sent=actual_remote_sends(&w);
+    assert_eq!(sent.len(),2);
+    assert_eq!(sent[0].0,old_id);
+    assert_ne!(sent[1].0,old_id);
+    assert!(!w.state.service_events.iter().any(|e|
+        e.request_message_id==old_id && e.b_gas_charged>0));
+    assert_eq!(w.state.service_events.iter()
+        .filter(|e|e.b_gas_charged>0).count(),1);
+    assert_eq!(w.state.objects["/self/active"].version,3);
+    real_b(&w,Family::P2);
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}

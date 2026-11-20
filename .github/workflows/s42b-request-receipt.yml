@@ -1,0 +1,19 @@
+name: S42B VM-Held U64 Request Receipt
+on:
+  workflow_dispatch:
+concurrency:
+  group: ocee-s42b-request-receipt-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  explicit-request:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Kernel exact request, in-flight sibling and 64-bit ID
+        run: cargo test -p ocee-world-kernel s42b_explicit_u64_receipt_blocks_wrong_id_and_pending_sibling -- --show-output
+      - name: S42B actual VM SEND receipt to same-ID root recovery
+        run: cargo test -p ocee-organism-seeds --test s41_early_drop s42b_vm_carries_real_u64_send_receipt_through_recovery_and_b_once -- --show-output

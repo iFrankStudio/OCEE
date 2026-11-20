@@ -534,3 +534,8 @@
 ### 2026-11-20 — S42A：旧drop→最新受保护请求ID 的因果门（待原生验证）
 - [S42A开发记录](./experiments/E001/DEV-S42A-REQUEST-CAUSAL-FENCE.md) · [内核实现及反例](./crates/world-kernel/src/lib.rs) · [手动CI](./.github/workflows/s42a-request-fence.yml)。从S40/S41代码静态审查识别 actor 级历史丢弃会误导当前在途请求恢复的风险。新`last_guarded_send` 随成功栅栏 SEND 持久化，`FenceStatus` 和 `RestartRoot` 都必须与最新真实消息ID、当前公开task hash匹配。
 - 已提交一项内核负面对照（两条错峰受保护SEND、早丢一条、最新仍在途时拒绝旧drop触发重启；最新也丢弃时才返回可恢复状态），**尚无cargo/rustc及GitHub原生结果**。暂不修改原有S40/S41模型、不假报B计费结果。恢复runner后优先 S42A→S41→S40 定向，必要时workspace；G0 GO，G1/G2 NO-GO，正式E001未预注册。
+
+### 2026-11-21 — S42B：活动P2 VM原生请求ID绑定的工程候选，CI未验
+- [研究与因果判据](./experiments/E001/DEV-S42B-VM-REQUEST-RECEIPT.md) · [新活动P2专家](./crates/organism-seeds/src/s42b_request_receipt.rs) · [内核调用/VM ABI](./crates/world-kernel/src/lib.rs) · [单独手动CI](./.github/workflows/s42b-request-receipt.yml)。新`FenceStatusFor/RestartRootFor`接收完整u64请求ID，而非S42A最新请求猜测；VM在实际phase1 REMOTE_EVAL SEND成功后自费保存真实8字节回执，在Empty时读回同ID并用于故障查询/一次恢复。
+- 新增**待运行**两个关键测试：大于u32范围的两个受保护在途请求错峰丢弃；真实P2活动VM发送、任务漂移、同ID状态查询及重启、重新学习和B仅结算一次。内核拒绝其他受保护请求仍在途或已有B>0服务事件时恢复（当前单个体E001安全优先、可能牺牲活性）。旧S40/S41个体保持独立、未改其程序图。
+- 本轮无法原生运行，不得声称S42B测试成功或E001科学突破；恢复runner后按S42B→S42A→S41/S40→必要时workspace验证。G0 GO，G1/G2 NO-GO，E001仍未预注册。

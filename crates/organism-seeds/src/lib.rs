@@ -223,3 +223,6 @@ pub mod s40_dropped_recovery;
 
 /// S41: on-empty paid drop detection and namespace-lifetime replay under real C/B.
 pub mod s41_early_drop;
+
+/// S42B: VM-held full-width remote SEND ID gates failure lookup and recovery.
+pub mod s42b_request_receipt;

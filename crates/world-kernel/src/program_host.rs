@@ -197,6 +197,16 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
         },
         WorldCall::FenceStatus if args.is_empty()=>Action::FenceStatus{actor},
         WorldCall::RestartRoot if args.is_empty()=>Action::RestartRoot{actor},
+        WorldCall::FenceStatusFor if args.len()==1=>{
+            let raw:[u8;8]=as_bytes(&args[0])?.try_into()
+                .map_err(|_|Code::BadRequest)?;
+            Action::FenceStatusFor{actor,request_id:u64::from_le_bytes(raw)}
+        },
+        WorldCall::RestartRootFor if args.len()==1=>{
+            let raw:[u8;8]=as_bytes(&args[0])?.try_into()
+                .map_err(|_|Code::BadRequest)?;
+            Action::RestartRootFor{actor,request_id:u64::from_le_bytes(raw)}
+        },
         _=>return Err(Code::BadRequest),
     };
     Ok(action)

@@ -278,6 +278,10 @@ pub enum Action {
     FenceStatus {actor:u64},
     /// One-shot request by the VM, not an automatic kernel retry.
     RestartRoot {actor:u64},
+    /// S42B: organism-supplied exact u64 ID from the real SEND receipt.
+    /// These calls cannot use actor-level "latest request" fallback.
+    FenceStatusFor {actor:u64,request_id:u64},
+    RestartRootFor {actor:u64,request_id:u64},
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -697,14 +701,40 @@ impl World {
             current!=d.expected_hash)
     }
 
+    /// S42B: a concrete dropped C request must match the VM's request ID.
+    /// Never authorize recovery while *other* guarded requests from this
+    /// actor are pending. Any B computation already committed anywhere in
+    /// the single-actor E001 world conservatively blocks replay.
+    fn has_explicit_recoverable_drop(&self,actor:u64,request_id:u64)->bool{
+        let Some(current)=self.state.objects.get("/public/E001/compose-depth")
+            .map(|o|hash_bytes(&o.bytes)) else{return false;};
+        if !self.state.fence_drops.iter().any(|d|
+            d.actor==actor && d.message_id==request_id &&
+            d.observed_hash.as_deref()==Some(current.as_str()) &&
+            d.expected_hash!=current){return false;}
+        let other_pending=self.state.pending_deliveries.iter()
+            .chain(self.state.mailboxes.get(&NodeId::C).into_iter().flatten())
+            .any(|m|m.actor==actor && m.id!=request_id &&
+                self.state.guarded_sends.contains_key(&m.id));
+        if other_pending {return false;}
+        !self.state.service_events.iter().any(|e|e.b_gas_charged>0)
+    }
+
     fn apply_action(&mut self, action: Action) -> ActionResult {
+        let explicit_request=match &action {
+            Action::FenceStatusFor{request_id,..} |
+            Action::RestartRootFor{request_id,..}=>Some(*request_id),
+            _=>None,
+        };
         let actor = match &action {
             Action::Observe {actor} | Action::Read {actor,..} |
             Action::Write {actor,..} | Action::Send {actor,..} |
             Action::Receive {actor,..} | Action::Exec {actor,..} |
             Action::Probe {actor,..} | Action::VerifyProbe{actor,..} |
             Action::RenewProbe{actor,..} | Action::ArmTaskFence{actor,..} |
-            Action::FenceStatus{actor} | Action::RestartRoot{actor} => *actor,
+            Action::FenceStatus{actor} | Action::RestartRoot{actor} |
+            Action::FenceStatusFor{actor,..} |
+            Action::RestartRootFor{actor,..} => *actor,
         };
         if !self.valid_actor(actor) { return ActionResult::fail(Code::Denied); }
         match action {
@@ -883,13 +913,15 @@ impl World {
                 });
                 ActionResult::ok(issued,gas,0)
             },
-            Action::FenceStatus {..} => {
+            Action::FenceStatus {..} | Action::FenceStatusFor{..} => {
                 // S41: both positive and negative failure checks have a
                 // bounded, visible price. Empty polling must not be free.
                 let gas=1;
                 if let Err(code)=self.spend_a_gas(gas){return ActionResult::fail(code);}
-                let has_drop=self.has_latest_recoverable_drop(actor) &&
-                    self.state.guarded_restarts.get(&actor).copied().unwrap_or(0)==0;
+                let has_drop=match explicit_request{
+                    Some(id)=>self.has_explicit_recoverable_drop(actor,id),
+                    None=>self.has_latest_recoverable_drop(actor),
+                } && self.state.guarded_restarts.get(&actor).copied().unwrap_or(0)==0;
                 ActionResult{
                     code:if has_drop{Code::Ok}else{Code::Empty},
                     payload:if has_drop{b"Dropped".to_vec()}else{vec![]},
@@ -897,15 +929,17 @@ impl World {
                     exec_step:None,
                 }
             },
-            Action::RestartRoot {..} => {
+            Action::RestartRoot {..} | Action::RestartRootFor{..} => {
                 // The organism must explicitly ask. At most one restart
                 // after a real S39 drop whose version differs from TODAY.
                 if self.state.guarded_restarts.get(&actor).copied().unwrap_or(0)!=0 {
                     return ActionResult::fail(Code::Quota);
                 }
-                if !self.has_latest_recoverable_drop(actor){
-                    return ActionResult::fail(Code::Denied);
-                }
+                let recoverable=match explicit_request{
+                    Some(id)=>self.has_explicit_recoverable_drop(actor,id),
+                    None=>self.has_latest_recoverable_drop(actor),
+                };
+                if !recoverable{return ActionResult::fail(Code::Denied);}
                 let Some(hash)=self.state.initial_root_hash.clone()
                     else{return ActionResult::fail(Code::Denied)};
                 let root_key=format!("/self/versions/{hash}");
@@ -1302,6 +1336,67 @@ mod tests {
         assert_eq!(w.state_hash(),reloaded.state_hash());
     }
 
+
+    #[test]
+    fn s42b_explicit_u64_receipt_blocks_wrong_id_and_pending_sibling(){
+        let mut w=World::with_protocol(Config{
+            message_delay:8,..Config::default()
+        },Family::P2,42);
+        // Real successful SEND ids extend beyond u32::MAX.
+        w.state.next_sequence=(u32::MAX as u64)+80;
+        let old=b"task-v1".to_vec();
+        w.state.objects.insert("/public/E001/compose-depth".into(),
+            Object{owner:0,version:0,bytes:old.clone()});
+        w.state.task_fences.insert(ORGANISM_ID,hash_bytes(&old));
+        let send=||Action::Send{actor:ORGANISM_ID,
+            destination:NodeId::C,bytes:vec![0x10]};
+        let first=w.tick(Some(send()));
+        let id1=u64::from_le_bytes(first.payload.as_slice().try_into().unwrap());
+        assert_eq!(first.code,Code::Ok);
+        assert!(id1>u32::MAX as u64);
+        for _ in 0..4 {w.tick(None);}
+        let second=w.tick(Some(send()));
+        let id2=u64::from_le_bytes(second.payload.as_slice().try_into().unwrap());
+        assert_eq!(second.code,Code::Ok);
+        assert!(id2>id1);
+        let task=w.state.objects.get_mut("/public/E001/compose-depth").unwrap();
+        task.bytes=b"task-v2".to_vec();task.version+=1;
+        for _ in 0..12{
+            if !w.state.fence_drops.is_empty(){break;}
+            w.tick(None);
+        }
+        assert_eq!(w.state.fence_drops.len(),1);
+        assert_eq!(w.state.fence_drops[0].message_id,id1);
+        assert!(w.state.guarded_sends.contains_key(&id2));
+        // Exact id1 is known to be dropped, but other guarded B request
+        // remains in flight; cannot restart and later double-execute B.
+        let pending=w.tick(Some(Action::FenceStatusFor{
+            actor:ORGANISM_ID,request_id:id1}));
+        assert_eq!(pending.code,Code::Empty);
+        assert_eq!(pending.gas_charged,1);
+        assert_eq!(w.tick(Some(Action::RestartRootFor{
+            actor:ORGANISM_ID,request_id:id1})).code,Code::Denied);
+        // Invented, truncated, and merely adjacent IDs are not evidence.
+        for wrong in [id1 as u32 as u64,id1-1,id2]{
+            assert_eq!(w.tick(Some(Action::FenceStatusFor{
+                actor:ORGANISM_ID,request_id:wrong})).code,Code::Empty);
+        }
+        for _ in 0..12{
+            if w.state.fence_drops.len()==2{break;}
+            w.tick(None);
+        }
+        assert_eq!(w.state.fence_drops[1].message_id,id2);
+        assert!(w.state.guarded_sends.is_empty());
+        assert_eq!(w.tick(Some(Action::FenceStatusFor{
+            actor:ORGANISM_ID,request_id:id1})).code,Code::Ok);
+        assert_eq!(w.tick(Some(Action::FenceStatusFor{
+            actor:ORGANISM_ID,request_id:id2})).code,Code::Ok);
+        assert_eq!(w.tick(Some(Action::FenceStatusFor{
+            actor:ORGANISM_ID,request_id:id1 as u32 as u64})).code,Code::Empty);
+        assert!(w.state.service_events.is_empty());
+        assert_eq!(w.state_hash(),
+            World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+    }
     #[test]
     fn exhausting_gas_does_not_destroy_persistent_data() {
         let mut w=World::new(Config{a_gas_per_epoch:4,..Config::default()});
