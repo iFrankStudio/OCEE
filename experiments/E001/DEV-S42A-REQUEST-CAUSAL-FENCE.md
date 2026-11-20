@@ -16,3 +16,11 @@ S42A 在内核 `WorldState` 增加可快照重放的 `last_guarded_send: actor�
 **验证顺序**：恢复 runner 后手动 S42A 单项内核 → S41 4 场景 → S40 4 场景 → 必要时完整 workspace。当前 S41/S42A均不记科学突破；G0 GO、G1/G2 NO-GO；正式 E001 未校准、未预注册。
 
 [内核及反例源码](../../crates/world-kernel/src/lib.rs) · [S41](./DEV-S41-EARLY-DROP-LIFETIME.md) · [CI制度](../../CI-REPLAY-POLICY.md)
+
+## S42A.1 缺失任务授权边界（2026-11-20，待原生验证）
+
+静态审计发现此前谓词将 `Option<String>` 的 `observed_hash==current` 直接比较：公开任务对象消失时两者可能同为 `None`，且 `None != Some(expected_hash)`，从而让真实丢弃记录错误通过恢复资格门。此处属于源码可证明的授权条件漏洞，尚无运行结果。
+
+在 [修复提交 3ed6517](https://github.com/iFrankStudio/OCEE/commit/3ed65178695a94cb665a2989a5c1592a05f43159) 将当前任务缺失直接拒绝，并要求丢弃记录具有与当前任务相等的明确 `Some(hash)`；没有增加额度或放宽重启权限。增加**一项**最小真实发送→任务删除→服务丢弃反例：要求 `observed_hash=None`、`FenceStatus=Empty`且收费1 A、`RestartRoot=Denied`、B0、无重启、快照重载一致。**测试仅已提交，尚未运行，不可写成通过。**
+
+后续先执行 `cargo test -p ocee-world-kernel s42_missing_public_task_never_authorizes_restart`，再执行原S42A最新请求反例，S41与S40定向回归。GitHub Actions runner 仍需确认；避免自动重复触发失败运行。正式E001未启动，G1/G2 NO-GO。
