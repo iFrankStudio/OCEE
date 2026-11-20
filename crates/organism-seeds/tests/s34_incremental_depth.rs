@@ -78,8 +78,11 @@ fn run_until_switch(w:&mut World,seed:u64){
     for _ in 0..10_000{
         let r=w.tick_autonomous(ORGANISM_ID);
         assert!(!matches!(r.code,Code::Denied|Code::InvalidCode),
-            "unexpected S34 root trap seed={seed},step={} code={:?}",
-            w.state.step,r.code);
+            "unexpected S34 root trap seed={seed},step={} code={:?}, vm={:?}, audit_last={:?}",
+            w.state.step,r.code,
+            w.state.organisms[&ORGANISM_ID].vm_continuation
+                .as_ref().map(|c|(&c.block,c.pc,&c.awaiting)),
+            w.audit.last().map(|a|(&a.action,&a.result)));
         if w.state.objects["/self/active"].version==1{break;}
         if w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref()
             .is_some_and(|c|c.finished){break;}

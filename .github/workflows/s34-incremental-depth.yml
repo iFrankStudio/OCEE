@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Native 0-1-2-stage construction, P1-to-P2 real B and strict negative controls
-        run: cargo test -p ocee-organism-seeds --test s34_incremental_depth -- --show-output
       - name: Type-safe incremental graph VM primitive and rejection tests
         run: cargo test -p ocee-organism-vm append_instructions_extends_typed_graph_and_rejects_invalid_extensions -- --show-output
+      - name: Native 0-1-2-stage construction, P1-to-P2 real B and strict negative controls
+        run: cargo test -p ocee-organism-seeds --test s34_incremental_depth -- --show-output
