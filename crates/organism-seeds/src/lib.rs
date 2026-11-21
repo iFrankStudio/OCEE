@@ -234,3 +234,5 @@ pub mod s43b_active_receipts;
 /// S44: active P2 VM differentiates in-flight, already-executed,
 /// genuinely dropped, and evidence-unknown remote requests.
 pub mod s44_outcome_wait;
+/// Scoped per-candidate and global bounded RESULT wait (S45).
+pub mod s45_scoped_result_wait;

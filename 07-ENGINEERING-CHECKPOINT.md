@@ -595,3 +595,7 @@
 - 独立读取 [workspace #44861571121](https://github.com/iFrankStudio/OCEE/actions/runs/44861571121) 的运行及jobs记录：旧源码 `145a30348a67e8072a0d1ed09d776f35eeb54e09`，最终 `completed/cancelled`；`kernel` job同为 `completed/cancelled`，其中 `Run world and VM invariant tests` 步骤 `cancelled`，后续S8成本报告/manifest步骤 `skipped`。**这不是测试通过，也不能推断测试断言失败**；不需要为取得“绿色”而重复启动旧SHA全量CI。
 - S44 [定向原生3/3 #44862964346](https://github.com/iFrankStudio/OCEE/actions/runs/44862964346) 的成功仅覆盖该workflow所选用例及其源码 `fed97e8cbfccfcb5415d510a71fb2503189c31c6`，不构成完整workspace回归。全局6-step延迟负对照 [#44862804649](https://github.com/iFrankStudio/OCEE/actions/runs/44862804649) 仍为真实红例：B已执行且仅扣24、CommittedB可见，但S23 RESULT操作码扫描在有界等待内未取得结果。后续方案应将**操作码搜索预算**与**已发送请求的在途等待预算**区分，避免把延迟误判为错误opcode；仍须保持同一u64请求ID的真实RECEIVE/服务确认、Unknown不重试、CommittedB不重发、有限A gas及独立低延迟/高延迟/伪回复负对照。这里只是从已有红例推导的待验证假说，**没有新Rust代码或CI验收**。
 - 本轮仅完成CI终态审计，不调整G0 GO、G1/G2 NO-GO及E001未校准/未预注册状态。
+
+### 2026-11-21 — 双重有界的Phase2 RESULT等待（S45候选，待原生验证）
+- 根据最新 [VM循环作用域静态分析](./experiments/E001/VM-BOUNDED-LOOP-COUNTER-SCOPE.md) 和S44全局6-step真实失败，新增带局部scope和硬全局上限的 `RepeatScoped` VM终结子、继承S44的P2有限相位分派与 [S45定向原生验证](./.github/workflows/s45-scoped-result-wait.yml)。独立单opcode 6次Empty，总896次，上限持久化且不新增重发权限。
+- 需以本次原生CI验收VM多scope+Yield+快照、P2全程6-step真实C/B及ACK/RESULT确认、原2-step正常对照。此处尚未有S45通过证据；全量workspace旧运行仍cancelled，G0/G1/G2及E001以实时检查点为准。

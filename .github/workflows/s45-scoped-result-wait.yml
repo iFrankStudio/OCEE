@@ -1,0 +1,25 @@
+name: S45 Per-Candidate and Aggregate RESULT Waiting
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s45-scoped-result-wait.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-s45-result-wait-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-scoped-result:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: VM scoped counter survives yield and snapshot with hard total cap
+        run: cargo test -p ocee-organism-vm scoped_wait_budget_is_per_candidate_but_has_hard_global_cap -- --show-output
+      - name: P2 full six-step global latency has real ACK RESULT and exactly one B
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s45_global_six_step_delay_validates_real_b_and_result_once -- --show-output
+      - name: P2 normal two-step latency preserves actual B result
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s45_baseline_two_step_latency_keeps_correct_result -- --show-output

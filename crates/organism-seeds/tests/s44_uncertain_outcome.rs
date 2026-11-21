@@ -2,12 +2,13 @@
 #![forbid(unsafe_code)]
 use ocee_organism_seeds::{
     s44_outcome_wait::{s44_p2_causal_wait_consumer,s44_outcome_aware_root},
+    s45_scoped_result_wait::{s45_p2_scoped_result_wait,s45_scoped_result_root},
     s40_dropped_recovery::s40_p1_consumer,
     s43b_active_receipts::REQUEST_KEY_PREFIX,
     s33_adaptive_depth::DEPTH_TASK,
     s32_composite_b_operand::REMOTE_VALUES,
 };
-use ocee_organism_vm::Value;
+use ocee_organism_vm::{Program,Value};
 use ocee_protocol_sim::{Family,Operation,fold32};
 use ocee_world_kernel::{Action,Code,Config,NodeId,Object,TransformExample,
     TransformTask,World,RequestOutcome,RequestState,ORGANISM_ID,hidden_compose};
@@ -17,10 +18,14 @@ fn rule(seed:u64,input:&[u8])->u32{
         ((seed%54)/18) as u32*input.len() as u32)
 }
 fn boot(delay:u64)->World{
+    boot_with(delay,s44_p2_causal_wait_consumer(),s44_outcome_aware_root())
+}
+fn boot_s45(delay:u64)->World{
+    boot_with(delay,s45_p2_scoped_result_wait(),s45_scoped_result_root())
+}
+fn boot_with(delay:u64,p2:Program,root:Program)->World{
     let seed=55;
     let p1=s40_p1_consumer();
-    let p2=s44_p2_causal_wait_consumer();
-    let root=s44_outcome_aware_root();
     let mut w=World::with_protocol(Config{
         seed,message_delay:delay,a_gas_per_epoch:100_000,..Config::default()
     },Family::P2,42);
@@ -231,4 +236,73 @@ fn s44_unknown_receipt_fails_closed_without_blind_replay(){
         "/self/results/p2-job0/value_le"));
     assert_ne!(w.state.organisms[&ORGANISM_ID].last_return,
         Some(Value::U32(1)));
+}
+
+
+// Regression of the earlier genuinely red S44 global C delay=6 case.
+// This entire test runs at delay 6: no resetting world delay after ACK.
+#[test]
+fn s45_global_six_step_delay_validates_real_b_and_result_once(){
+    let mut w=boot_s45(6);
+    finish(&mut w);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)),
+        "global6: b={} outcomes={:?} counters={:?} tail={:?}",
+        b_total(&w),outcomes(&w),
+        w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().map(|c|&c.loop_counters),
+        w.audit.iter().rev().take(8)
+            .map(|a|format!("{:?}:{:?}",a.action,a.result.code))
+            .collect::<Vec<_>>());
+    assert_eq!(b_total(&w),24);
+    assert!(w.state.guarded_restarts.is_empty());
+    let cont=w.state.organisms[&ORGANISM_ID].vm_continuation
+        .as_ref().unwrap();
+    let global=cont.loop_counters.get("s45_result_retry").copied().unwrap_or(0);
+    assert!(global>0 && global<=896,"global scoped wait must be used");
+    assert!(cont.loop_counters.keys()
+        .filter(|k|k.starts_with("s45_result_retry:")).count()>1,
+        "distinct RESULT opcode hypotheses must have separate budgets");
+    let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+    let mut remote=Vec::new();
+    let mut result=Vec::new();
+    for a in &w.audit{
+        let Some(Action::Send{destination:NodeId::C,bytes,..})=&a.action
+            else{continue};
+        if a.result.code!=Code::Ok{continue;}
+        let Ok(frame)=decoder.decode(bytes)else{continue};
+        let id=u64::from_le_bytes(a.result.payload[..8].try_into().unwrap());
+        match frame.operation{
+            Operation::RemoteEval if frame.body.len()==18=>remote.push(id),
+            Operation::Result=>result.push(id),
+            _=>(),
+        }
+    }
+    assert_eq!(remote.len(),1,"no second B request is allowed");
+    assert!(!result.is_empty());
+    let confirmed=w.audit.iter().filter_map(|a|match &a.action{
+        Some(Action::ConfirmResponseFor{request_id,..})
+            if a.result.code==Code::Ok=>Some(*request_id),
+        _=>None,
+    }).collect::<Vec<_>>();
+    assert!(confirmed.contains(&remote[0]));
+    assert!(result.iter().any(|id|confirmed.contains(id)));
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
+
+#[test]
+fn s45_baseline_two_step_latency_keeps_correct_result(){
+    let mut w=boot_s45(2);
+    finish(&mut w);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)));
+    assert_eq!(b_total(&w),24);
+    assert!(w.state.guarded_restarts.is_empty());
+    let actual=u32::from_le_bytes(w.state.objects[
+        "/self/results/p2-job0/value_le"].bytes[..4].try_into().unwrap());
+    let operands=w.state.objects[REMOTE_VALUES].bytes.chunks_exact(4)
+        .map(|x|u32::from_le_bytes(x.try_into().unwrap()))
+        .collect::<Vec<_>>();
+    assert_eq!(actual,fold32(&operands).unwrap());
 }
