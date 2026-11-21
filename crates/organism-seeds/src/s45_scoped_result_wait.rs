@@ -17,12 +17,15 @@ pub fn s45_p2_scoped_result_wait()->Program{
     let f=&mut program.functions[0];
     // Phase 2 RESULT scans must NOT consume the same 128-slot counter
     // across dozens of distinct opcode candidates.
-    let feedback=f.blocks.iter_mut().find(|b|b.id=="s22_feedback")
-        .expect("S23 has Empty feedback guard");
-    let Terminator::Branch{if_true,..}=&mut feedback.terminator
-        else{panic!("S23 feedback must branch")};
-    assert_eq!(if_true.as_str(),"s23_receive_retry");
-    *if_true="s45_wait_dispatch".into();
+    // S41/S42B already rerouted Empty RECEIVE through its phase
+    // classifier. Keep phase-1 request-ID recovery untouched and change
+    // ONLY the non-phase-1 fallback into the S45 phase dispatcher.
+    let check=f.blocks.iter_mut().find(|b|b.id=="s41_check_drop")
+        .expect("S42B Empty feedback must classify phase");
+    let Terminator::Branch{if_false,..}=&mut check.terminator
+        else{panic!("S42B Empty phase classifier must branch")};
+    assert_eq!(if_false.as_str(),"s23_receive_retry");
+    *if_false="s45_wait_dispatch".into();
     for id in ["s44_inflight","s44_committed","s44_handled"]{
         let b=f.blocks.iter_mut().find(|x|x.id==id).unwrap();
         let Terminator::Branch{if_true,..}=&mut b.terminator
