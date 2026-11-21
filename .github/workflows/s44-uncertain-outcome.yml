@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: S44 diagnose delayed ACK B-state before accepting or retrying
+      - name: S44 scoped delayed ACK and committed B never permits replay
         run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s44_real_commit_and_inflight_are_wait_not_resend -- --show-output
       - name: S44 real task-fence drop alone authorizes root relearning
         run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s44_only_true_drop_authorizes_relearning -- --show-output

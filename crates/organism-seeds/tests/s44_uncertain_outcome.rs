@@ -104,7 +104,34 @@ fn actual_job_id(w:&mut World)->u64{
 }
 #[test]
 fn s44_real_commit_and_inflight_are_wait_not_resend(){
-    let mut w=boot(6);
+    let mut w=boot(2);
+    let request_id=actual_job_id(&mut w);
+    // Delay only the real B request and its ACK. A global delay of six
+    // also exhausts the legacy S23 RESULT opcode-scan retry budget;
+    // that is a separate bounded-liveness limitation, not S44's gate.
+    let queued=w.state.pending_deliveries.iter_mut()
+        .find(|m|m.id==request_id && m.destination==NodeId::C)
+        .expect("actual REMOTE_EVAL must still be in transit");
+    queued.deliver_step+=8;
+    w.state.config.message_delay=8;
+    let mut confirmed_ack=false;
+    for _ in 0..1_000{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        if w.audit.last().is_some_and(|a|
+            a.result.code==Code::Ok &&
+            matches!(&a.action,Some(Action::ConfirmResponseFor{
+                request_id:id,..}) if *id==request_id)){
+            confirmed_ack=true;break;
+        }
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    assert!(confirmed_ack,
+        "actual delayed REMOTE_EVAL ACK must pass S43B confirmation: {:?}",
+        outcomes(&w));
+    // Preserve the original bounded Phase2 RESULT discovery conditions.
+    w.state.config.message_delay=2;
     finish(&mut w);
     let states=outcomes(&w);
     let tail=w.audit.iter().rev().take(24)
@@ -122,7 +149,7 @@ fn s44_real_commit_and_inflight_are_wait_not_resend(){
             }),a.result.code)).collect::<Vec<_>>();
     assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
         Some(Value::U32(1)),
-        "delay6 diagnostic: b={} states={:?} restarts={:?} tail={:?}",
+        "scoped ACK delay diagnostic: b={} states={:?} restarts={:?} tail={:?}",
         b_total(&w),states,w.state.guarded_restarts,tail);
     assert_eq!(b_total(&w),24);
     assert!(w.state.guarded_restarts.is_empty());
@@ -170,19 +197,25 @@ fn s44_only_true_drop_authorizes_relearning(){
 }
 #[test]
 fn s44_unknown_receipt_fails_closed_without_blind_replay(){
-    let mut w=boot(8);
+    let mut w=boot(2);
     let actual=actual_job_id(&mut w);
+    // Delay only this remote request to guarantee an Empty RECEIVE.
+    w.state.pending_deliveries.iter_mut()
+        .find(|m|m.id==actual && m.destination==NodeId::C)
+        .expect("actual request queued").deliver_step+=8;
     // Advance only until the active VM has persisted the precise receipt.
-    let key=loop{
+    let mut key=None;
+    for _ in 0..128{
         let existing=w.state.objects.keys()
-            .find(|key|key.starts_with(REQUEST_KEY_PREFIX) &&
-                key.contains("01")).cloned();
-        if let Some(key)=existing{break key}
+            .find(|candidate|candidate.starts_with(REQUEST_KEY_PREFIX) &&
+                candidate.contains("01")).cloned();
+        if let Some(existing)=existing{key=Some(existing);break;}
         let r=w.tick_autonomous(ORGANISM_ID);
         assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
         assert!(!w.state.organisms[&ORGANISM_ID].vm_continuation
             .as_ref().is_some_and(|c|c.finished));
-    };
+    }
+    let key=key.expect("bounded VM did not persist phase1 receipt");
     assert_eq!(w.state.objects[&key].bytes,actual.to_le_bytes());
     // Privileged fault injection: destroy the organism's saved evidence,
     // NOT the kernel's own SEND record or B service event.
