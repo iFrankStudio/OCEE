@@ -7,7 +7,7 @@ use ocee_organism_seeds::{
     s33_adaptive_depth::DEPTH_TASK,
     s32_composite_b_operand::REMOTE_VALUES,
 };
-use ocee_organism_vm::{Value,Program};
+use ocee_organism_vm::Value;
 use ocee_protocol_sim::{Family,Operation,fold32};
 use ocee_world_kernel::{Action,Code,Config,NodeId,Object,TransformExample,
     TransformTask,World,RequestOutcome,RequestState,ORGANISM_ID,hidden_compose};
@@ -106,11 +106,26 @@ fn actual_job_id(w:&mut World)->u64{
 fn s44_real_commit_and_inflight_are_wait_not_resend(){
     let mut w=boot(6);
     finish(&mut w);
+    let states=outcomes(&w);
+    let tail=w.audit.iter().rev().take(24)
+        .map(|a|format!("{}:{:?}:{:?}",
+            a.step,a.action.as_ref().map(|action|match action{
+                Action::Read{key,..}=>format!("Read:{key}"),
+                Action::Write{key,..}=>format!("Write:{key}"),
+                Action::Send{..}=>"Send".into(),
+                Action::Receive{..}=>"Receive".into(),
+                Action::RequestOutcomeFor{request_id,..}=>
+                    format!("Outcome:{request_id}"),
+                Action::ConfirmResponseFor{request_id,..}=>
+                    format!("Confirm:{request_id}"),
+                _=>"Other".into(),
+            }),a.result.code)).collect::<Vec<_>>();
     assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
-        Some(Value::U32(1)));
+        Some(Value::U32(1)),
+        "delay6 diagnostic: b={} states={:?} restarts={:?} tail={:?}",
+        b_total(&w),states,w.state.guarded_restarts,tail);
     assert_eq!(b_total(&w),24);
     assert!(w.state.guarded_restarts.is_empty());
-    let states=outcomes(&w);
     assert!(!states.is_empty(),"P2 must query its own live request");
     assert!(states.iter().any(|s|s.state==RequestState::InFlight));
     assert!(states.iter().any(|s|s.state==RequestState::CommittedB),
