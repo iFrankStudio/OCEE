@@ -27,3 +27,7 @@ S23 的 `s23_feedback_check_ok` 成功路径在进入原协议字节解析前被
 
 ## S43A.2 依赖加固
 S43B 的 `ConfirmResponseFor` 现在不仅依赖 SEND→服务事件→RECEIVE，还依赖服务事件固定的完整消息内容哈希和实际交付时序。研究者注入同响应ID但不同正文、即使真的被RECEIVE取走，也不能把它错误当作原始ACK/RESULT。缺少旧账本指纹的快照安全拒绝确认。该改动与S43B的原生验收一起等待运行器。
+
+## 原生CI第一次尝试的实际结果（2026-11-21）
+
+为排除“只因手动触发不便而没有执行”的可能，曾将本研究单独工作流限定为仅自身文件变化的`main` push，并提交 `876e687`。结果 [S43B Run #44852637401](https://github.com/iFrankStudio/OCEE/actions/runs/44852637401) 被GitHub接受并触发，但job于约4秒后 `failure`、`steps=[]`、无checkout/编译/cargo日志。这是运行器/工作流环境阶段的**未执行结果**，不是S43B三个验收测试的运行失败证据。已恢复S43B工作流为仅`workflow_dispatch`，保留失败记录作为环境阻塞证据。科学状态不变；不要据此推断生命表现。

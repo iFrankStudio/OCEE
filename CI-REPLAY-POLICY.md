@@ -24,3 +24,9 @@
 ## 2026-11-21 S43B 单次路径限定验证尝试
 
 S43B 工程候选已完成静态审计，但无本机 Rust 工具链，也无法从此环境直连私有仓库。为判定仓库Actions runner是否恢复，把 **仅 S43B workflow 文件** 放入主分支的自动路径限定触发条件：`.github/workflows/s43b-active-receipts.yml`；源码、共享内核和历史测试变更都不会因这条新规则自动触发S43B。工作流含三个精确的 S43B 原生用例，最长30分钟。S41原有路径规则不变，S22–S40历史复核继续保持手动。此次工作流改动是**一次受控验证尝试**，不是宣称已执行/通过；可用Actions run和job步骤作为真实判断依据。若job仍无steps，应停止重复推送、由仓库所有者排查GitHub账单/配额或组织Actions权限。
+
+## 2026-11-21 S43B 一次真实CI分配尝试结果
+
+[S43B Run #44852637401](https://github.com/iFrankStudio/OCEE/actions/runs/44852637401) 在 GitHub `main` `876e6871f0a63e93317e16c70aac6b79d36b78ab` 上由路径限定 `push` 成功触发（仅 S43B 一项），结果 `completed/failure`。原生job `native-active-confirm`（ID `136687346985`）的 `steps=[]`、`logs_url=null`；运行于2026-11-21 01:51:49Z创建、01:51:53Z结束。**没有任何 cargo checkout/toolchain/test 步骤实际执行；不能把它算成 S43B Rust 测试失败或成功。**
+
+完成唯一一次基础设施探针后，将 S43B 恢复为 **`workflow_dispatch` only**。本恢复提交带 `[skip ci]` 以免递归再触发。仓库所有者仍需按照本文件前述路径排查私有仓库计费/Actions/组织策略，只有真实job获得steps并执行cargo后才能验收。不要因无步骤失败而持续提交无意义CI触发变更。

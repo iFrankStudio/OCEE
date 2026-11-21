@@ -565,3 +565,7 @@
 ### 2026-11-21 — S43B 独立原生验证触发探针
 - 对 S43B P2专家继承路径做静态图构造计数：S21角色压缩后、S22/S23、S31/S32、S40/S41、S42B及S43B共约120个命名区块（含删除4个不可达块后），低于VM的128硬限制；**这是静态推演，非Program.validate或cargo结果**。S43B原生真实图字节大小及运行时间仍需CI。
 - 因现有连接不能主动运行workflow_dispatch、容器无cargo且无法访问私有GitHub，启用`s43b-active-receipts.yml`对**工作流自身修改**的单路径main push触发以尝试一次定向原生验证。此规则不会重复启动历史S22–S40，亦不会因S43B普通源码push反复运行。结果必须从实际Actions/job steps确认，不允许按代码已提交推断实验通过。
+
+### 2026-11-21 — S43B 原生runner实际探针返回阻断（非Rust失败）
+- [Run #44852637401](https://github.com/iFrankStudio/OCEE/actions/runs/44852637401) 由 `main` 提交 `876e687` 成功触发S43B单项workflow，`completed/failure`，job ID `136687346985`，`steps=[]`，未实际执行 checkout/rust-toolchain/cargo。没有证明S43B编译或VM通过/失败；不能写成科学验收。
+- 为免浪费私有仓库Actions预算，已将S43B workflow恢复为仅手动调度。保持S40已验证4/4基线以及S41–S43B待验证闸门，G0 GO G1/G2 NO-GO，正式E001未预注册。应由有管理员权限的仓库/组织所有者检查Actions运行器、账单和策略后再按需手动运行最窄测试。
