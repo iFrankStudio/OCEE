@@ -1,9 +1,6 @@
 name: S45 Exploratory Eight-Step Delay Boundary
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s45-delay-boundary.yml"
+  # Native boundary probe PASS Run #44911181744; avoid rerunning on pushes.
   workflow_dispatch:
 concurrency:
   group: ocee-s45-delay-boundary-${{ github.ref }}

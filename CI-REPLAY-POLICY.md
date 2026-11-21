@@ -86,3 +86,7 @@ The earlier [workspace Run #44861571121](https://github.com/iFrankStudio/OCEE/ac
 ## 2026-11-21 — S45 combined-fault native 2/2 success
 
 [Run #44909113918](https://github.com/iFrankStudio/OCEE/actions/runs/44909113918) at source `dc7022ccdfb98120b85b613ba7c4e066fcc5c0dc`: completed/success with two separately executed native Rust tests (57.90s + 51.78s), confirming high-delay true task-drift recovery with B24 only once and high-delay forged RESULT rejection after a real B commit. See [protocol](./experiments/E001/DEV-S45-COMBINED-FAULTS.md). This is **not** a whole-workspace pass or a demonstration of open-ended cyberlife. The temporary path-only push trigger on `.github/workflows/s45-concurrent-faults.yml` has been restored to `workflow_dispatch` only in the [skip ci] record commit to avoid repeating historical costly studies.
+
+## 2026-11-21 — S45 exploratory delay-eight native PASS
+
+[Run #44911181744](https://github.com/iFrankStudio/OCEE/actions/runs/44911181744) at `bb924f3bbb46cf4b163204a3992665c679b34d64` completed/success: one native Rust test, 43.31s, stdout `delay=8 return=Some(U32(1)) b=24 remote_ids=[26] result_waits=162 restarts={}`. This confirms one real fixed-seed delay-eight success, **not** a guaranteed bound or formal E001 result. Restored `.github/workflows/s45-delay-boundary.yml` to manual-only after certification; no full workspace rerun.

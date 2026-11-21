@@ -615,3 +615,6 @@
 
 ### 2026-11-21 — S45超出已验收延迟窗口的单点探索（待原生结论）
 - [研究与解释规则](./experiments/E001/DEV-S45-DELAY-BOUNDARY.md) · [原生单项工作流](./.github/workflows/s45-delay-boundary.yml)。既有S45 delay6成功及组合故障2/2成功均不代表delay8；新增全程delay8真实活动P2探针，打印最终U32结果、B账本、真实u64 SEND ID、VM作用域等待计数及重启记录，强制B<=24、RemoteEval<=1、无无因重启、总预算<=896、成功必须有真实fold32及B24、失败不得写成功结果。**CI尚未运行；测试绿色不自动等于delay8活性成功，必须读取日志的return字段。** 科学G0/G1/G2与E001状态不变。
+
+### 2026-11-21 — S45 全程八步延迟新增原生正例
+- [Actions #44911181744](https://github.com/iFrankStudio/OCEE/actions/runs/44911181744) @ `bb924f3bbb46cf4b163204a3992665c679b34d64` **completed/success，单项原生1/1 PASS（43.31s）**。日志明确 `delay=8 return=Some(U32(1)) b=24 remote_ids=[26] result_waits=162 restarts={}`；成功分支验证真实fold32、仅一次B及SEND、快照哈希一致。不同于仅安全测试绿色，本次确实有delay8活性成功证据。此前delay6及组合故障2/2证据保持独立。此固定P2开发seed单点不能外推为通用延迟保证/科学进化。详见[研究记录](./experiments/E001/DEV-S45-DELAY-BOUNDARY.md)。工作流恢复仅手动。旧workspace仍取消，科学G0 GO、G1/G2 NO-GO，E001未校准/预注册。
