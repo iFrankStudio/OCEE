@@ -24,11 +24,14 @@ fn boot_s45(delay:u64)->World{
     boot_with(delay,s45_p2_scoped_result_wait(),s45_scoped_result_root())
 }
 fn boot_with(delay:u64,p2:Program,root:Program)->World{
+    boot_with_protocol_seed(delay,42,p2,root)
+}
+fn boot_with_protocol_seed(delay:u64,protocol_seed:u64,p2:Program,root:Program)->World{
     let seed=55;
     let p1=s40_p1_consumer();
     let mut w=World::with_protocol(Config{
         seed,message_delay:delay,a_gas_per_epoch:100_000,..Config::default()
-    },Family::P2,42);
+    },Family::P2,protocol_seed);
     let a=vec![1];let b=vec![2,0];
     let task=TransformTask{
         task_id:"s36-interactive-probe-v1".into(),
@@ -459,5 +462,83 @@ fn s45_eight_step_delay_exploratory_liveness_boundary_and_causal_safety(){
         assert!(!w.state.objects.contains_key(
             "/self/results/p2-job0/value_le"),
             "unsuccessful path cannot write a claimed successful RESULT");
+    }
+}
+
+#[test]
+fn s45_protocol_seed_paired_ablation_at_global_eight_step_delay(){
+    // Exploratory, PRE-FIXED paired seeds. Only the privileged P2
+    // protocol seed differs, never the world task, VM capabilities,
+    // delay, budgets or the service evaluator. Both arms run on each
+    // instance; no success is assumed from a green safety-only test.
+    for protocol_seed in [17_u64,93_u64]{
+        for (arm,p2,root) in [
+            ("S44",s44_p2_causal_wait_consumer(),s44_outcome_aware_root()),
+            ("S45",s45_p2_scoped_result_wait(),s45_scoped_result_root())
+        ]{
+            let program_hash=p2.content_hash().expect("exact frozen P2 graph");
+            let mut w=boot_with_protocol_seed(8,protocol_seed,p2,root);
+            finish(&mut w);
+            let last=w.state.organisms[&ORGANISM_ID].last_return.clone();
+            let b=b_total(&w);
+            let decoder=&w.state.protocol_service.as_ref()
+                .expect("P2 service").protocol;
+            let remote=w.audit.iter().filter_map(|a|{
+                let Some(Action::Send{destination:NodeId::C,bytes,..})=&a.action
+                    else{return None};
+                if a.result.code!=Code::Ok{return None;}
+                let Ok(frame)=decoder.decode(bytes)else{return None};
+                if frame.operation!=Operation::RemoteEval ||
+                    frame.body.len()!=18{return None;}
+                Some(u64::from_le_bytes(a.result.payload[..8]
+                    .try_into().unwrap()))
+            }).collect::<Vec<_>>();
+            let confirmations=w.audit.iter().filter_map(|a|match &a.action{
+                Some(Action::ConfirmResponseFor{request_id,..})
+                    if a.result.code==Code::Ok=>Some(*request_id),
+                _=>None,
+            }).collect::<Vec<_>>();
+            let continuation=w.state.organisms[&ORGANISM_ID]
+                .vm_continuation.as_ref().unwrap();
+            let s23_wait=continuation.loop_counters.get("s23_receive_retry")
+                .copied().unwrap_or(0);
+            let s45_wait=continuation.loop_counters.get("s45_result_retry")
+                .copied().unwrap_or(0);
+            let success=last==Some(Value::U32(1));
+            println!(
+                "S45_PAIRED_ABLATION protocol_seed={protocol_seed} arm={arm} \
+                 delay=8 success={success} return={last:?} B={b} \
+                 remote_ids={remote:?} confirmed={confirmations:?} \
+                 s23_wait={s23_wait} s45_wait={s45_wait} \
+                 step={} hash={program_hash} restarts={:?}",
+                w.state.step,w.state.guarded_restarts);
+            assert!(b<=24,"B cannot be charged twice in any arm");
+            assert!(remote.len()<=1,
+                "an unconfirmed successful B request must not be resent");
+            assert!(w.state.guarded_restarts.is_empty(),
+                "no task drift was introduced in this experiment");
+            assert!(s23_wait<=128);
+            assert!(s45_wait<=896);
+            if success{
+                assert_eq!(b,24,"success requires true B resources");
+                assert_eq!(remote.len(),1,"one real REMOTE_EVAL required");
+                assert!(confirmations.contains(&remote[0]),
+                    "success requires a C-sourced actual ACK");
+                let result=u32::from_le_bytes(w.state.objects[
+                    "/self/results/p2-job0/value_le"].bytes[..4]
+                    .try_into().unwrap());
+                let operands=w.state.objects[REMOTE_VALUES].bytes
+                    .chunks_exact(4)
+                    .map(|x|u32::from_le_bytes(x.try_into().unwrap()))
+                    .collect::<Vec<_>>();
+                assert_eq!(result,fold32(&operands).unwrap());
+            }else{
+                assert!(!w.state.objects.contains_key(
+                    "/self/results/p2-job0/value_le"),
+                    "a failed arm cannot leave a claimed successful RESULT");
+            }
+            assert_eq!(w.state_hash(),
+                World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+        }
     }
 }

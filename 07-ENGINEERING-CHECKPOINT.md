@@ -618,3 +618,6 @@
 
 ### 2026-11-21 — S45 全程八步延迟新增原生正例
 - [Actions #44911181744](https://github.com/iFrankStudio/OCEE/actions/runs/44911181744) @ `bb924f3bbb46cf4b163204a3992665c679b34d64` **completed/success，单项原生1/1 PASS（43.31s）**。日志明确 `delay=8 return=Some(U32(1)) b=24 remote_ids=[26] result_waits=162 restarts={}`；成功分支验证真实fold32、仅一次B及SEND、快照哈希一致。不同于仅安全测试绿色，本次确实有delay8活性成功证据。此前delay6及组合故障2/2证据保持独立。此固定P2开发seed单点不能外推为通用延迟保证/科学进化。详见[研究记录](./experiments/E001/DEV-S45-DELAY-BOUNDARY.md)。工作流恢复仅手动。旧workspace仍取消，科学G0 GO、G1/G2 NO-GO，E001未校准/预注册。
+
+### 2026-11-21 — S45 新P2协议实例的配对消融（开发集、待原生验证）
+- [预定的独立协议种子17/93、全程delay8、S44/S45配对四条轨迹](./experiments/E001/DEV-S45-PAIRED-PROTOCOL-SEED-ABLATION.md) · [真实VM测试](./crates/organism-seeds/tests/s44_uncertain_outcome.rs) · [定向CI](./.github/workflows/s45-protocol-seed-ablation.yml)。此前S45 delay8成功仅在协议seed42，无法直接外推；本试验固定工作任务、世界seed55、预算与服务语义，只改变未暴露给活动个体的协议种子，每组做S44/S45两臂。无论成功与否验收B不重复、真SEND不重发、真实来源确认、成果不伪造及快照；**CI绿色不等于四臂活性都成功，必须读取四行S45_PAIRED_ABLATION**。此条为提交前实验设计，尚未原生验证。

@@ -1,0 +1,21 @@
+name: S45 Paired P2 Protocol Seed Ablation
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s45-protocol-seed-ablation.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-s45-protocol-seed-ablation-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  paired-exploratory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Paired frozen P2 protocol seeds 17 and 93, S44 versus S45, delay eight
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s45_protocol_seed_paired_ablation_at_global_eight_step_delay -- --show-output
