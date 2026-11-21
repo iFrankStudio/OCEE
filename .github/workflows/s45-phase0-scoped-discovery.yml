@@ -1,9 +1,7 @@
 name: S45 Phase0 Bounded Discovery Fixed-Seed Regression
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s45-phase0-scoped-discovery.yml"
+  # One-time native evidence recorded: Run #44917248521.
+  # Keep completed long P2 research experiments manual.
   workflow_dispatch:
 concurrency:
   group: ocee-s45-phase0-${{ github.ref }}

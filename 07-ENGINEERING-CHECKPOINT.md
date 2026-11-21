@@ -625,3 +625,9 @@
 ### 2026-11-21 — 冻结的P2协议种子配对消融：安全通过，任务0/4失败
 - [真正原生Run #44916855269](https://github.com/iFrankStudio/OCEE/actions/runs/44916855269) @ `519f9ccb20d389400490eb6accee61b82397d1b9`，completed/success仅表示本轮预设的4条安全路径断言通过；seed17/93 × S44/S45旧图四臂实际都返回U32(0)、B0、没有真实REMOTE_EVAL；共享s23_receive_retry=128，s45_result_retry=0、step411，表明未到Phase2就耗尽Phase0等候预算。原生[实验记录及完整失败表](./experiments/E001/DEV-S45-PAIRED-PROTOCOL-SEED-ABLATION.md)。**绝不把安全绿色误报成活性成功。**
 - 新设工程回归：仍固定协议seed17/93和全程delay8，只在S45 Phase0增加独立每opcode与总额双限等待；Phase1的真实request outcome/restart与Phase2安全确认不放宽，之后单独验收两种协议中的真B24一次、真实ACK/RESULT及快照。原旧配对运行SHA和阴性结论永久保留。本段新修复**尚未获得CI通过证据**。
+
+### 2026-11-21 — S45 Phase0 REMOTE_EVAL探索修复，冻结失败样本回归2/2成功
+- [既有配对阴性 #44916855269](https://github.com/iFrankStudio/OCEE/actions/runs/44916855269) @ `519f9ccb` 四臂安全通过但活性0/4（seed17/93每组S44、旧S45均B0，旧S23共享128预算提前耗尽），已不可逆归档。
+- [**原生修复Run #44917248521**](https://github.com/iFrankStudio/OCEE/actions/runs/44917248521) @ `4cbf8743b63eff8de55ae1d8bdd3b872f9e11d8e`，**completed/success，1项Rust测试、内部两完整活动P2轨迹2/2真成功（407.03s）**：seed17全程delay8结果U32(1)、真实B24一次、真实RemoteEval ID120，Phase0/Phase2分别354/312次scoped wait、tick2140；seed93同为U32(1)/B24一次、ID108、阶段等待318/360、tick2198。均具真正ACK与RESULT `ConfirmResponseFor` 通过、结果fold32正确、无无因Root重启、快照一致。
+- 新S45 Phase0 REMOTE_EVAL opcode探索和Phase2 RESULT各采用**单候选6、每阶段总896**的局部+全局双限；Phase1受限真实ID恢复及Phase3不变。修复前失败样本和成功后的目标相同，属**开发集定向修复**而非新独立确认集；先前42协议seed既有基线不等于当前修订SHA全回归。旧workspace取消，不得说全仓通过；G0 GO、G1/G2 NO-GO，E001未校准/未预注册。
+- [完整负/正因果证据及研究限制](./experiments/E001/DEV-S45-PAIRED-PROTOCOL-SEED-ABLATION.md)。两次临时workflow push触发恢复仅手动，以免历史实验自动反复运行。

@@ -90,3 +90,21 @@ The earlier [workspace Run #44861571121](https://github.com/iFrankStudio/OCEE/ac
 ## 2026-11-21 — S45 exploratory delay-eight native PASS
 
 [Run #44911181744](https://github.com/iFrankStudio/OCEE/actions/runs/44911181744) at `bb924f3bbb46cf4b163204a3992665c679b34d64` completed/success: one native Rust test, 43.31s, stdout `delay=8 return=Some(U32(1)) b=24 remote_ids=[26] result_waits=162 restarts={}`. This confirms one real fixed-seed delay-eight success, **not** a guaranteed bound or formal E001 result. Restored `.github/workflows/s45-delay-boundary.yml` to manual-only after certification; no full workspace rerun.
+
+
+## 2026-11-21 — 同批协议seed17/93的Phase0 scoped修复：原生2/2真B成功
+
+注意严格区分**两个不同的已提交源码快照**：
+- **原版对照**：[Run #44916855269](https://github.com/iFrankStudio/OCEE/actions/runs/44916855269) @ `519f9ccb20d389400490eb6accee61b82397d1b9`，4条安全断言通过、4条真实任务失败。S44和原S45两臂均Phase0提前共享s23=128耗尽、B0。此阴性结果不可被修改或回填。
+- **失败后提出的工程修复**：[Run #44917248521](https://github.com/iFrankStudio/OCEE/actions/runs/44917248521) @ `4cbf8743b63eff8de55ae1d8bdd3b872f9e11d8e`，原生Rust用例 **1 passed / 0 failed；407.03s**，内部两条S45新轨迹均达到 `Some(U32(1))`，真正B24且只一次，真REMOTE_EVAL SEND仅一次，S43B `ConfirmResponseFor` 认证ACK和RESULT、计算结果与独立 `fold32` 一致，世界快照哈希一致且没有不当Root重启。
+
+| 协议seed | 原S45（原生阴性） | 修复后S45（原生正例） | Phase0 scoped waits | Phase2 scoped waits | 完成tick | 真实B消息u64 ID |
+|---|---|---|---:|---:|---:|---:|
+| 17 | U32(0) / B0 / 411 tick | U32(1) / B24 | 354 | 312 | 2140 | 120 |
+| 93 | U32(0) / B0 / 411 tick | U32(1) / B24 | 318 | 360 | 2198 | 108 |
+
+原版S44在两协议实例均失败的事实没有改变。Phase0修复针对的新观察是：先前没有进入Phase2，原因是旧S23共享128等待在前置REMOTE_EVAL opcode扫描耗尽；旧S45只为Phase2处理了同一症状。新图在`s41_check_drop`的非Phase1入口按phase分别路由Phase0/Phase2的`RepeatScoped`，二者分别有**每opcode 6次、每阶段总896次**，仍保留Phase1真实ID与一次安全恢复、Phase3旧边界、不新建工具和重发权限。
+
+新代码改动后两固定seed的校准属于**使用原失败样本进行修复**（development-set regression），**不是**见过结果后仍可称作“盲测成功”的独立证据；它只强力支持“此两例Phase0等待额度是可修复的关键故障因素”。原实验的成功率仍是S44 0/2、旧S45 0/2，不变；修复后S45本次仅2/2。不能直接宣称未知协议泛化、E001 H1/H2/H3、现实网络exactly-once或赛博生命产生。正式 E001 G0 GO、G1/G2 NO-GO及未校准/未预注册不变。
+
+两个本轮临时工作流push触发均已恢复仅手动`workflow_dispatch`，防止后续无意重复执行约7分钟的原生全程多seed探索。

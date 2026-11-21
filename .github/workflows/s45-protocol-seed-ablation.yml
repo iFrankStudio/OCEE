@@ -1,9 +1,7 @@
 name: S45 Paired P2 Protocol Seed Ablation
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s45-protocol-seed-ablation.yml"
+  # One-time native evidence recorded: Run #44916855269.
+  # Keep completed long P2 research experiments manual.
   workflow_dispatch:
 concurrency:
   group: ocee-s45-protocol-seed-ablation-${{ github.ref }}
