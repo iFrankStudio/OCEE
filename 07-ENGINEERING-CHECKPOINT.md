@@ -604,3 +604,7 @@
 - **[原生 GitHub Actions #44905343381](https://github.com/iFrankStudio/OCEE/actions/runs/44905343381)** @ `e66a691b0c00e8a47ce1f561dc2820c8139905d1`，completed/success：VM `RepeatScoped`双层有限计数+Yield/快照（1/1），S45真实P2**从头到尾延迟6步**ACK/RESULT因果认证和真实B24**仅一次**（1/1，61.51s），原2步对照正确fold32/B24（1/1，31.88s）。S44原全局6步红例是B24而U32(0)；S45固定112候选搜索下将phase2每opcode等待限制6且全部opcode总额896，实得U32(1)并通过真实Request ID确认与快照校验。
 - 失败保留：[S45 #44905202275](https://github.com/iFrankStudio/OCEE/actions/runs/44905202275)旧S30诊断未穷尽VM新终结子Rust E0004；[S45 #44905261924](https://github.com/iFrankStudio/OCEE/actions/runs/44905261924)编译成功但错误假设S22 Empty直接走S23，实际S41/S42B已转入phase判定；两者已修复并通过最终窄CI。
 - [研究全文](./experiments/E001/DEV-S45-SCOPED-RESULT-LIVENESS.md) · [S45 P2活动程序](./crates/organism-seeds/src/s45_scoped_result_wait.rs) · [VM scoped有界器](./crates/organism-vm/src/lib.rs)。临时工作流push路径恢复仅`workflow_dispatch`。这修复的是封闭确定性C环境的已知高延迟活性问题，不等于多网络条件下无错恢复或开放演化。全仓旧Run #44861571121 cancelled；研究G0 GO、G1/G2 NO-GO；E001未校准/未预注册。
+
+### 2026-11-21 — S45组合故障交叉因果安全实验候选
+- [研究协议](./experiments/E001/DEV-S45-COMBINED-FAULTS.md) · [两项原生目标CI](./.github/workflows/s45-concurrent-faults.yml) · [追加的真实活动P2测试](./crates/organism-seeds/tests/s44_uncertain_outcome.rs)。此前 S45 全局高延迟（6步）3/3已过，但未测试真实任务版本漂移与延迟同时发生的恢复，也未在S45的新Phase2等待路径中注入无服务来源伪回复。
+- 本轮仅增加两项有明确资源/因果不变量的交叉对照：旧请求真TaskFenceDrop/B0、新请求仅B24一次并真ACK，及RESULT阶段伪回执应ConfirmResponseFor Conflict/无结果成功。**尚未获取本轮原生CI结论**，后续只能按实际Run更新，不能预先记通过；科学闸门不变。

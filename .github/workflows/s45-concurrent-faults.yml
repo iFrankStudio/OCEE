@@ -1,0 +1,23 @@
+name: S45 Combined Delay Fault-Fence and Forged RESULT
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s45-concurrent-faults.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-s45-combined-faults-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  causal-controls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Six-step latency plus genuine task drift recovers once with B once
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s45_global_six_step_delay_and_real_task_drop_relearns_exactly_once -- --show-output
+      - name: Forged phase2 RESULT under delayed network cannot be confirmed
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s45_delayed_phase2_forged_reply_fails_closed_after_real_b -- --show-output

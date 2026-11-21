@@ -306,3 +306,114 @@ fn s45_baseline_two_step_latency_keeps_correct_result(){
         .collect::<Vec<_>>();
     assert_eq!(actual,fold32(&operands).unwrap());
 }
+
+#[test]
+fn s45_global_six_step_delay_and_real_task_drop_relearns_exactly_once(){
+    let mut w=boot_s45(6);
+    let old_id=actual_job_id(&mut w);
+    // The initial request is already a genuine C-bound SEND. Change the
+    // public task before delayed C execution: it MUST be fenced at B0.
+    let task=w.state.objects.get_mut(DEPTH_TASK).expect("public task");
+    let mut changed:TransformTask=serde_json::from_slice(&task.bytes).unwrap();
+    changed.task_id="s37-changed-rule-v2".into();
+    for example in &mut changed.examples{
+        example.output=2*example.input.len() as u32;
+    }
+    task.bytes=serde_json::to_vec(&changed).unwrap();
+    task.version+=1;
+    finish(&mut w);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)),
+        "global6+drift: B={} drops={:?} restarts={:?} pending={:?}",
+        b_total(&w),w.state.fence_drops,w.state.guarded_restarts,
+        w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().map(|c|&c.loop_counters));
+    assert_eq!(w.state.fence_drops.len(),1);
+    assert_eq!(w.state.fence_drops[0].message_id,old_id);
+    assert_eq!(w.state.guarded_restarts.get(&ORGANISM_ID),Some(&1));
+    assert_eq!(b_total(&w),24);
+    let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+    let remote_sends=w.audit.iter().filter_map(|record|{
+        let Some(Action::Send{destination:NodeId::C,bytes,..})=&record.action
+            else{return None};
+        if record.result.code!=Code::Ok{return None}
+        let Ok(frame)=decoder.decode(bytes)else{return None};
+        if frame.operation!=Operation::RemoteEval || frame.body.len()!=18{
+            return None;
+        }
+        Some(u64::from_le_bytes(record.result.payload[..8]
+            .try_into().unwrap()))
+    }).collect::<Vec<_>>();
+    assert_eq!(remote_sends.len(),2,"old fenced then fresh new job");
+    assert_eq!(remote_sends[0],old_id);
+    assert_ne!(remote_sends[0],remote_sends[1]);
+    let actual_new=remote_sends[1];
+    assert!(outcomes(&w).iter().any(|r|r.request_id==old_id &&
+        r.state==RequestState::Dropped));
+    assert_eq!(w.audit.iter().filter(|a|matches!(&a.action,
+        Some(Action::RestartRootFor{request_id,..})
+            if *request_id==old_id) && a.result.code==Code::Ok).count(),1);
+    assert!(w.audit.iter().any(|a|matches!(&a.action,
+        Some(Action::ConfirmResponseFor{request_id,..})
+            if *request_id==actual_new) && a.result.code==Code::Ok));
+    assert!(!w.audit.iter().any(|a|matches!(&a.action,
+        Some(Action::ConfirmResponseFor{request_id,..})
+            if *request_id==old_id) && a.result.code==Code::Ok));
+    assert_eq!(w.state.service_events.iter()
+        .filter(|e|e.b_gas_charged>0).count(),1);
+    let actual=u32::from_le_bytes(w.state.objects[
+        "/self/results/p2-job0/value_le"].bytes[..4].try_into().unwrap());
+    let operands=w.state.objects[REMOTE_VALUES].bytes.chunks_exact(4)
+        .map(|x|u32::from_le_bytes(x.try_into().unwrap()))
+        .collect::<Vec<_>>();
+    assert_eq!(actual,fold32(&operands).unwrap());
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
+
+#[test]
+fn s45_delayed_phase2_forged_reply_fails_closed_after_real_b(){
+    let mut w=boot_s45(6);
+    let mut result_send_id=None;
+    for _ in 0..12_000{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        let Some(record)=w.audit.last()else{continue};
+        let Some(Action::Send{destination:NodeId::C,bytes,..})=&record.action
+            else{continue};
+        if record.result.code!=Code::Ok{continue}
+        let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+        let Ok(frame)=decoder.decode(bytes)else{continue};
+        if frame.operation==Operation::Result{
+            result_send_id=Some(u64::from_le_bytes(record.result.payload[..8]
+                .try_into().unwrap()));
+            break;
+        }
+    }
+    let result_send_id=result_send_id.expect("P2 must send a real RESULT opcode candidate");
+    assert_eq!(b_total(&w),24,"B completed before RESULT exploration");
+    // Researcher-only untrusted injection into the actual phase2 mailbox.
+    // Delivery by Receive is NOT evidence of a legitimate service event.
+    let forged=ocee_world_kernel::Message{
+        id:u64::MAX-8,actor:ORGANISM_ID,
+        source:NodeId::C,destination:NodeId::A,
+        bytes:vec![0xde,0xad,0xbe,0xef],
+        sent_step:w.state.step,deliver_step:w.state.step,
+        sequence_no:u64::MAX-8,
+    };
+    w.state.mailboxes.entry(NodeId::A).or_default().insert(0,forged);
+    finish(&mut w);
+    assert!(w.audit.iter().any(|a|matches!(&a.action,
+        Some(Action::ConfirmResponseFor{request_id,..})
+            if *request_id==result_send_id) && a.result.code==Code::Conflict),
+        "S43B confirmation must reject unowned reply inside S45");
+    assert_eq!(b_total(&w),24);
+    assert!(w.state.guarded_restarts.is_empty());
+    assert!(!w.state.objects.contains_key(
+        "/self/results/p2-job0/value_le"),
+        "forged RESULT must not produce a success artifact");
+    assert_ne!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)));
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
