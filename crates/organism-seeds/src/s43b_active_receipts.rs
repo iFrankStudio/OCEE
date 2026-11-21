@@ -86,7 +86,7 @@ pub fn s43b_p2_confirmed_reply_consumer()->Program{
     let (key,key_reg)=evidence_key(602,601,13120);
     pending.instructions=key;
     pending.terminator=y(WorldCall::Read,vec![key_reg],
-        "s42b_pending_reply",vec![11100,11101,11102]);
+        "s42b_pending_reply",vec![600,601,602]);
 
     // The S23 status guard has already established a successful RECEIVE.
     // Intercept before S23 parses protocol frames or accepts an ACK/RESULT.
