@@ -1,9 +1,7 @@
 name: S45 Per-Candidate and Aggregate RESULT Waiting
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s45-scoped-result-wait.yml"
+  # Native 3/3 verified in Run #44905343381 at e66a691b.
+  # Do not automatically replay completed heavy P2 studies.
   workflow_dispatch:
 concurrency:
   group: ocee-s45-result-wait-${{ github.ref }}

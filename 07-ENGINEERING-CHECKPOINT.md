@@ -599,3 +599,8 @@
 ### 2026-11-21 — 双重有界的Phase2 RESULT等待（S45候选，待原生验证）
 - 根据最新 [VM循环作用域静态分析](./experiments/E001/VM-BOUNDED-LOOP-COUNTER-SCOPE.md) 和S44全局6-step真实失败，新增带局部scope和硬全局上限的 `RepeatScoped` VM终结子、继承S44的P2有限相位分派与 [S45定向原生验证](./.github/workflows/s45-scoped-result-wait.yml)。独立单opcode 6次Empty，总896次，上限持久化且不新增重发权限。
 - 需以本次原生CI验收VM多scope+Yield+快照、P2全程6-step真实C/B及ACK/RESULT确认、原2-step正常对照。此处尚未有S45通过证据；全量workspace旧运行仍cancelled，G0/G1/G2及E001以实时检查点为准。
+
+### 2026-11-21 — S45从全局6步延迟红例到原生3/3通过（本轮工程实证）
+- **[原生 GitHub Actions #44905343381](https://github.com/iFrankStudio/OCEE/actions/runs/44905343381)** @ `e66a691b0c00e8a47ce1f561dc2820c8139905d1`，completed/success：VM `RepeatScoped`双层有限计数+Yield/快照（1/1），S45真实P2**从头到尾延迟6步**ACK/RESULT因果认证和真实B24**仅一次**（1/1，61.51s），原2步对照正确fold32/B24（1/1，31.88s）。S44原全局6步红例是B24而U32(0)；S45固定112候选搜索下将phase2每opcode等待限制6且全部opcode总额896，实得U32(1)并通过真实Request ID确认与快照校验。
+- 失败保留：[S45 #44905202275](https://github.com/iFrankStudio/OCEE/actions/runs/44905202275)旧S30诊断未穷尽VM新终结子Rust E0004；[S45 #44905261924](https://github.com/iFrankStudio/OCEE/actions/runs/44905261924)编译成功但错误假设S22 Empty直接走S23，实际S41/S42B已转入phase判定；两者已修复并通过最终窄CI。
+- [研究全文](./experiments/E001/DEV-S45-SCOPED-RESULT-LIVENESS.md) · [S45 P2活动程序](./crates/organism-seeds/src/s45_scoped_result_wait.rs) · [VM scoped有界器](./crates/organism-vm/src/lib.rs)。临时工作流push路径恢复仅`workflow_dispatch`。这修复的是封闭确定性C环境的已知高延迟活性问题，不等于多网络条件下无错恢复或开放演化。全仓旧Run #44861571121 cancelled；研究G0 GO、G1/G2 NO-GO；E001未校准/未预注册。
