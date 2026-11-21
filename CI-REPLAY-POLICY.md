@@ -43,3 +43,11 @@ S43B 工程候选已完成静态审计，但无本机 Rust 工具链，也无法
 **成本恢复**：S43A和S43B工作流恢复仅`workflow_dispatch`。S41工作流仍有原有路径限定自动触发规则，但本次最终文档/工作流恢复提交不修改其路径。历史Study与全量workspace继续手动按需执行，不能由本结果推断全仓通过。
 
 **研究边界**：以上是具体工程测试命令的原生验收，不是开放式演化、独立赛博生命、长期适应能力的科学证明。G0 GO、G1/G2 NO-GO，E001依然未校准、未预注册。
+
+## 2026-11-21 Public runner S42A targeted verification and full-workspace run
+
+[S42A Run #44861540477](https://github.com/iFrankStudio/OCEE/actions/runs/44861540477), `db000dc0ba295c2f353e8625c0da932d9bcda91d`: completed/success; both separate Rust native steps completed/success: (1) stale task-fence drop cannot authorize newer in-flight request, (2) missing public task denies restart. **S42A 2/2**.
+
+[Workspace Run #44861571121](https://github.com/iFrankStudio/OCEE/actions/runs/44861571121), `145a30348a67e8072a0d1ed09d776f35eeb54e09`: triggered on public runner; at last observation, checkout/toolchain succeeded and `cargo test --workspace -- --show-output` was **in progress**. This paragraph is *not* a declaration that workspace or cost/manifest steps have passed. Preserve run URL as the source of truth; any eventual conclusion must be recorded from the job/step statuses. A full workspace may run substantially longer than focused S42A/S43 tests.
+
+After starting both jobs, restored `.github/workflows/s42a-request-fence.yml` to manual-only, and `.github/workflows/rust-kernel.yml` to manual plus pull_request only. The restoration commit uses `[skip ci]` to avoid re-triggering/canceling the original verification. No additional historical study runs triggered intentionally.

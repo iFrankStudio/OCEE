@@ -575,3 +575,8 @@
 - [S43A通过 Run #44860455869](https://github.com/iFrankStudio/OCEE/actions/runs/44860455869) @ `8805bea`，两项世界内核的执行状态/回复因果及栅栏丢弃与B0服务诊断负对照均通过。
 - [S41/S42B混合 Run #44860113013](https://github.com/iFrankStudio/OCEE/actions/runs/44860113013) @ `ba0c664`：S41 4项+S42B 1项实际通过，另3项当时未修正的S43B失败，**整体Run失败**；S43B随后已被独立Run验收。此前 Runner 缺失、`E0716`、VM非法operand和参数类型错误均已留下可溯源失败证据。
 - 仓库现为Public，GitHub-hosted Rust job正常运行。已撤销为验证而开启的S43A/S43B自动push触发，回归手动workflow_dispatch。仍需S42A专门回归及必要的workspace确认，不把局部验收声称全仓验收；科学闸门仍G0 GO，G1/G2 NO-GO，正式E001未预注册。
+
+### 2026-11-21 — S42A 原生2/2通过，workspace全量原生测试已启动
+- [S42A Run #44861540477](https://github.com/iFrankStudio/OCEE/actions/runs/44861540477) @ `db000dc0`，本次两个原生测试步骤 success，均各1项用例通过。S42A请求栅栏因果/缺失公共任务拒绝获得实际Rust验证。
+- [Workspace Run #44861571121](https://github.com/iFrankStudio/OCEE/actions/runs/44861571121) @ `145a3034`，提交时已成功进入Rust `cargo test --workspace -- --show-output` 执行；尚未观测到最终结果，不能声称全仓通过。恢复S42A为手动workflow_dispatch，workspace为手动+PR触发。
+- S43A原生2/2与S43B原生3/3的既有证据不变。科学阶段仍G0 GO、G1/G2 NO-GO、E001未校准/预注册。
