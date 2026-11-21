@@ -1,6 +1,12 @@
 name: OCEE World Kernel
 
 on:
+  # One-time public-runner full-workspace validation. Trigger only when
+  # this workflow file changes; archived studies remain manual-only.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rust-kernel.yml"
   workflow_dispatch:
   pull_request:
     paths:
