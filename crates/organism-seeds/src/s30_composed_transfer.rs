@@ -240,7 +240,8 @@ pub fn s30_composed_cross_family_root(p1_hash:&str,p2_hash:&str)->Program{
                 destinations.push((if_true,true_args.len()));
                 destinations.push((if_false,false_args.len()));
             },
-            Terminator::RepeatBounded{body,body_args,done,done_args,..}=>{
+            Terminator::RepeatBounded{body,body_args,done,done_args,..}
+            | Terminator::RepeatScoped{body,body_args,done,done_args,..}=>{
                 destinations.push((body,body_args.len()));
                 destinations.push((done,done_args.len()));
             },

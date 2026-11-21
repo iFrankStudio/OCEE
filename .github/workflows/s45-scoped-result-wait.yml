@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: VM scoped counter survives yield and snapshot with hard total cap
+      - name: VM scoped counter/snapshot and S30 compatibility retrial
         run: cargo test -p ocee-organism-vm scoped_wait_budget_is_per_candidate_but_has_hard_global_cap -- --show-output
       - name: P2 full six-step global latency has real ACK RESULT and exactly one B
         run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s45_global_six_step_delay_validates_real_b_and_result_once -- --show-output
