@@ -590,3 +590,8 @@
 - [先前失败 #44862804649](https://github.com/iFrankStudio/OCEE/actions/runs/44862804649)：全局6-step网络延迟时虽B24一次、CommitB在途且无错误重启，但旧S23 RESULT操作码扫描耗尽其有界Receive预算，个体最终U32(0)。这是尚未修复的活性局限，不属于S44安全门通过范围。
 - [S41回归 #44862672828](https://github.com/iFrankStudio/OCEE/actions/runs/44862672828) @ `b9934ae` 也独立completed/success，但共享lib模块改动不应重复触发昂贵的旧研究。因此S41和S44都改为仅手动workflow_dispatch并用`[skip ci]`封存。
 - [完整workspace旧SHA Run #44861571121](https://github.com/iFrankStudio/OCEE/actions/runs/44861571121) 仍按其独立运行记录结论判断；其SHA先于S44，不代表S44全仓集成通过。科学G0 GO、G1/G2 NO-GO，E001未预注册。
+
+### 2026-11-21 — 全量CI终态核验与S44负例边界（无新功能验收）
+- 独立读取 [workspace #44861571121](https://github.com/iFrankStudio/OCEE/actions/runs/44861571121) 的运行及jobs记录：旧源码 `145a30348a67e8072a0d1ed09d776f35eeb54e09`，最终 `completed/cancelled`；`kernel` job同为 `completed/cancelled`，其中 `Run world and VM invariant tests` 步骤 `cancelled`，后续S8成本报告/manifest步骤 `skipped`。**这不是测试通过，也不能推断测试断言失败**；不需要为取得“绿色”而重复启动旧SHA全量CI。
+- S44 [定向原生3/3 #44862964346](https://github.com/iFrankStudio/OCEE/actions/runs/44862964346) 的成功仅覆盖该workflow所选用例及其源码 `fed97e8cbfccfcb5415d510a71fb2503189c31c6`，不构成完整workspace回归。全局6-step延迟负对照 [#44862804649](https://github.com/iFrankStudio/OCEE/actions/runs/44862804649) 仍为真实红例：B已执行且仅扣24、CommittedB可见，但S23 RESULT操作码扫描在有界等待内未取得结果。后续方案应将**操作码搜索预算**与**已发送请求的在途等待预算**区分，避免把延迟误判为错误opcode；仍须保持同一u64请求ID的真实RECEIVE/服务确认、Unknown不重试、CommittedB不重发、有限A gas及独立低延迟/高延迟/伪回复负对照。这里只是从已有红例推导的待验证假说，**没有新Rust代码或CI验收**。
+- 本轮仅完成CI终态审计，不调整G0 GO、G1/G2 NO-GO及E001未校准/未预注册状态。
