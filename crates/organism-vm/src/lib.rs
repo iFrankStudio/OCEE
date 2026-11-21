@@ -90,6 +90,11 @@ pub enum Terminator {
     /// Only cycles passing through bounded headers are admitted by the verifier.
     RepeatBounded { limit: u32, body: String, body_args: Vec<u32>,
                     done: String, done_args: Vec<u32> },
+    /// Per-scope local bound AND an aggregate bound across all changing scopes.
+    /// Both counters persist across yields and snapshots.
+    RepeatScoped { limit: u32, aggregate_limit: u32, scope: u32,
+                   body: String, body_args: Vec<u32>,
+                   done: String, done_args: Vec<u32> },
     // The target block receives next_args followed by one Bytes feedback parameter.
     Yield { call: WorldCall, args: Vec<u32>, next: String, next_args: Vec<u32> },
 }
@@ -206,6 +211,21 @@ impl Program {
                     check_jump(done,done_args,false)?;
                     // The bounded header removes its outgoing graph edges from
                     // the cycle check: every remaining cycle is forbidden.
+                    outgoing.clear();
+                }
+                Terminator::RepeatScoped{limit,aggregate_limit,scope,
+                    body,body_args,done,done_args}=>{
+                    if *limit==0 || *limit>256 ||
+                        *aggregate_limit==0 || *aggregate_limit>4096 {
+                        return Err(bad("scoped repeat limit"));
+                    }
+                    if defs.get(scope)!=Some(&Type::U32){
+                        return Err(bad("scoped repeat U32 scope"));
+                    }
+                    check_jump(body,body_args,false)?;
+                    check_jump(done,done_args,false)?;
+                    // Finite aggregate_limit bounds control flow even when
+                    // an organism changes scope on every visit.
                     outgoing.clear();
                 }
                 Terminator::Yield {call,args,next,next_args} => {
@@ -814,6 +834,21 @@ impl Continuation {
                     let vals=values(&self.registers,args)?;
                     self.enter(f,target,vals)?;
                 },
+                Terminator::RepeatScoped{
+                    limit,aggregate_limit,scope,body,body_args,done,done_args
+                }=>{
+                    let scope_value=num(&self.registers,*scope)?;
+                    let local_key=format!("{}:{scope_value}",block.id);
+                    let global=self.loop_counters.get(&block.id).copied().unwrap_or(0);
+                    let local=self.loop_counters.get(&local_key).copied().unwrap_or(0);
+                    let (target,args)=if global<*aggregate_limit && local<*limit{
+                        self.loop_counters.insert(block.id.clone(),global+1);
+                        self.loop_counters.insert(local_key,local+1);
+                        (body,body_args)
+                    }else{(done,done_args)};
+                    let vals=values(&self.registers,args)?;
+                    self.enter(f,target,vals)?;
+                },
                 Terminator::Yield{call,args,next,next_args}=>{
                     let provided=values(&self.registers,args)?;
                     let forwarded=values(&self.registers,next_args)?;
@@ -1218,5 +1253,73 @@ mod tests {
         }
         // Preflight never exposes a protocol-specific tag map and never
         // turns malformed bytes into an unchecked VM InvalidInput fault.
+    }
+
+    #[test]
+    fn scoped_wait_budget_is_per_candidate_but_has_hard_global_cap(){
+        fn run(global:u32)->(u32,BTreeMap<String,u32>){
+            let u=Type::U32;
+            let program=Program{
+                format_version:1,entry_function:"main".into(),
+                functions:vec![Function{
+                    name:"main".into(),args:vec![Type::Bytes],returns:u,
+                    blocks:vec![
+                        Block{id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+                            instructions:vec![Instruction{id:1,op:Op::ConstU32(0)}],
+                            terminator:Terminator::Jump{target:"head".into(),args:vec![1]}},
+                        Block{id:"head".into(),params:vec![Param{id:10,ty:u}],
+                            instructions:vec![],terminator:Terminator::RepeatScoped{
+                                scope:10,limit:2,aggregate_limit:global,
+                                body:"poll".into(),body_args:vec![10],
+                                done:"advance".into(),done_args:vec![10]}},
+                        Block{id:"poll".into(),params:vec![Param{id:20,ty:u}],
+                            instructions:vec![],terminator:Terminator::Yield{
+                                call:WorldCall::Observe,args:vec![],
+                                next:"again".into(),next_args:vec![20]}},
+                        Block{id:"again".into(),params:vec![Param{id:30,ty:u},
+                            Param{id:31,ty:Type::Bytes}],instructions:vec![],
+                            terminator:Terminator::Jump{target:"head".into(),args:vec![30]}},
+                        Block{id:"advance".into(),params:vec![Param{id:40,ty:u}],
+                            instructions:vec![
+                                Instruction{id:41,op:Op::ConstU32(1)},
+                                Instruction{id:42,op:Op::Add(40,41)},
+                                Instruction{id:43,op:Op::ConstU32(2)},
+                                Instruction{id:44,op:Op::EqU32(42,43)}],
+                            terminator:Terminator::Branch{condition:44,
+                                if_true:"done".into(),true_args:vec![42],
+                                if_false:"head".into(),false_args:vec![42]}},
+                        Block{id:"done".into(),params:vec![Param{id:50,ty:u}],
+                            instructions:vec![],terminator:Terminator::Return{value:50}},
+                    ]}]
+            };
+            program.validate().unwrap();
+            let mut state=Continuation::start(&program,vec![]).unwrap();
+            let mut feedback=None;
+            let mut ticks=0;
+            loop{
+                match state.resume(&program,feedback.take(),300).unwrap(){
+                    SliceResult::Yielded{call:WorldCall::Observe,..}=>{
+                        ticks+=1;
+                        let serialized=serde_json::to_vec(&state).unwrap();
+                        state=serde_json::from_slice(&serialized).unwrap();
+                        feedback=Some(vec![]);
+                    },
+                    SliceResult::Returned{output:Value::U32(2),..}=>break,
+                    result=>panic!("unexpected scoped VM result {result:?}"),
+                }
+                assert!(ticks<6);
+            }
+            (ticks,state.loop_counters)
+        }
+        let (ticks,counts)=run(4);
+        assert_eq!(ticks,4);
+        assert_eq!(counts["head"],4);
+        assert_eq!(counts["head:0"],2);
+        assert_eq!(counts["head:1"],2);
+        let (ticks,counts)=run(3);
+        assert_eq!(ticks,3);
+        assert_eq!(counts["head"],3);
+        assert_eq!(counts["head:0"],2);
+        assert_eq!(counts["head:1"],1);
     }
 }
