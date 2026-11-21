@@ -1,0 +1,21 @@
+name: S45 Phase0 Bounded Discovery Fixed-Seed Regression
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s45-phase0-scoped-discovery.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-s45-phase0-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-phase0:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: The same frozen protocol seeds 17 and 93 now reach real B once
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s45_phase0_scoped_wait_restores_two_fixed_protocol_seed_regressions -- --show-output

@@ -621,3 +621,7 @@
 
 ### 2026-11-21 — S45 新P2协议实例的配对消融（开发集、待原生验证）
 - [预定的独立协议种子17/93、全程delay8、S44/S45配对四条轨迹](./experiments/E001/DEV-S45-PAIRED-PROTOCOL-SEED-ABLATION.md) · [真实VM测试](./crates/organism-seeds/tests/s44_uncertain_outcome.rs) · [定向CI](./.github/workflows/s45-protocol-seed-ablation.yml)。此前S45 delay8成功仅在协议seed42，无法直接外推；本试验固定工作任务、世界seed55、预算与服务语义，只改变未暴露给活动个体的协议种子，每组做S44/S45两臂。无论成功与否验收B不重复、真SEND不重发、真实来源确认、成果不伪造及快照；**CI绿色不等于四臂活性都成功，必须读取四行S45_PAIRED_ABLATION**。此条为提交前实验设计，尚未原生验证。
+
+### 2026-11-21 — 冻结的P2协议种子配对消融：安全通过，任务0/4失败
+- [真正原生Run #44916855269](https://github.com/iFrankStudio/OCEE/actions/runs/44916855269) @ `519f9ccb20d389400490eb6accee61b82397d1b9`，completed/success仅表示本轮预设的4条安全路径断言通过；seed17/93 × S44/S45旧图四臂实际都返回U32(0)、B0、没有真实REMOTE_EVAL；共享s23_receive_retry=128，s45_result_retry=0、step411，表明未到Phase2就耗尽Phase0等候预算。原生[实验记录及完整失败表](./experiments/E001/DEV-S45-PAIRED-PROTOCOL-SEED-ABLATION.md)。**绝不把安全绿色误报成活性成功。**
+- 新设工程回归：仍固定协议seed17/93和全程delay8，只在S45 Phase0增加独立每opcode与总额双限等待；Phase1的真实request outcome/restart与Phase2安全确认不放宽，之后单独验收两种协议中的真B24一次、真实ACK/RESULT及快照。原旧配对运行SHA和阴性结论永久保留。本段新修复**尚未获得CI通过证据**。

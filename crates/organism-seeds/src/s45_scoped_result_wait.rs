@@ -1,4 +1,4 @@
-//! Dual-bounded, per-result-opcode waiting derived from the S44 active VM.
+//! Dual-bounded Phase0 REMOTE_EVAL discovery and Phase2 RESULT waiting.
 //! Do not resend an unconfirmed committed request, and never bypass
 //! S43B's true SEND -> service -> RECEIVE confirmation gate.
 #![forbid(unsafe_code)]
@@ -15,8 +15,9 @@ fn carried()->Vec<u32>{vec![600,601,602]}
 pub fn s45_p2_scoped_result_wait()->Program{
     let mut program=s44_p2_causal_wait_consumer();
     let f=&mut program.functions[0];
-    // Phase 2 RESULT scans must NOT consume the same 128-slot counter
-    // across dozens of distinct opcode candidates.
+    // Both Phase0 REMOTE_EVAL discovery and Phase2 RESULT scanning
+    // must NOT consume one shared 128-slot wait counter across
+    // dozens of distinct opcode candidates.
     // S41/S42B already rerouted Empty RECEIVE through its phase
     // classifier. Keep phase-1 request-ID recovery untouched and change
     // ONLY the non-phase-1 fallback into the S45 phase dispatcher.
@@ -41,8 +42,29 @@ pub fn s45_p2_scoped_result_wait()->Program{
             ],
             terminator:Terminator::Branch{
                 condition:15001,if_true:"s45_result_retry".into(),
+                true_args:carried(),if_false:"s45_remote_gate".into(),
+                false_args:carried()}},
+        // Phase 0 was also using the global S23 128 counter, which is
+        // exhausted BEFORE REMOTE_EVAL under certain novel P2 seeds.
+        // Phase 1 remains on S44's exact-id outcome and S23 bounded path,
+        // and Phase 3 compatibility checks retain the legacy path.
+        Block{id:"s45_remote_gate".into(),params:route(),
+            instructions:vec![
+                Instruction{id:15010,op:Op::ConstU32(0)},
+                Instruction{id:15011,op:Op::EqU32(602,15010)},
+            ],
+            terminator:Terminator::Branch{
+                condition:15011,if_true:"s45_remote_retry".into(),
                 true_args:carried(),if_false:"s23_receive_retry".into(),
                 false_args:carried()}},
+        Block{id:"s45_remote_retry".into(),params:route(),
+            instructions:vec![],
+            terminator:Terminator::RepeatScoped{
+                // Strict per-REMOTE_EVAL-opcode and aggregate bounds.
+                // Changing opcode cannot reset the 896 total budget.
+                limit:6,aggregate_limit:896,scope:601,
+                body:"s23_retry_wait".into(),body_args:carried(),
+                done:"failed".into(),done_args:vec![]}},
         Block{id:"s45_result_retry".into(),params:route(),
             instructions:vec![],
             terminator:Terminator::RepeatScoped{
@@ -52,7 +74,7 @@ pub fn s45_p2_scoped_result_wait()->Program{
                 body:"s23_retry_wait".into(),body_args:carried(),
                 done:"failed".into(),done_args:vec![]}},
     ]);
-    program.validate().expect("S45 typed dual-bound result scan");
+    program.validate().expect("S45 typed scoped Phase0 and Phase2 waits");
     program
 }
 pub fn s45_scoped_result_root()->Program{

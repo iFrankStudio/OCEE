@@ -15,3 +15,19 @@
 无论哪臂、哪协议：**B不得超过24，真实B任务SEND不得超过一次，不应出现无任务漂移的root重启，两个等待计数不得越上限；世界可经snapshot重放。** 成功条件严格要求 `Value::U32(1)`、B24、真正REMOTE_EVAL及其ACK认证，并且完成结果等于真实远程工作项操作数fold32；失败不得留下成功RESULT对象。若任一硬约束失败，原生CI必须红。
 
 该测试的通过**只代表安全断言**。活性结果必须从上述四行 `success=true/false` 独立汇总；同一固定环境paired比较，不等于正式泛化统计、H1/H2/H3验证或预注册样本。本试验仍是研究者预置 P2 TLV 解析、112 opcode候选、固定专用工具和明示RESULT扫描的开发程序。若多个种子失败，先检查消息轨迹、算法预算与协议生成器，并原样保留阴性结果，不得把S45宣传为跨协议稳健。
+
+
+## 2026-11-21 — 配对实验真实结果：CI安全成功，但活性四臂全部失败
+
+[原生GitHub Actions #44916855269](https://github.com/iFrankStudio/OCEE/actions/runs/44916855269) @ **`519f9ccb20d389400490eb6accee61b82397d1b9`** completed/success，单项Rust实验包含4条完整真实活动P2轨迹（129.46s），同时满足事前设置的安全/快照断言。
+
+| 协议seed | 旧S44 | 原S45（仅Phase2 scoped） |
+|---|---|---|
+| 17 | `U32(0)` / B0 / 无真实RemoteEval | `U32(0)` / B0 / 无真实RemoteEval |
+| 93 | `U32(0)` / B0 / 无真实RemoteEval | `U32(0)` / B0 / 无真实RemoteEval |
+
+原生日志逐行记录的两个程序哈希分别是S44 `bb1a2ad1c790acdc9686b091a61e4b4bf84d39c9fbd6b6c994adebeb8f0e5fdf` 与S45 `b400828fdd204fe2d1e7b713145296cf13796e6ef159c02325640b609726ea3b`；四组均为 `s23_wait=128`、`s45_wait=0`、`step=411`，无虚假B执行、无根重启。**绿色代表安全断言通过，不代表P2协议适应成功；活性成功为0/4。**
+
+这揭示原S45只将Phase2 RESULT按候选opcode独立等待，而更早的Phase0 REMOTE_EVAL opcode扫描仍沿用全程序共享128次等待；在这两组新协议参数下，Phase0先耗尽旧额度，个体尚未Send真实REMOTE_EVAL就fail-closed。这个阶段定位由phase0期间未生成任何B消息和loop_counters的具体键强支持，仍需新增代码对照才能判断局部等待是否为全部根因。
+
+**在看到阴性结果后设计的修复必须明确为新开发研究，不能回填修改本次已冻结的原生样本。** 下一测试保留完全相同协议seed17/93、全程delay8和任务配置，仅为S45活动VM增加受限的Phase0等待，每个opcode 6次、总896次；旧S44图不变，不能新建B重试权限。只有真B24、恰好一次真实REMOTE_EVAL、经服务确认的ACK及RESULT、正确fold32与快照一致才能验收。即使通过，也不等于正式E001跨协议泛化。

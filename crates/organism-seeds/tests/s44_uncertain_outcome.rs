@@ -542,3 +542,74 @@ fn s45_protocol_seed_paired_ablation_at_global_eight_step_delay(){
         }
     }
 }
+
+
+#[test]
+fn s45_phase0_scoped_wait_restores_two_fixed_protocol_seed_regressions(){
+    // Post-failure development regression: seeds 17 and 93 were
+    // PREDECLARED in the paired-ablation snapshot 519f9ccb. That
+    // frozen S44/S45 comparison genuinely returned 0/4 successes
+    // before Phase0 waiting was changed. Never reclassify it.
+    for protocol_seed in [17_u64,93_u64]{
+        let mut w=boot_with_protocol_seed(8,protocol_seed,
+            s45_p2_scoped_result_wait(),s45_scoped_result_root());
+        finish(&mut w);
+        let ret=w.state.organisms[&ORGANISM_ID].last_return.clone();
+        let counters=w.state.organisms[&ORGANISM_ID]
+            .vm_continuation.as_ref().unwrap().loop_counters.clone();
+        let phase0=counters.get("s45_remote_retry").copied().unwrap_or(0);
+        let phase2=counters.get("s45_result_retry").copied().unwrap_or(0);
+        let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+        let remote=w.audit.iter().filter_map(|record|{
+            let Some(Action::Send{destination:NodeId::C,bytes,..})
+                =&record.action else{return None};
+            if record.result.code!=Code::Ok{return None};
+            let Ok(frame)=decoder.decode(bytes)else{return None};
+            if frame.operation!=Operation::RemoteEval ||
+                frame.body.len()!=18{return None};
+            Some(u64::from_le_bytes(record.result.payload[..8]
+                .try_into().unwrap()))
+        }).collect::<Vec<_>>();
+        let result_ids=w.audit.iter().filter_map(|record|{
+            let Some(Action::Send{destination:NodeId::C,bytes,..})
+                =&record.action else{return None};
+            if record.result.code!=Code::Ok{return None};
+            let Ok(frame)=decoder.decode(bytes)else{return None};
+            if frame.operation!=Operation::Result{return None};
+            Some(u64::from_le_bytes(record.result.payload[..8]
+                .try_into().unwrap()))
+        }).collect::<Vec<_>>();
+        let confirmed=w.audit.iter().filter_map(|record|match &record.action{
+            Some(Action::ConfirmResponseFor{request_id,..})
+                if record.result.code==Code::Ok=>Some(*request_id),
+            _=>None,
+        }).collect::<Vec<_>>();
+        println!("S45_PHASE0_REGRESSION protocol_seed={protocol_seed} \
+            delay=8 return={ret:?} B={} remote_ids={remote:?} \
+            phase0_wait={phase0} phase2_wait={phase2} \
+            confirmed={confirmed:?} step={}",
+            b_total(&w),w.state.step);
+        assert!(phase0>0 && phase0<=896,
+            "the previously shared Phase0 wait must use scoped budget");
+        assert!(phase2<=896);
+        assert_eq!(w.state.guarded_restarts.len(),0);
+        assert_eq!(b_total(&w),24,
+            "one real successful B commit only");
+        assert_eq!(ret,Some(Value::U32(1)),
+            "the previously failing fixed P2 seed must now succeed");
+        assert_eq!(remote.len(),1,"B request cannot be blindly resent");
+        assert_eq!(w.state.service_events.iter()
+            .filter(|e|e.b_gas_charged>0).count(),1);
+        assert!(confirmed.contains(&remote[0]));
+        assert!(result_ids.iter().any(|id|confirmed.contains(id)),
+            "actual RESULT candidate must have C-backed reply confirmation");
+        let actual=u32::from_le_bytes(w.state.objects[
+            "/self/results/p2-job0/value_le"].bytes[..4].try_into().unwrap());
+        let operands=w.state.objects[REMOTE_VALUES].bytes.chunks_exact(4)
+            .map(|x|u32::from_le_bytes(x.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(actual,fold32(&operands).unwrap());
+        assert_eq!(w.state_hash(),
+            World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+    }
+}
