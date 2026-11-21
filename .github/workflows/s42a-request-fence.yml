@@ -1,5 +1,11 @@
 name: S42A Latest Guarded Request Drop Causality
 on:
+  # One-shot native verification after repository became public.
+  # Only edits to this specific workflow start the focused study.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s42a-request-fence.yml"
   workflow_dispatch:
 
 concurrency:
