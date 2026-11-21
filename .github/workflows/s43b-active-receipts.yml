@@ -1,6 +1,6 @@
 name: S43B Active VM ACK RESULT Request Receipt Correlation
 on:
-  # Public-repository runner recheck: this one path-scoped push runs only S43B.
+  # Public-repository native runner confirmed; rerun S43B after fixing E0716 test borrow.
   # Do not trigger archived studies or the full workspace.
   push:
     branches: [main]

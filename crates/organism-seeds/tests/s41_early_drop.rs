@@ -610,7 +610,8 @@ fn s41_slow_s40_boot(seed:u64)->(World,String){
 }
 fn wait_delta(w:&World)->u64{
     let drop=w.state.fence_drops.first().expect("real S39 dropped request");
-    let reboot=restart_actions(w).first().expect("VM-requested root restart");
+    let restart_records=restart_actions(w);
+    let reboot=restart_records.first().expect("VM-requested root restart");
     assert!(reboot.step>drop.step);
     reboot.step-drop.step
 }
