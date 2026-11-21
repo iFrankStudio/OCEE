@@ -1,5 +1,11 @@
 name: S43B Active VM ACK RESULT Request Receipt Correlation
 on:
+  # Only modifications to THIS focused workflow trigger S43B once on main.
+  # S41 and all archived study workflows remain out of this path.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s43b-active-receipts.yml"
   workflow_dispatch:
 concurrency:
   group: ocee-s43b-active-receipts-${{ github.ref }}

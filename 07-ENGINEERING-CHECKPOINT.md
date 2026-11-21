@@ -561,3 +561,7 @@
 ### 2026-11-21 — S43A.2 同ID不同内容的伪造RECEIVE负例，待原生验证
 - 对 S43A/S43B 的源证据依赖做静态安全审查：原先的回复认证缺少服务生成正文 hash，若向A邮箱注入同 response ID、改过正文的假消息再真的 RECEIVE，旧证据链接可误通过。服务事务现在随 `ServiceEvent` 一并存完整C→A Message哈希，`ConfirmResponseFor`要求内容指纹及到期交付，旧快照缺hash则fail-closed。
 - 强化原S43A窄测试：向邮箱插入同ID修改正文，确实由Receive交付后认证仍Conflict；随后真服务消息仍可Ok，B费用与快照保持可追溯。此项为**待跑的回归断言**，不宣称已获得结果。
+
+### 2026-11-21 — S43B 独立原生验证触发探针
+- 对 S43B P2专家继承路径做静态图构造计数：S21角色压缩后、S22/S23、S31/S32、S40/S41、S42B及S43B共约120个命名区块（含删除4个不可达块后），低于VM的128硬限制；**这是静态推演，非Program.validate或cargo结果**。S43B原生真实图字节大小及运行时间仍需CI。
+- 因现有连接不能主动运行workflow_dispatch、容器无cargo且无法访问私有GitHub，启用`s43b-active-receipts.yml`对**工作流自身修改**的单路径main push触发以尝试一次定向原生验证。此规则不会重复启动历史S22–S40，亦不会因S43B普通源码push反复运行。结果必须从实际Actions/job steps确认，不允许按代码已提交推断实验通过。
