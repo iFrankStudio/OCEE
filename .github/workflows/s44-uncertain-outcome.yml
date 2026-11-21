@@ -1,9 +1,7 @@
 name: S44 Active P2 Causal Outcome Wait (Native)
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s44-uncertain-outcome.yml"
+  # Native S44 3/3 passed on public runner: Run #44862964346.
+  # Keep replay manual to avoid repeatedly invoking completed studies.
   workflow_dispatch:
 concurrency:
   group: ocee-s44-causal-wait-${{ github.ref }}

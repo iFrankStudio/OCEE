@@ -584,3 +584,9 @@
 ### 2026-11-21 — S44 状态驱动的安全等待/恢复工程候选
 - [设计、负例与界限](./experiments/E001/DEV-S44-CAUSAL-WAIT-AND-RETRY.md) · [活动P2 VM](./crates/organism-seeds/src/s44_outcome_wait.rs) · [原生3项定向CI](./.github/workflows/s44-uncertain-outcome.yml)。基于S43B真实SEND u64回执，Empty后查询S43A的RequestOutcomeFor：InFlight/CommittedB/HandledNoB只等待，Dropped只经核验的RestartRootFor，Unknown fail-closed，不盲目重做已可能消耗B的请求。
 - 此为**尚未通过原生CI的研究候选**，不能与 S43A 2/2、S43B 3/3、S42A 2/2 的已验证证据混淆；完整workspace最终结论亦待其独立Run确定。维持G0 GO、G1/G2 NO-GO。
+
+### 2026-11-21 — S44 原生通过3/3；S23全局高延迟负例保留
+- [S44 Run #44862964346](https://github.com/iFrankStudio/OCEE/actions/runs/44862964346) @ `fed97e8c` completed/success，三个独立原生Rust用例全过：真实B请求+ACK定向延迟时InFlight/CommittedB均不盲重试、真实栅栏drop才触发一次root重学习、保存u64证据遭破坏时Unknown fail-closed。S44的Program.validate在测试内真实通过。
+- [先前失败 #44862804649](https://github.com/iFrankStudio/OCEE/actions/runs/44862804649)：全局6-step网络延迟时虽B24一次、CommitB在途且无错误重启，但旧S23 RESULT操作码扫描耗尽其有界Receive预算，个体最终U32(0)。这是尚未修复的活性局限，不属于S44安全门通过范围。
+- [S41回归 #44862672828](https://github.com/iFrankStudio/OCEE/actions/runs/44862672828) @ `b9934ae` 也独立completed/success，但共享lib模块改动不应重复触发昂贵的旧研究。因此S41和S44都改为仅手动workflow_dispatch并用`[skip ci]`封存。
+- [完整workspace旧SHA Run #44861571121](https://github.com/iFrankStudio/OCEE/actions/runs/44861571121) 仍按其独立运行记录结论判断；其SHA先于S44，不代表S44全仓集成通过。科学G0 GO、G1/G2 NO-GO，E001未预注册。

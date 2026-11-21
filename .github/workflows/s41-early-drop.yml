@@ -1,15 +1,8 @@
 name: S41 Paid Early Drop Detection and Namespace-Lifetime Replay
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s41-early-drop.yml"
-      - "crates/organism-seeds/src/s41_early_drop.rs"
-      - "crates/organism-seeds/src/s40_dropped_recovery.rs"
-      - "crates/organism-seeds/tests/s41_early_drop.rs"
-      - "crates/organism-seeds/src/lib.rs"
-      - "crates/world-kernel/src/lib.rs"
+  # S41 existing suite passed in full on public runner: Run #44862672828.
+  # Do not replay 8 historical simulations for every new shared module.
   workflow_dispatch:
 
 concurrency:
