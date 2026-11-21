@@ -83,7 +83,7 @@ pub fn s43b_p2_confirmed_reply_consumer()->Program{
     // After Empty, S42B's request-specific failure query must read
     // precisely the same key used by the actual phase-1 SEND.
     let pending=f.blocks.iter_mut().find(|v|v.id=="s42b_read_pending").unwrap();
-    let (key,key_reg)=evidence_key(11102,11101,13120);
+    let (key,key_reg)=evidence_key(602,601,13120);
     pending.instructions=key;
     pending.terminator=y(WorldCall::Read,vec![key_reg],
         "s42b_pending_reply",vec![11100,11101,11102]);
