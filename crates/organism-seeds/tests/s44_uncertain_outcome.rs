@@ -417,3 +417,47 @@ fn s45_delayed_phase2_forged_reply_fails_closed_after_real_b(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+#[test]
+fn s45_eight_step_delay_exploratory_liveness_boundary_and_causal_safety(){
+    // Exploratory boundary probe: delay 8 is beyond the previously
+    // certified delay-6 positive control. Never turn failure into success.
+    let mut w=boot_s45(8);
+    finish(&mut w);
+    let returned=w.state.organisms[&ORGANISM_ID].last_return.clone();
+    let b=b_total(&w);
+    let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+    let remote_ids=w.audit.iter().filter_map(|a|{
+        let Some(Action::Send{destination:NodeId::C,bytes,..})=&a.action
+            else{return None};
+        if a.result.code!=Code::Ok{return None}
+        let Ok(frame)=decoder.decode(bytes)else{return None};
+        if frame.operation!=Operation::RemoteEval || frame.body.len()!=18{
+            return None;
+        }
+        Some(u64::from_le_bytes(a.result.payload[..8].try_into().unwrap()))
+    }).collect::<Vec<_>>();
+    let cont=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().unwrap();
+    let result_waits=cont.loop_counters.get("s45_result_retry")
+        .copied().unwrap_or(0);
+    println!("S45_DELAY_BOUNDARY delay=8 return={returned:?} b={b} remote_ids={remote_ids:?} result_waits={result_waits} restarts={:?}",
+        w.state.guarded_restarts);
+    assert!(result_waits<=896,"aggregate bounded budget exceeded");
+    assert!(remote_ids.len()<=1,"cannot replay a potentially committed B request");
+    assert!(b<=24,"B charged more than once");
+    assert!(w.state.guarded_restarts.is_empty());
+    if returned==Some(Value::U32(1)){
+        assert_eq!(b,24,"success must have real paid B");
+        assert_eq!(remote_ids.len(),1);
+        let actual=u32::from_le_bytes(w.state.objects[
+            "/self/results/p2-job0/value_le"].bytes[..4].try_into().unwrap());
+        let operands=w.state.objects[REMOTE_VALUES].bytes.chunks_exact(4)
+            .map(|x|u32::from_le_bytes(x.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(actual,fold32(&operands).unwrap());
+    }else{
+        assert!(!w.state.objects.contains_key(
+            "/self/results/p2-job0/value_le"),
+            "unsuccessful path cannot write a claimed successful RESULT");
+    }
+}

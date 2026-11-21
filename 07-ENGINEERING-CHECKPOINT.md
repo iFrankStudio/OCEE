@@ -612,3 +612,6 @@
 ### 2026-11-21 — S45 组合故障真实原生验证2/2完成
 - [Actions #44909113918](https://github.com/iFrankStudio/OCEE/actions/runs/44909113918) @ `dc7022ccdfb98120b85b613ba7c4e066fcc5c0dc`，**completed/success，原生2/2 PASS**：全局6步延迟下真实任务漂移触发旧RemoteEval的TaskFenceDrop/B0，活动个体按真实ID付费恢复一次并重新学习，新请求真实B24只执行一次、ACK经过内核确认、最终结果正确（57.90s）；全局6步延迟下Phase2 RESULT已真实发送后注入无服务来源伪消息，虽Receive Ok但ConfirmResponseFor Conflict，无伪成功/B重复/无因重启（51.78s）。逐项真实tick/audit/账本及快照验证。
 - [详细研究](./experiments/E001/DEV-S45-COMBINED-FAULTS.md) · [原生两项组合对照](./crates/organism-seeds/tests/s44_uncertain_outcome.rs) · [仅手动重放的CI](./.github/workflows/s45-concurrent-faults.yml)。保留之前S45 3/3原生基线；新证据仅为有限组合故障工程安全，不代表更广泛真实网络或自然开放演化。旧workspace仍取消、科学G0 GO、G1/G2 NO-GO、E001未预注册/校准。
+
+### 2026-11-21 — S45超出已验收延迟窗口的单点探索（待原生结论）
+- [研究与解释规则](./experiments/E001/DEV-S45-DELAY-BOUNDARY.md) · [原生单项工作流](./.github/workflows/s45-delay-boundary.yml)。既有S45 delay6成功及组合故障2/2成功均不代表delay8；新增全程delay8真实活动P2探针，打印最终U32结果、B账本、真实u64 SEND ID、VM作用域等待计数及重启记录，强制B<=24、RemoteEval<=1、无无因重启、总预算<=896、成功必须有真实fold32及B24、失败不得写成功结果。**CI尚未运行；测试绿色不自动等于delay8活性成功，必须读取日志的return字段。** 科学G0/G1/G2与E001状态不变。

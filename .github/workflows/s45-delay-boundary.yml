@@ -1,0 +1,21 @@
+name: S45 Exploratory Eight-Step Delay Boundary
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s45-delay-boundary.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-s45-delay-boundary-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  delay-boundary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Explore delay eight without loosening causal safety
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s45_eight_step_delay_exploratory_liveness_boundary_and_causal_safety -- --show-output
