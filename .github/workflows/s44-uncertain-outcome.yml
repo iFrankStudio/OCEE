@@ -1,0 +1,25 @@
+name: S44 Active P2 Causal Outcome Wait (Native)
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/s44-uncertain-outcome.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-s44-causal-wait-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-s44:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: S44 already-committed and still-inflight B are not retried
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s44_real_commit_and_inflight_are_wait_not_resend -- --show-output
+      - name: S44 real task-fence drop alone authorizes root relearning
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s44_only_true_drop_authorizes_relearning -- --show-output
+      - name: S44 erased request evidence is Unknown and fails closed
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome s44_unknown_receipt_fails_closed_without_blind_replay -- --show-output

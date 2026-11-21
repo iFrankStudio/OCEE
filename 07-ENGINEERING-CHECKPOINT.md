@@ -580,3 +580,7 @@
 - [S42A Run #44861540477](https://github.com/iFrankStudio/OCEE/actions/runs/44861540477) @ `db000dc0`，本次两个原生测试步骤 success，均各1项用例通过。S42A请求栅栏因果/缺失公共任务拒绝获得实际Rust验证。
 - [Workspace Run #44861571121](https://github.com/iFrankStudio/OCEE/actions/runs/44861571121) @ `145a3034`，提交时已成功进入Rust `cargo test --workspace -- --show-output` 执行；尚未观测到最终结果，不能声称全仓通过。恢复S42A为手动workflow_dispatch，workspace为手动+PR触发。
 - S43A原生2/2与S43B原生3/3的既有证据不变。科学阶段仍G0 GO、G1/G2 NO-GO、E001未校准/预注册。
+
+### 2026-11-21 — S44 状态驱动的安全等待/恢复工程候选
+- [设计、负例与界限](./experiments/E001/DEV-S44-CAUSAL-WAIT-AND-RETRY.md) · [活动P2 VM](./crates/organism-seeds/src/s44_outcome_wait.rs) · [原生3项定向CI](./.github/workflows/s44-uncertain-outcome.yml)。基于S43B真实SEND u64回执，Empty后查询S43A的RequestOutcomeFor：InFlight/CommittedB/HandledNoB只等待，Dropped只经核验的RestartRootFor，Unknown fail-closed，不盲目重做已可能消耗B的请求。
+- 此为**尚未通过原生CI的研究候选**，不能与 S43A 2/2、S43B 3/3、S42A 2/2 的已验证证据混淆；完整workspace最终结论亦待其独立Run确定。维持G0 GO、G1/G2 NO-GO。
