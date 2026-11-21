@@ -608,3 +608,7 @@
 ### 2026-11-21 — S45组合故障交叉因果安全实验候选
 - [研究协议](./experiments/E001/DEV-S45-COMBINED-FAULTS.md) · [两项原生目标CI](./.github/workflows/s45-concurrent-faults.yml) · [追加的真实活动P2测试](./crates/organism-seeds/tests/s44_uncertain_outcome.rs)。此前 S45 全局高延迟（6步）3/3已过，但未测试真实任务版本漂移与延迟同时发生的恢复，也未在S45的新Phase2等待路径中注入无服务来源伪回复。
 - 本轮仅增加两项有明确资源/因果不变量的交叉对照：旧请求真TaskFenceDrop/B0、新请求仅B24一次并真ACK，及RESULT阶段伪回执应ConfirmResponseFor Conflict/无结果成功。**尚未获取本轮原生CI结论**，后续只能按实际Run更新，不能预先记通过；科学闸门不变。
+
+### 2026-11-21 — S45 组合故障真实原生验证2/2完成
+- [Actions #44909113918](https://github.com/iFrankStudio/OCEE/actions/runs/44909113918) @ `dc7022ccdfb98120b85b613ba7c4e066fcc5c0dc`，**completed/success，原生2/2 PASS**：全局6步延迟下真实任务漂移触发旧RemoteEval的TaskFenceDrop/B0，活动个体按真实ID付费恢复一次并重新学习，新请求真实B24只执行一次、ACK经过内核确认、最终结果正确（57.90s）；全局6步延迟下Phase2 RESULT已真实发送后注入无服务来源伪消息，虽Receive Ok但ConfirmResponseFor Conflict，无伪成功/B重复/无因重启（51.78s）。逐项真实tick/audit/账本及快照验证。
+- [详细研究](./experiments/E001/DEV-S45-COMBINED-FAULTS.md) · [原生两项组合对照](./crates/organism-seeds/tests/s44_uncertain_outcome.rs) · [仅手动重放的CI](./.github/workflows/s45-concurrent-faults.yml)。保留之前S45 3/3原生基线；新证据仅为有限组合故障工程安全，不代表更广泛真实网络或自然开放演化。旧workspace仍取消、科学G0 GO、G1/G2 NO-GO、E001未预注册/校准。

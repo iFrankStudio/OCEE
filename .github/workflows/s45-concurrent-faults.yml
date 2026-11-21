@@ -1,9 +1,7 @@
 name: S45 Combined Delay Fault-Fence and Forged RESULT
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s45-concurrent-faults.yml"
+  # Native S45 combined fault controls 2/2 PASS: Run #44909113918.
+  # Explicit replay only; avoid archived study reruns on unrelated pushes.
   workflow_dispatch:
 concurrency:
   group: ocee-s45-combined-faults-${{ github.ref }}

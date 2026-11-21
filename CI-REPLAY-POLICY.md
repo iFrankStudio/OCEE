@@ -82,3 +82,7 @@ The earlier [workspace Run #44861571121](https://github.com/iFrankStudio/OCEE/ac
 **边界**：候选最多112种，Phase2每opcode最多6次额外Empty，每个VM继续体所有RESULT候选总共最多896次；原其他phase共享128次上限保留。若超出支持延迟的范围，可能安全失败而不是无限等待；没有证明任意丢包、现实服务请求的exactly-once、开放式演化或E001假设成立。S45定向CI只确认其3个本轮命题，非全Rust workspace；此前全仓Run #44861571121已取消，不能记绿。科学闸门仍G0 GO、G1/G2 NO-GO、E001未校准、未预注册。
 
 **CI policy**: `.github/workflows/s45-scoped-result-wait.yml` returned to `workflow_dispatch` only in a final documentation commit with `[skip ci]`; avoid repeated S45 and archived Study reruns for unrelated shared VM or seed changes.
+
+## 2026-11-21 — S45 combined-fault native 2/2 success
+
+[Run #44909113918](https://github.com/iFrankStudio/OCEE/actions/runs/44909113918) at source `dc7022ccdfb98120b85b613ba7c4e066fcc5c0dc`: completed/success with two separately executed native Rust tests (57.90s + 51.78s), confirming high-delay true task-drift recovery with B24 only once and high-delay forged RESULT rejection after a real B commit. See [protocol](./experiments/E001/DEV-S45-COMBINED-FAULTS.md). This is **not** a whole-workspace pass or a demonstration of open-ended cyberlife. The temporary path-only push trigger on `.github/workflows/s45-concurrent-faults.yml` has been restored to `workflow_dispatch` only in the [skip ci] record commit to avoid repeating historical costly studies.
