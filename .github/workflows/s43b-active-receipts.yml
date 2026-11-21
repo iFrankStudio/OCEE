@@ -1,12 +1,9 @@
 name: S43B Active VM ACK RESULT Request Receipt Correlation
 on:
-  # Rerun S43B after correcting stale route registers in outbound Read feedback.
-  # Do not trigger archived studies or the full workspace.
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s43b-active-receipts.yml"
+  # Public GitHub-hosted runner is confirmed operational; focused native
+  # tests passed. Preserve explicit replay to avoid redundant CI cost.
   workflow_dispatch:
+
 concurrency:
   group: ocee-s43b-active-receipts-${{ github.ref }}
   cancel-in-progress: true

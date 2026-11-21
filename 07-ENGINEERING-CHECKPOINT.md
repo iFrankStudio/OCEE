@@ -569,3 +569,9 @@
 ### 2026-11-21 — S43B 原生runner实际探针返回阻断（非Rust失败）
 - [Run #44852637401](https://github.com/iFrankStudio/OCEE/actions/runs/44852637401) 由 `main` 提交 `876e687` 成功触发S43B单项workflow，`completed/failure`，job ID `136687346985`，`steps=[]`，未实际执行 checkout/rust-toolchain/cargo。没有证明S43B编译或VM通过/失败；不能写成科学验收。
 - 为免浪费私有仓库Actions预算，已将S43B workflow恢复为仅手动调度。保持S40已验证4/4基线以及S41–S43B待验证闸门，G0 GO G1/G2 NO-GO，正式E001未预注册。应由有管理员权限的仓库/组织所有者检查Actions运行器、账单和策略后再按需手动运行最窄测试。
+
+### 2026-11-21 — 仓库Public后原生Rust验证恢复：S43A 2/2、S43B 3/3、S41 4/4、S42B 1/1
+- [S43B通过 Run #44860253323](https://github.com/iFrankStudio/OCEE/actions/runs/44860253323) @ `cf2217b`，3项独立活动VM测试步骤全部成功，覆盖健康 ACK/RESULT 绑定、实际任务漂移重启后新消息关联、无服务来源伪造消息拒绝。
+- [S43A通过 Run #44860455869](https://github.com/iFrankStudio/OCEE/actions/runs/44860455869) @ `8805bea`，两项世界内核的执行状态/回复因果及栅栏丢弃与B0服务诊断负对照均通过。
+- [S41/S42B混合 Run #44860113013](https://github.com/iFrankStudio/OCEE/actions/runs/44860113013) @ `ba0c664`：S41 4项+S42B 1项实际通过，另3项当时未修正的S43B失败，**整体Run失败**；S43B随后已被独立Run验收。此前 Runner 缺失、`E0716`、VM非法operand和参数类型错误均已留下可溯源失败证据。
+- 仓库现为Public，GitHub-hosted Rust job正常运行。已撤销为验证而开启的S43A/S43B自动push触发，回归手动workflow_dispatch。仍需S42A专门回归及必要的workspace确认，不把局部验收声称全仓验收；科学闸门仍G0 GO，G1/G2 NO-GO，正式E001未预注册。

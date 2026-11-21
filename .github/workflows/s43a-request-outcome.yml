@@ -1,11 +1,9 @@
 name: S43A Real Request Outcome and Received Reply Correlation
 on:
-  # One-time public runner verification: S43A only, no historical replay.
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/s43a-request-outcome.yml"
+  # Public GitHub-hosted runner is confirmed operational; focused native
+  # tests passed. Preserve explicit replay to avoid redundant CI cost.
   workflow_dispatch:
+
 concurrency:
   group: ocee-s43a-request-outcome-${{ github.ref }}
   cancel-in-progress: true

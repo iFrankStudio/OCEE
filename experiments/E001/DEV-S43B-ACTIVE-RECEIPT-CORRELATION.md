@@ -31,3 +31,6 @@ S43B 的 `ConfirmResponseFor` 现在不仅依赖 SEND→服务事件→RECEIVE�
 ## 原生CI第一次尝试的实际结果（2026-11-21）
 
 为排除“只因手动触发不便而没有执行”的可能，曾将本研究单独工作流限定为仅自身文件变化的`main` push，并提交 `876e687`。结果 [S43B Run #44852637401](https://github.com/iFrankStudio/OCEE/actions/runs/44852637401) 被GitHub接受并触发，但job于约4秒后 `failure`、`steps=[]`、无checkout/编译/cargo日志。这是运行器/工作流环境阶段的**未执行结果**，不是S43B三个验收测试的运行失败证据。已恢复S43B工作流为仅`workflow_dispatch`，保留失败记录作为环境阻塞证据。科学状态不变；不要据此推断生命表现。
+
+### 2026-11-21 原生工程验证结论
+[GitHub Actions Run #44860253323](https://github.com/iFrankStudio/OCEE/actions/runs/44860253323) 于 commit `cf2217b0abe6490fcb1b45e7d98342941d9b9644` 完整Rust编译并顺序执行S43B三项个体端到端测试，**3/3通过**。先前多轮失败已定位并修复到 `E0716` 与两项VM寄存器/类型流错误。S41与S42B另有Run #44860113013实际通过5项但整体Run因当时S43B版本失败，须严格区分。此处只证明已测试的确定性模拟情景；未宣称生命出现、开放式演化或环境长期可靠运行。

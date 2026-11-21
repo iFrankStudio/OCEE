@@ -26,3 +26,6 @@ S42B 的个体能保存实际 SEND 回执、按 u64 ID 查询丢弃并请求一�
 静态安全审查发现 S43A 原实现只核验 `ServiceEvent.response_message_id`、actor/source/destination 和曾在 `Receive` 中出现过的完整消息字节，却没有验证 **服务真正生成的消息字节**。研究者/受控故障注入可以在邮箱制造「同响应 ID、不同 bytes」的 Message，让它也真实经历一次 Receive，旧谓词可能误判为服务原始回应。
 
 内核现在在服务提交时，对整个 C→A `Message` 的确定性序列化计算 `response_message_hash` 并写入 kernel-owned `ServiceEvent`；`ConfirmResponseFor` 除原因果门外还验证完整 Message hash，且不得早于其 `deliver_step`。缺 hash 的旧快照无法作为成功回复的证明（fail-closed），但可继续读取历史费用。没有赋予个体修改服务账本的权限；消息正文/时间元数据也受指纹保护。新增同测试轨迹中的强负例：伪造相同 `response_message_id` 而不同 bytes，**确实执行 RECEIVE 交付后** 再确认，必须 Conflict；对同一真实已收原消息仍可 Ok。这是一项未运行的测试预期，非验收成功。
+
+### 2026-11-21 原生工程验证结论
+[GitHub Actions Run #44860455869](https://github.com/iFrankStudio/OCEE/actions/runs/44860455869) 于 commit `8805bea8e4f8c9c833bb89348752803c2a7368eb` 实际运行完整Rust工具链与两条S43A kernel窄测试，**2/2通过**；包含S43A.2真实来源完整消息hash的负对照。原“待原生验证”标签为历史立项状态，本段是后验验收记录。不代表真实互联网、任意网络故障或科学G1/G2通过。
