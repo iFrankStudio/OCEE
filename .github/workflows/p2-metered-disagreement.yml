@@ -1,0 +1,27 @@
+name: P2 Metered Dual-Tool Disagreement Controls
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2-metered-disagreement.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-metered-disagreement-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-disagreement:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [AGREE_VALID, DISAGREE, AGREE_WRONG, UNKNOWN]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_AGREEMENT_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native paid dual Exec agreement disagreement and unknown
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_metered_disagreement_native -- --ignored --show-output

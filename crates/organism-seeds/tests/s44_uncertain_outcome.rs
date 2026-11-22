@@ -1883,3 +1883,356 @@ fn p2_semantic_ok_counterexample_native(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+
+/// A deliberately different VM FOLD32 implementation, not another hash
+/// of the same bytecode. Horner's per-byte base-256 reconstruction is
+/// replaced by per-byte powers of two; rotation is a repeated carry
+/// through bit 31 instead of a final high/low-bit decomposition.
+/// Neither algorithm has a privileged native FOLD32 instruction.
+fn alternate_fold4_vm_program()->Program{
+    use ocee_organism_vm::{Block,Function,Instruction,Op,Param,Terminator,Type};
+    let mut code=Vec::<Instruction>::new();
+    let mut reg=1u32;
+    let mut emit=|op:Op|{
+        let id=reg;
+        reg+=1;
+        code.push(Instruction{id,op});
+        id
+    };
+    let zero=emit(Op::ConstU32(0));
+    let mut sum=zero;
+    for word in 0u32..4{
+        let mut value=zero;
+        for byte in 0u32..4{
+            let index=emit(Op::ConstU32(word*4+byte));
+            let mut piece=emit(Op::ByteAt(0,index));
+            for _ in 0..(byte*8){
+                piece=emit(Op::Add(piece,piece));
+            }
+            value=emit(Op::Add(value,piece));
+        }
+        let mut rotated=value;
+        for _ in 0..word{
+            let msb=emit(Op::ConstU32(0x8000_0000));
+            let carry=emit(Op::Div(rotated,msb));
+            let doubled=emit(Op::Add(rotated,rotated));
+            rotated=emit(Op::Add(doubled,carry));
+        }
+        sum=emit(Op::Add(sum,rotated));
+    }
+    let p=Program{
+        format_version:1,entry_function:"main".into(),
+        functions:vec![Function{
+            name:"main".into(),args:vec![Type::Bytes],
+            returns:Type::U32,
+            blocks:vec![Block{
+                id:"entry".into(),
+                params:vec![Param{id:0,ty:Type::Bytes}],
+                instructions:code,
+                terminator:Terminator::Return{value:sum}
+            }]
+        }]
+    };
+    p.validate().expect("distinct pure VM algorithm");
+    p
+}
+
+/// Adversarial common-mode error, preserving the independent alternate
+/// calculation graph but appending the same erroneous +1 semantics.
+fn alternate_corrupted_fold4()->Program{
+    use ocee_organism_vm::{Instruction,Op,Terminator};
+    let mut p=alternate_fold4_vm_program();
+    let block=&mut p.functions[0].blocks[0];
+    let value=match block.terminator{
+        Terminator::Return{value}=>value,
+        _=>panic!("alternate FOLD32 return changed")
+    };
+    let id=block.instructions.iter().map(|i|i.id).max().unwrap()+1;
+    block.instructions.push(Instruction{id,op:Op::ConstU32(1)});
+    block.instructions.push(Instruction{id:id+1,op:Op::Add(value,id)});
+    block.terminator=Terminator::Return{value:id+1};
+    p.validate().expect("wrong alternate must still validate");
+    p
+}
+
+/// The root itself compares TWO actual isolated VM Exec replies. The
+/// researcher's fold32 oracle is not available to any root instruction.
+fn p2_metered_disagreement_root()->Program{
+    use ocee_organism_vm::{Block,Instruction,Op,Param,Terminator,Type,WorldCall};
+    fn lit(bytes:&[u8])->Op{
+        Op::ConstBytes{hex:bytes.iter().map(|x|format!("{x:02x}")).collect()}
+    }
+    fn param(id:u32)->Param{Param{id,ty:Type::Bytes}}
+    fn inst(id:u32,op:Op)->Instruction{Instruction{id,op}}
+    fn branch(c:u32,yes:&str,yes_args:Vec<u32>,no:&str,no_args:Vec<u32>)->Terminator{
+        Terminator::Branch{
+            condition:c,if_true:yes.into(),true_args:yes_args,
+            if_false:no.into(),false_args:no_args
+        }
+    }
+    let mut root=p2_semantic_ok_registry_root();
+    let f=&mut root.functions[0];
+    let first=f.blocks.iter_mut().find(|b|b.id=="equal_local_exec_reply").unwrap();
+    // Keep its genuine Exec Ok decoding, change ONLY the acceptance gate.
+    first.terminator=branch(17304,"dual_secondary_key_read",vec![17300],
+        "failed",vec![]);
+    f.blocks.extend([
+        Block{
+            id:"dual_secondary_key_read".into(),params:vec![param(19000)],
+            instructions:vec![inst(19001,lit(b"/self/work/local-fold-verifier"))],
+            terminator:Terminator::Yield{
+                call:WorldCall::Read,args:vec![19001],
+                next:"dual_secondary_key_reply".into(),next_args:vec![19000]
+            }
+        },
+        Block{
+            id:"dual_secondary_key_reply".into(),
+            params:vec![param(19000),param(19010)],
+            instructions:vec![
+                inst(19011,lit(b"code")),
+                inst(19012,Op::JsonFieldString(19010,19011)),
+                inst(19013,lit(b"Ok")),
+                inst(19014,Op::EqBytes(19012,19013))
+            ],
+            terminator:branch(19014,"dual_secondary_input_read",
+                vec![19000,19010],"failed",vec![])
+        },
+        Block{
+            id:"dual_secondary_input_read".into(),
+            params:vec![param(19000),param(19010)],
+            instructions:vec![
+                inst(19021,lit(b"payload")),
+                inst(19022,Op::JsonFieldBytes(19010,19021)),
+                inst(19023,lit(REMOTE_VALUES.as_bytes()))
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Read,args:vec![19023],
+                next:"dual_secondary_input_reply".into(),
+                next_args:vec![19000,19022]
+            }
+        },
+        Block{
+            id:"dual_secondary_input_reply".into(),
+            params:vec![param(19000),param(19030),param(19031)],
+            instructions:vec![
+                inst(19032,lit(b"code")),
+                inst(19033,Op::JsonFieldString(19031,19032)),
+                inst(19034,lit(b"Ok")),
+                inst(19035,Op::EqBytes(19033,19034))
+            ],
+            terminator:branch(19035,"dual_secondary_exec",
+                vec![19000,19030,19031],"failed",vec![])
+        },
+        Block{
+            id:"dual_secondary_exec".into(),
+            params:vec![param(19000),param(19030),param(19031)],
+            instructions:vec![
+                inst(19041,lit(b"payload")),
+                inst(19042,Op::JsonFieldBytes(19031,19041))
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Exec,args:vec![19030,19042],
+                next:"dual_secondary_reply".into(),next_args:vec![19000]
+            }
+        },
+        Block{
+            id:"dual_secondary_reply".into(),
+            params:vec![param(19000),param(19050)],
+            instructions:vec![
+                inst(19051,lit(b"code")),
+                inst(19052,Op::JsonFieldString(19050,19051)),
+                inst(19053,lit(b"Ok")),
+                inst(19054,Op::EqBytes(19052,19053))
+            ],
+            terminator:branch(19054,"dual_agreement",
+                vec![19000,19050],"failed",vec![])
+        },
+        Block{
+            id:"dual_agreement".into(),
+            params:vec![param(19000),param(19060)],
+            instructions:vec![
+                inst(19061,lit(b"payload")),
+                inst(19062,Op::JsonFieldBytes(19000,19061)),
+                inst(19063,Op::JsonFieldBytes(19060,19061)),
+                inst(19064,Op::EqBytes(19062,19063))
+            ],
+            // Only identical genuine typed VM payloads may reach the
+            // old success artifact write. A conflicting/unknown result
+            // must NOT do any blind remote retry or forge a success.
+            terminator:branch(19064,"equal_local_pack",vec![19000],
+                "failed",vec![])
+        }
+    ]);
+    root.validate().expect("finite typed two-Exec comparison root");
+    root
+}
+
+/// Frozen protocol: AGREE_VALID / DISAGREE / AGREE_WRONG / UNKNOWN.
+/// Green DISAGREE and UNKNOWN mean a genuine two-stage observation
+/// refused success. Green AGREE_WRONG means agreement is NOT correctness.
+#[test]
+#[ignore = "four charged native trajectories of organism-visible agreement"]
+fn p2_metered_disagreement_native(){
+    use ocee_organism_vm::run_isolated;
+    let arm=std::env::var("OCEE_P2_AGREEMENT_ARM").expect("matrix arm");
+    assert!(["AGREE_VALID","DISAGREE","AGREE_WRONG","UNKNOWN"]
+        .contains(&arm.as_str()));
+    let first_good=local_fold4_vm_program();
+    let first_wrong=corrupted_fold4_ok();
+    let second_good=alternate_fold4_vm_program();
+    let second_wrong=alternate_corrupted_fold4();
+    // Generic sanity checks are not an oracle granted to the organism.
+    for input in [
+        [0u32,0,0,0],
+        [u32::MAX,u32::MAX,u32::MAX,u32::MAX],
+        [0x8000_0000,0x7fff_ffff,0x8000_0001,1]
+    ]{
+        let bytes=input.iter().flat_map(|v|v.to_le_bytes()).collect();
+        let (observed,_)=run_isolated(&second_good,bytes,4000)
+            .expect("alternate code must run on representative U32s");
+        assert_eq!(observed,Value::U32(fold32(&input).unwrap()));
+    }
+    let primary=if arm=="AGREE_WRONG"{&first_wrong}else{&first_good};
+    let verifier=if arm=="AGREE_VALID"||arm=="UNKNOWN"{
+        &second_good
+    }else{&second_wrong};
+    let primary_hash=primary.content_hash().unwrap();
+    let verifier_hash=verifier.content_hash().unwrap();
+    assert_ne!(primary_hash,verifier_hash,
+        "both candidates need distinct canonical code");
+    let root=p2_metered_disagreement_root();
+    let root_hash=root.content_hash().unwrap();
+    let mut w=boot_with_protocol_seed_budget(
+        8,2027,12_000,s45_p2_scoped_result_wait(),root);
+    for candidate in [Some(primary),if arm=="UNKNOWN"{None}else{Some(verifier)}]
+        .into_iter().flatten(){
+        let hash=candidate.content_hash().unwrap();
+        let r=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,
+            key:format!("/self/versions/{hash}"),
+            expected_version:None,bytes:candidate.canonical_bytes()
+        }));
+        assert_eq!(r.code,Code::Ok,"all installed candidates are paid");
+    }
+    for (key,hash) in [
+        ("/self/work/local-fold-candidate",&primary_hash),
+        ("/self/work/local-fold-verifier",&verifier_hash)
+    ]{
+        let r=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:key.into(),
+            expected_version:None,bytes:hash.as_bytes().to_vec()
+        }));
+        assert_eq!(r.code,Code::Ok,"both registry reads must be paid");
+    }
+    let genesis=w.audit.iter().map(|a|
+        a.result.gas_charged+a.result.vm_gas_charged).sum::<u64>();
+    assert_eq!(genesis+w.state.nodes[&NodeId::A].gas_available,12_000);
+    let prehash=w.state_hash();
+    assert_eq!(prehash,World::from_snapshot(&w.snapshot_json())
+        .unwrap().state_hash());
+    let mut invalid=0usize;
+    let mut gas_refusals=0usize;
+    for _ in 0..14_000{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        if r.code==Code::Gas{gas_refusals+=1;}
+        if matches!(r.code,Code::InvalidCode|Code::Denied){invalid+=1;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let host=&w.state.organisms[&ORGANISM_ID];
+    let finished=host.vm_continuation.as_ref().is_some_and(|c|c.finished);
+    let returned=host.last_return.clone();
+    let claimed_success=finished && returned==Some(Value::U32(1));
+    let raw=&w.state.objects.get(REMOTE_VALUES)
+        .expect("world must generate the true four operands").bytes;
+    assert_eq!(raw.len(),16);
+    let inputs=raw.chunks_exact(4).map(|x|
+        u32::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>();
+    let correct=fold32(&inputs).unwrap();
+    let saved=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|obj|{
+            assert_eq!(obj.bytes.len(),4);
+            u32::from_le_bytes(obj.bytes[..4].try_into().unwrap())
+        });
+    let mut observed=[Vec::<(Code,Option<u32>)>::new(),
+        Vec::<(Code,Option<u32>)>::new()];
+    let mut c_sends=0usize;
+    for a in &w.audit{
+        if let Some(Action::Exec{program_hash,input,..})=&a.action{
+            if program_hash==&primary_hash||program_hash==&verifier_hash{
+                assert_eq!(input.as_slice(),raw.as_slice(),
+                    "each real Exec must use the actual common operands");
+                let val=if a.result.code==Code::Ok{
+                    let Value::U32(v)=serde_json::from_slice::<Value>(
+                        &a.result.payload).unwrap() else{
+                        panic!("only typed U32 results can be accepted")
+                    };
+                    Some(v)
+                }else{None};
+                let slot=if program_hash==&primary_hash{0}else{1};
+                observed[slot].push((a.result.code,val));
+            }
+        }
+        if matches!(&a.action,Some(Action::Send{destination:NodeId::C,..}))
+            && a.result.code==Code::Ok{c_sends+=1;}
+    }
+    let a_vm=w.audit.iter().map(|a|a.result.vm_gas_charged).sum::<u64>();
+    let a_actions=w.audit.iter().map(|a|a.result.gas_charged).sum::<u64>();
+    let b=b_total(&w);
+    println!(
+        "P2_DISAGREEMENT arm={arm} root={root_hash} primary={primary_hash} \\
+         verifier={verifier_hash} genesis_A={genesis} prehash={prehash} \\
+         a_vm={a_vm} a_actions={a_actions} a_total={} B={b} \\
+         C_sends={c_sends} first={:?} second={:?} finished={finished} \\
+         returned={returned:?} claimed_success={claimed_success} \\
+         correct={correct} stored={saved:?} invalid={invalid} \\
+         gas_refusals={gas_refusals} world_step={}",
+        a_vm+a_actions,observed[0],observed[1],w.state.step
+    );
+    assert_eq!(invalid,0);
+    assert_eq!(b,0,"unknown or disagreement may not cause a B call");
+    assert_eq!(c_sends,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    // A first Exec may be paid to retry on insufficient A (Gas),
+    // but there must be a single actual OK primary computation.
+    assert_eq!(observed[0].iter()
+        .filter(|(code,_)|*code==Code::Ok).count(),1);
+    match arm.as_str(){
+        "AGREE_VALID"=>{
+            assert_eq!(observed[0].last(),Some(&(Code::Ok,Some(correct))));
+            assert_eq!(observed[1],vec![(Code::Ok,Some(correct))]);
+            assert!(claimed_success);
+            assert_eq!(saved,Some(correct));
+        },
+        "DISAGREE"=>{
+            assert_eq!(observed[0].last(),Some(&(Code::Ok,Some(correct))));
+            assert_eq!(observed[1],
+                vec![(Code::Ok,Some(correct.wrapping_add(1)))]);
+            assert!(finished);
+            assert!(!claimed_success);
+            assert_eq!(returned,Some(Value::U32(0)));
+            assert_eq!(saved,None,"no false success artifact on conflict");
+        },
+        "AGREE_WRONG"=>{
+            let wrong=correct.wrapping_add(1);
+            assert_eq!(observed[0].last(),Some(&(Code::Ok,Some(wrong))));
+            assert_eq!(observed[1],vec![(Code::Ok,Some(wrong))]);
+            assert!(claimed_success,
+                "common-mode wrong agreement must be exposed");
+            assert_eq!(saved,Some(wrong),"agreement is not truth");
+        },
+        "UNKNOWN"=>{
+            assert_eq!(observed[0].last(),Some(&(Code::Ok,Some(correct))));
+            assert_eq!(observed[1],vec![(Code::NotFound,None)]);
+            assert!(finished);
+            assert!(!claimed_success);
+            assert_eq!(returned,Some(Value::U32(0)));
+            assert_eq!(saved,None,
+                "unavailable verifier is not a successful validation");
+        },
+        _=>unreachable!()
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
