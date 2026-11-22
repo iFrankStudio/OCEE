@@ -656,3 +656,7 @@
 
 ### 2026-11-22 — P2收费genesis+真实4k降额组合，固定高成本seed587（待原生验证）
 - 已核对实时main `9e811559949d28c96897147bbec9bca713acfe4a` 和最新Actions，没有新的手动/自动研究覆盖旧证据。此前[free-genesis下的587降额正例](https://github.com/iFrankStudio/OCEE/actions/runs/44987651536)与[2027收费genesis正例](https://github.com/iFrankStudio/OCEE/actions/runs/44988134196)分别通过，不能合并推断同一活动轨迹成功。新增[单一轨迹组合实验协议](./experiments/E001/DEV-P2-CHARGED-GENESIS-DOWNSHIFT.md)及[只针对一项原生CI](./.github/workflows/p2-charged-genesis-downshift.yml)，固定已见开发P2 seed587、消息delay8、初始A12000真实Write扣费且不补余额、step8192降至4000；额外要求降额后**实际VM gas扣费>0**、最终任务U32(1)、真实ACK+RESULT认证及B24一次。原有专用活动程序未更改；观察期不延长。**待真正原生CI结果，不预报成功**；科学G0 GO、G1/G2 NO-GO，E001未预注册/校准。
+
+### 2026-11-22 — P2收费genesis与真实A降额4k同轨迹原生验收成功
+- [GitHub Actions #44989858138](https://github.com/iFrankStudio/OCEE/actions/runs/44989858138) @ `11f5845cb7f76ff3b43e7f7b31248a24e61291d0`，**completed/success；Rust单项1/1 PASS（564.36s）**。固定已见开发seed587/P2延迟8，研究者提供S45初始程序在真实A12000额度内四次Write支付8818、首次活动余额3182，未补回；step8192正规降至4000，降额后仍产生**267个有效VM tick、真实VM gas9911**；在step10303个体真U32(1)/B24只一次，RemoteEval u64 ID206，ACK和RESULT真正因果确认、fold32和快照一致，Gas拒绝7500，Invalid/Denied为0。活动A VM94229+world动作3105，加启动8818后真实总A**106152 gas**，原S45活动程序hash未变化。此前free-genesis seed587成功step8217，两实验严格保留不同初始化条件；这次补齐此前无法合并的单条组合轨迹。
+- [原生研究报告与明确局限](./experiments/E001/DEV-P2-CHARGED-GENESIS-DOWNSHIFT.md)。仅证实固定研究者专用程序在分epoch紧资源中有状态继续执行并完成一次真实任务；**不证明**个体自行优化A资源、创造协议适配器、跨家族演化或远程任务净成本优势；G0 GO、G1/G2 NO-GO，E001未校准/正式预注册。完成的一次性workflow恢复仅手动。

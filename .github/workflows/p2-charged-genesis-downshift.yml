@@ -1,9 +1,7 @@
 name: P2 Charged Genesis and Real 4k Downshift Combined
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/p2-charged-genesis-downshift.yml"
+  # Single native charged genesis + 4k downshift PASS, Run #44989858138.
+  # Archived expensive study: explicit replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-charged-downshift-${{ github.ref }}
