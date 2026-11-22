@@ -2,10 +2,9 @@ name: P2 Equal-Origin A-only vs A+B Full Task
 # Fix original P1/P2 switch ambiguity. No speculative Gas retries.
 # Original #44994405005 1/2 and #44994931874 invalid-loop 0/2 archived.
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/p2-equal-origin-route-pair.yml"
+  # Native third version 2/2 completed success Run #44995228916.
+  # Preserve original red runs #44994405005 and #44994931874.
+  # This costly paired experiment must only be replayed explicitly.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-equal-origin-route-${{ github.ref }}
