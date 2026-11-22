@@ -613,3 +613,114 @@ fn s45_phase0_scoped_wait_restores_two_fixed_protocol_seed_regressions(){
             World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
     }
 }
+
+ 
+/// Frozen development holdout, not E001 confirmatory evidence.
+#[test]
+#[ignore = "explicit frozen protocol-seed CI matrix only; not default workspace"]
+fn p2_frozen_holdout_independent_protocol_instance(){
+    let protocol_seed:u64=std::env::var("OCEE_P2_HOLDOUT_SEED")
+        .expect("explicit holdout seed from frozen CI matrix")
+        .parse().expect("holdout seed integer");
+    assert!([311_u64,587,941,2027].contains(&protocol_seed),
+        "unregistered seed: frozen holdout has exactly four entries");
+    // Precommitted 2026-11-22: no tuning of the Phase0/Phase2 S45
+    // graph, even when a held-out protocol is hard or unlearnable.
+    let program=s45_p2_scoped_result_wait();
+    let hash=program.content_hash().unwrap();
+    let root=s45_scoped_result_root();
+    let mut world=boot_with_protocol_seed(8,protocol_seed,program,root);
+    // Keep the pre-existing world fixture's 14k-step budget and
+    // safety/fault checks. No host-driven protocol hints or retries.
+    finish(&mut world);
+    let ret=world.state.organisms[&ORGANISM_ID].last_return.clone();
+    let success=ret==Some(Value::U32(1));
+    let b=b_total(&world);
+    let service=&world.state.protocol_service.as_ref().unwrap().protocol;
+    let mut remote_ids=Vec::<u64>::new();
+    let mut result_ids=Vec::<u64>::new();
+    for record in &world.audit{
+        let Some(Action::Send{destination:NodeId::C,bytes,..})=&record.action
+            else{continue};
+        if record.result.code!=Code::Ok{continue;}
+        assert_eq!(record.result.payload.len(),8,
+            "successful SEND returns a true u64 receipt");
+        let Ok(frame)=service.decode(bytes) else {continue;};
+        let actual_id=u64::from_le_bytes(
+            record.result.payload[..8].try_into().unwrap());
+        match frame.operation{
+            Operation::RemoteEval if frame.body.len()==18=>
+                remote_ids.push(actual_id),
+            Operation::Result=>result_ids.push(actual_id),
+            _=>(),
+        }
+    }
+    let verified_ids=world.audit.iter().filter_map(|record|{
+        match &record.action{
+            Some(Action::ConfirmResponseFor{request_id,..})
+                if record.result.code==Code::Ok=>Some(*request_id),
+            _=>None,
+        }
+    }).collect::<Vec<_>>();
+    let counters=&world.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().unwrap().loop_counters;
+    let p0=counters.get("s45_remote_retry").copied().unwrap_or(0);
+    let p2=counters.get("s45_result_retry").copied().unwrap_or(0);
+    let legacy=counters.get("s23_receive_retry").copied().unwrap_or(0);
+    let positive_service_events=world.state.service_events.iter()
+        .filter(|event|event.b_gas_charged>0).count();
+    let a_vm=world.audit.iter()
+        .map(|record|record.result.vm_gas_charged).sum::<u64>();
+    let a_actions=world.audit.iter()
+        .map(|record|record.result.gas_charged).sum::<u64>();
+    let total_sent=world.audit.iter().filter(|record|
+        matches!(&record.action,Some(Action::Send{destination:NodeId::C,..}))
+        && record.result.code==Code::Ok).count();
+    println!(
+        "P2_FROZEN_HOLDOUT seed={protocol_seed} success={success} \
+         return={ret:?} B={b} b_events={positive_service_events} \
+         remote_ids={remote_ids:?} result_ids={result_ids:?} \
+         confirmed={verified_ids:?} phase0_wait={p0} \
+         phase2_wait={p2} legacy_wait={legacy} tick={} \
+         A_vm={a_vm} A_actions={a_actions} sends={total_sent} \
+         program_hash={hash} restarts={:?}",
+        world.state.step,world.state.guarded_restarts);
+    // HARD SAFETY: a clean no-drift run never duplicates B or retries
+    // an uncertain request, even when it cannot discover the opcode.
+    assert!(b<=24,"any B overcharge invalidates the held-out trial");
+    assert!(remote_ids.len()<=1,"no potentially committed B replay");
+    assert!(positive_service_events<=1,"one B event at most");
+    assert!(world.state.guarded_restarts.is_empty(),
+        "no task drift means no authorized restart");
+    assert!(p0<=896 && p2<=896 && legacy<=128);
+    for prefix in ["s45_remote_retry:","s45_result_retry:"]{
+        for (key,&count) in counters.iter().filter(|(k,_)|k.starts_with(prefix)){
+            assert!(count<=6,"scoped cap violated: {key}={count}");
+        }
+    }
+    if success{
+        assert_eq!(b,24,"successful task requires B's real gas");
+        assert_eq!(positive_service_events,1);
+        assert_eq!(remote_ids.len(),1);
+        assert!(verified_ids.contains(&remote_ids[0]),
+            "real RemoteEval ACK must be kernel-authenticated");
+        assert!(result_ids.iter().any(|id|verified_ids.contains(id)),
+            "a real RESULT must have a kernel-authenticated reply");
+        let bytes=&world.state.objects[
+            "/self/results/p2-job0/value_le"].bytes;
+        assert!(bytes.len()>=4);
+        let result=u32::from_le_bytes(bytes[..4].try_into().unwrap());
+        let operands=world.state.objects[REMOTE_VALUES].bytes
+            .chunks_exact(4).map(|chunk|
+                u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(result,fold32(&operands).unwrap(),
+            "success requires independent real operand verification");
+    }else{
+        assert!(!world.state.objects.contains_key(
+            "/self/results/p2-job0/value_le"),
+            "failed task cannot create a false successful result");
+    }
+    assert_eq!(world.state_hash(),
+        World::from_snapshot(&world.snapshot_json()).unwrap().state_hash());
+}

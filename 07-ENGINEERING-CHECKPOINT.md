@@ -631,3 +631,7 @@
 - [**原生修复Run #44917248521**](https://github.com/iFrankStudio/OCEE/actions/runs/44917248521) @ `4cbf8743b63eff8de55ae1d8bdd3b872f9e11d8e`，**completed/success，1项Rust测试、内部两完整活动P2轨迹2/2真成功（407.03s）**：seed17全程delay8结果U32(1)、真实B24一次、真实RemoteEval ID120，Phase0/Phase2分别354/312次scoped wait、tick2140；seed93同为U32(1)/B24一次、ID108、阶段等待318/360、tick2198。均具真正ACK与RESULT `ConfirmResponseFor` 通过、结果fold32正确、无无因Root重启、快照一致。
 - 新S45 Phase0 REMOTE_EVAL opcode探索和Phase2 RESULT各采用**单候选6、每阶段总896**的局部+全局双限；Phase1受限真实ID恢复及Phase3不变。修复前失败样本和成功后的目标相同，属**开发集定向修复**而非新独立确认集；先前42协议seed既有基线不等于当前修订SHA全回归。旧workspace取消，不得说全仓通过；G0 GO、G1/G2 NO-GO，E001未校准/未预注册。
 - [完整负/正因果证据及研究限制](./experiments/E001/DEV-S45-PAIRED-PROTOCOL-SEED-ABLATION.md)。两次临时workflow push触发恢复仅手动，以免历史实验自动反复运行。
+
+### 2026-11-22 — 执行前冻结的四P2协议实例保留集：原生运行候选
+- 自动研究 [预先冻结的保留集协议](./experiments/E001/DEV-P2-FROZEN-HOLDOUT-PROTOCOL.md) 定义全程 delay8 / P2 protocol seed **311, 587, 941, 2027**，被测活动P2代码为 S45 Phase0+Phase2 已验证版 `4cbf8743`（当前 `main` 无该程序的语义更改）。本次只添加 [一项被显式忽略的原生保留集测试](./crates/organism-seeds/tests/s44_uncertain_outcome.rs) 及 [四种子定向矩阵CI](./.github/workflows/p2-frozen-holdout.yml)，不改变个体程序、协议、世界或资源。每实例独立运行原14k tick夹具、持续delay8、日志输出实际成功/B/ACK/RESULT/等待/VM gas及真实opcode作用域边界；失败仍纳入分母4。
+- 初始状态：**仅代码已提交，CI及保留集活性未验收**；测试绿仅意味无B双扣/盲重试、所有明确安全断言成立，不等于四条均成功。与正式E001预注册无关，G0 GO、G1/G2 NO-GO。

@@ -1,0 +1,27 @@
+name: P2 Frozen Holdout Four Protocol Instances
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/p2-frozen-holdout.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-frozen-holdout-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-holdout:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [311, 587, 941, 2027]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OCEE_P2_HOLDOUT_SEED: ${{ matrix.seed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run one isolated frozen P2 protocol instance
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_frozen_holdout_independent_protocol_instance -- --ignored --show-output
