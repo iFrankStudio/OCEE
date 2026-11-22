@@ -1,6 +1,6 @@
 # DEV — P2 semantic-Ok: metered disagreement and fail-closed control (pre-execution protocol)
 
-Status: **design only; no native implementation or CI evidence**. Prepared after reading main `22e8ff27117306ada19848c7d22a4146961c6bb8` and the three genuine native logs of [#45002443707](https://github.com/iFrankStudio/OCEE/actions/runs/45002443707). This is a *development* protocol, not E001 confirmation or preregistration.
+Status: **the following protocol was frozen before execution; native four-arm 4/4 evidence is now archived below**. Prepared after reading main `22e8ff27117306ada19848c7d22a4146961c6bb8` and the three genuine native logs of [#45002443707](https://github.com/iFrankStudio/OCEE/actions/runs/45002443707). This is a *development* protocol, not E001 confirmation or preregistration.
 
 ## Scientific question
 
