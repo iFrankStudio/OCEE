@@ -653,3 +653,6 @@
 ### 2026-11-22 — 初始12000 A gas真正计费的P2启动与任务原生成功
 - [Run #44988134196](https://github.com/iFrankStudio/OCEE/actions/runs/44988134196) @ `2c50ac7490370f30571d44997e8f28fed052731d` completed/success，原生1/1：协议seed2027，4次初始genome Write在真实首epoch12000额度内扣8818（初始余3182，无特权补满），后续VM36310+A动作1329、Gas拒绝2266次，**step3351真U32(1)和B24只一次**，ACK/RESULT实际u64 ID118/120内核认证、fold32与快照一致，无无因重启。合计总A gas46457，跨epoch正常补充。
 - 收费启动实例早于8192结束，故尚未直接验证“收费启动 + 4000额度降额”同时成立；另一个free-genesis seed587确实降额后完成，须严格分开。无自主生成协议/净资源优势证据。 [协议与原生账本](./experiments/E001/DEV-P2-A-GAS-PRESSURE.md)，定向CI仅手动，科学G0 GO、G1/G2 NO-GO。
+
+### 2026-11-22 — P2收费genesis+真实4k降额组合，固定高成本seed587（待原生验证）
+- 已核对实时main `9e811559949d28c96897147bbec9bca713acfe4a` 和最新Actions，没有新的手动/自动研究覆盖旧证据。此前[free-genesis下的587降额正例](https://github.com/iFrankStudio/OCEE/actions/runs/44987651536)与[2027收费genesis正例](https://github.com/iFrankStudio/OCEE/actions/runs/44988134196)分别通过，不能合并推断同一活动轨迹成功。新增[单一轨迹组合实验协议](./experiments/E001/DEV-P2-CHARGED-GENESIS-DOWNSHIFT.md)及[只针对一项原生CI](./.github/workflows/p2-charged-genesis-downshift.yml)，固定已见开发P2 seed587、消息delay8、初始A12000真实Write扣费且不补余额、step8192降至4000；额外要求降额后**实际VM gas扣费>0**、最终任务U32(1)、真实ACK+RESULT认证及B24一次。原有专用活动程序未更改；观察期不延长。**待真正原生CI结果，不预报成功**；科学G0 GO、G1/G2 NO-GO，E001未预注册/校准。

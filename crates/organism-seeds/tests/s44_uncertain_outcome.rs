@@ -883,9 +883,20 @@ fn p2_a_gas_12k_then_4k_existing_activity_under_real_epoch_grants(){
 #[test]
 #[ignore = "targeted charged-genesis calibration, never default workspace"]
 fn p2_charged_genesis_in_12k_a_epoch_with_no_credit_reset(){
+    charged_genesis_probe(2027,false);
+}
+
+/// Falsifiable combination of TWO independently validated constraints:
+/// paid genesis AND a real 12k -> 4k epoch change in ONE VM continuation.
+#[test]
+#[ignore = "one high-cost development seed under paid genesis + downshift"]
+fn p2_charged_genesis_crosses_real_4k_downshift_with_b_once(){
+    charged_genesis_probe(587,true);
+}
+fn charged_genesis_probe(protocol_seed:u64,require_downshift:bool){
     use ocee_world_kernel::{EventKind,ScheduledEvent};
-    // Already observed development seed: cannot count as new holdout.
-    let mut w=boot_with_protocol_seed_budget(8,2027,12_000,
+    assert!([2027,587].contains(&protocol_seed));
+    let mut w=boot_with_protocol_seed_budget(8,protocol_seed,12_000,
         s45_p2_scoped_result_wait(),s45_scoped_result_root());
     assert_eq!(w.state.step,4,"exactly four real genesis writes");
     let genesis_a=w.audit.iter().map(|r|
@@ -946,7 +957,7 @@ fn p2_charged_genesis_in_12k_a_epoch_with_no_credit_reset(){
         .map(|a|a.result.gas_charged).sum::<u64>();
     let next_epoch=w.state.nodes[&NodeId::A].gas_per_epoch;
     println!(
-        "P2_CHARGED_GENESIS seed=2027 delay=8 initial_epoch=12000 \
+        "P2_CHARGED_GENESIS seed={protocol_seed} delay=8 initial_epoch=12000 \
          genesis_a={genesis_a} initial_remaining={available} \
          success={success} finished={finished} return={returned:?} \
          B={b} remote_ids={remote:?} result_ids={result:?} \
@@ -965,6 +976,30 @@ fn p2_charged_genesis_in_12k_a_epoch_with_no_credit_reset(){
         assert_eq!(next_epoch,4_000);
     }else{
         assert_eq!(next_epoch,12_000);
+    }
+    // In the combined high-cost case, counting the configuration event
+    // alone is insufficient. The organism must actually execute charged
+    // VM instructions AFTER the 4k epoch became effective.
+    let post_downshift_vm=w.audit.iter().filter(|r|
+        r.step>=8192 && r.result.vm_gas_charged>0
+    ).map(|r|r.result.vm_gas_charged).sum::<u64>();
+    let post_downshift_ticks=w.audit.iter().filter(|r|
+        r.step>=8192 && r.result.vm_gas_charged>0
+    ).count();
+    println!(
+        "P2_CHARGED_DOWNSHIFT seed={protocol_seed} required={require_downshift} \
+         event_step=8192 crossed={} post_vm={post_downshift_vm} \
+         post_ticks={post_downshift_ticks} final_epoch={next_epoch} \
+         completed={success} B={b} final_step={}",
+        w.state.step>=8193,w.state.step);
+    if require_downshift{
+        assert!(w.state.step>=8193,
+            "charged-genesis instance did not reach the scheduled cut");
+        assert_eq!(next_epoch,4_000);
+        assert!(post_downshift_vm>0 && post_downshift_ticks>0,
+            "no actual VM progress under the new 4k epoch limit");
+        assert!(success,
+            "paid genesis and real 4k downshift must both preserve task liveness");
     }
     if success{
         assert_eq!(b,24);

@@ -1,0 +1,21 @@
+name: P2 Charged Genesis and Real 4k Downshift Combined
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/p2-charged-genesis-downshift.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-charged-downshift-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  combined-resource-constraint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Real paid 12k genesis plus charged VM progress after 8192 resource event to 4k
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_charged_genesis_crosses_real_4k_downshift_with_b_once -- --ignored --show-output
