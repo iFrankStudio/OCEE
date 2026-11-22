@@ -1084,7 +1084,7 @@ fn local_fold4_vm_program()->Program{
 #[test]
 #[ignore = "targeted matched-operand local-vs-offload resource calibration"]
 fn p2_matched_local_fold4_cost_after_real_paid_s45_task(){
-    use ocee_organism_vm::{run_isolated,Op};
+    use ocee_organism_vm::run_isolated;
     let local=local_fold4_vm_program();
     let local_hash=local.content_hash().unwrap();
     let pure_cases=[
@@ -1201,8 +1201,8 @@ fn p2_matched_local_fold4_cost_after_real_paid_s45_task(){
         World::from_snapshot(&before_local).unwrap().state_hash());
     assert_eq!(local_world.state_hash(),
         World::from_snapshot(&local_world.snapshot_json()).unwrap().state_hash());
-    let marginal_local_gas=install.result.gas_charged+
-        executed.result.gas_charged;
+    let marginal_local_gas=install.gas_charged+
+        executed.gas_charged;
     assert!(marginal_local_gas>0 && marginal_local_gas<12_000);
     println!(
         "P2_MATCHED_LOCAL seed=2027 delay=8 remote_success=true \
@@ -1215,6 +1215,6 @@ fn p2_matched_local_fold4_cost_after_real_paid_s45_task(){
          local_install_A={} local_exec_A={} local_total_A={} \
          local_exec_step={} same_operand_count={} same_result={verified}",
         remote_ids[0],local.canonical_bytes().len(),
-        install.result.gas_charged,executed.result.gas_charged,
+        install.gas_charged,executed.gas_charged,
         marginal_local_gas,local_world.state.step,values.len());
 }

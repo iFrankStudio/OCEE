@@ -1,4 +1,5 @@
 name: P2 Matched-Operand Local FOLD32 Marginal Cost
+# Replayed after exact ActionResult field fix; original red #44991946675 retained.
 on:
   push:
     branches: [main]
