@@ -22,3 +22,35 @@ For all arms, log real input bytes, both candidate hashes, each `Exec` result/st
 The primary outcome is **false-success rate conditional on two actual executions**, reported separately from task completion and gas expenditure. DISAGREE passing is only a fail-closed mechanism. AGREE_WRONG is an explicit bound: two mutually consistent tools can still be wrong. Two different hashes do not establish independent provenance; if both implementations share the same seeded algorithmic error, this is correlated evidence. A future genuine correctness mechanism needs independent task constraints, verified witnesses, or authenticated adjudication, and must price those sources.
 
 Do not compare arm totals as equal-genesis net utility unless initial installed bytes, permissions and costs are matched. Do not treat timeout/Unknown as `NotFound`. Do not update G0/G1/G2 or E001 status on the strength of this protocol. Implement a **single narrowly scoped native test/workflow**, inspect the actual job logs and retain failures; avoid historical workspace runs. Do not change the existing successful three-arm counterexample.
+
+## 2026-11-22 — 首次真正原生四臂 4/4 验收
+
+[Run #45019867266](https://github.com/iFrankStudio/OCEE/actions/runs/45019867266) @ 00d69284ef427397476edeb54c34e75901631640：GitHub Actions completed/success，AGREE_VALID / DISAGREE / AGREE_WRONG / UNKNOWN 四个隔离原生 Rust jobs 均各 1/1 passed。四臂使用**相同的活动根内容 hash**：2a4f5080f1fffc38452889cdc413466b61421829fbd33f9fd85134e215de1f14。该根通过普通付费 Read 得到两个工具的内容 hash，再对同一真实16字节四U32输入依次进行实际收费 Exec，对比两个 Exec Ok 返回的原始结果 payload；且**仅当两者一致时**才允许旧结果写入分支继续。研究者宿主没有传入任何正确答案、伪造 Exec 回应或特权 oracle。原S45公共P1阶段不变，world seed55、P2开发seed2027、delay8、A12000 gas/epoch、14k tick限制保持不变。
+
+| 原生审计 | AGREE_VALID | DISAGREE | AGREE_WRONG | UNKNOWN |
+|---|---:|---:|---:|---:|
+| 第一次真实 Exec Ok | 1415179467 | 1415179467 | 1415179468 | 1415179467 |
+| 第二次真实 Exec | Ok 1415179467 | Ok 1415179468 | Ok 1415179468 | NotFound（真实未安装） |
+| 研究者独立正确值（不对根开放） | 1415179467 | 1415179467 | 1415179467 | 1415179467 |
+| 活动根返回值 | U32(1) | **U32(0)** | **U32(1)，假成功** | **U32(0)** |
+| 持久化成功结果 | 1415179467 | **无** | **1415179468，错误** | **无** |
+| 有偿 genesis A | 10253 | 10257 | 10261 | 9684 |
+| VM A gas | 2516 | 2472 | 2516 | 2437 |
+| 世界动作 A gas | 10930 | 10933 | 10942 | 10088 |
+| 完整 A gas | **13446** | **13405** | **13458** | **12525** |
+| B gas / 成功 C SEND | 0 / 0 | 0 / 0 | 0 / 0 | 0 / 0 |
+| 完成 step | 1046 | 1045 | 1046 | 1032 |
+| Gas 被拒次数 | 995 | 995 | 995 | 983 |
+| 世界快照恢复一致与未授权重启 | 通过 | 通过 | 通过 | 通过 |
+
+第一个正确算法为原通用纯VM FOLD32，hash c600ba0f04d0973f921731468e9974ed7ef9d6476514c7d02334f51088e4adde；第二个正确算法独立采用逐字节位移累加与逐位进位旋转，hash b1a227ed5ce76415b95b6d29abd6dce23b474a328a94d0b26426bae7a4c6b400。AGREE_WRONG 中两个**不同**的合法算法分别在末端引入相同 wrapping +1 语义偏差，原算法错误变体 hash 766720eb661d95c87340e1ff524343173bd3c9699c741c9a0e06093f29683ac3，第二实现错误变体 hash 4465dcf71ef351ac8c17d99482e23c27598f4f4a485fa0eaeb1d7dbfbb15b79f。两份一致的错误值确实导致错误结果落盘。UNKNOWN 第二工具从未安装，实测第二次调用是 Exec NotFound，不是超时、Gas 或模拟失败；根未尝试使用 B 作为不经许可的盲回退。
+
+### 科学结论、分母与未解问题
+
+- **可检测冲突**：DISAGREE 中两次都真实 Exec Ok、值不同，活动VM以自身已看到的响应拒绝保存；这是明确的有界语义冲突保护，解决了此前只要 Exec Ok 就写入的具体漏洞。
+- **共同错误**：AGREE_WRONG 中两次真实 Exec Ok、值相同但错误，活动VM宣称成功。不同程序哈希、不同实现方式和结果一致**不足以证明一般任务正确性**。
+- **证据不足**：UNKNOWN 中首次真 Exec Ok、第二次真 Exec NotFound，活动根拒绝成功，没有伪造第二结果或将 NotFound 解释成有效投票。此组不应计入“两次 Exec Ok 的相符/冲突”分母。
+- **分母透明**：两次 Exec Ok 的三条件中成功写入 2/3（其中1次语义假成功）；真实冲突拒绝 1/1；真实二次不可用拒绝 1/1；不是统计上代表生产任务分布的错误率。
+- **资源与初始化边界**：四臂研究者装载的工具字节、能力和首epoch收费不同，A总成本仅描述各真实轨迹，不能当同起点收益差；所有工具与验证策略都由研究者事先提供。没有跨episode学习、没有独立证明来源、更未实现开放式演化。当前结果是开发集 seed2027 的正负对照，**不能升格为正式 E001 预注册/holdout**。
+
+实验已保留全部工作流与日志，并恢复为仅手动 workflow_dispatch，不为新提交重跑历史 workspace 或全量 studies。后续重点是给个体**合法、可计费、可认证且不共同依赖相同算法错误**的独立约束或任务见证；在构造 adversarial common-mode 样本下证明何时可以纠错、何时必须停止，并评估额外 A/B/C 成本。G0 GO；G1/G2 仍 NO-GO；正式 E001 未校准/预注册。
