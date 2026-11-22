@@ -1,6 +1,6 @@
 name: P2 Equal-Origin A-only vs A+B Full Task
-# Post-failure replay of L/R after 2048 bounded local gas-only retries.
-# Original #44994405005 red/green results permanently preserved.
+# Fix original P1/P2 switch ambiguity. No speculative Gas retries.
+# Original #44994405005 1/2 and #44994931874 invalid-loop 0/2 archived.
 on:
   push:
     branches: [main]

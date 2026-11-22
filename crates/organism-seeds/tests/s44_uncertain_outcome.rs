@@ -1245,11 +1245,21 @@ fn equal_origin_route_root(local_hash:&str)->Program{
     assert_eq!(sw.params[0].id,700);
     let mut remote=sw.clone();
     remote.id="equal_remote_switch".into();
-    sw.instructions=vec![i(17101,lit(b"/self/compute-route"))];
-    sw.terminator=y(WorldCall::Read,vec![17101],
-        "equal_route_reply",vec![700]);
+    // switch_active is ALSO used for the original P1 handover.
+    // Only divert the actual final P2 target, preserving the early
+    // common learning phase in both arms.
+    let p2_hash=s45_p2_scoped_result_wait().content_hash().unwrap();
+    sw.instructions=vec![
+        i(17100,lit(p2_hash.as_bytes())),
+        i(17101,Op::EqBytes(700,17100))
+    ];
+    sw.terminator=branch(17101,"equal_route_read",vec![700],
+        "equal_remote_switch",vec![700]);
     f.blocks.extend([
         remote,
+        b("equal_route_read",vec![p(700,Type::Bytes)],vec![
+            i(17102,lit(b"/self/compute-route"))
+        ],y(WorldCall::Read,vec![17102],"equal_route_reply",vec![700])),
         b("equal_route_reply",vec![p(700,Type::Bytes),p(17110,Type::Bytes)],vec![
             i(17111,lit(b"code")),i(17112,Op::JsonFieldString(17110,17111)),
             i(17113,lit(b"Ok")),i(17114,Op::EqBytes(17112,17113))
@@ -1275,20 +1285,7 @@ fn equal_origin_route_root(local_hash:&str)->Program{
         b("equal_local_exec_reply",vec![p(17300,Type::Bytes)],vec![
             i(17301,lit(b"code")),i(17302,Op::JsonFieldString(17300,17301)),
             i(17303,lit(b"Ok")),i(17304,Op::EqBytes(17302,17303))
-        ],branch(17304,"equal_local_pack",vec![17300],
-            "equal_local_gas_gate",vec![17302])),
-        // A local Exec is an atomic isolated call. If the active A
-        // account cannot afford its full execution at this tick,
-        // retry only a *real Gas* feedback under a finite VM bound.
-        // Other errors remain fail-closed, and no extra A gas is minted.
-        b("equal_local_gas_gate",vec![p(17500,Type::Bytes)],vec![
-            i(17501,lit(b"Gas")),i(17502,Op::EqBytes(17500,17501))
-        ],branch(17502,"equal_local_retry",vec![],"failed",vec![])),
-        b("equal_local_retry",vec![],vec![],
-            Terminator::RepeatBounded{
-                limit:2048,body:"equal_local_read".into(),body_args:vec![],
-                done:"failed".into(),done_args:vec![]
-            }),
+        ],branch(17304,"equal_local_pack",vec![17300],"failed",vec![])),
         b("equal_local_pack",vec![p(17310,Type::Bytes)],vec![
             i(17311,lit(b"payload")),i(17312,Op::JsonFieldBytes(17310,17311)),
             i(17313,lit(b"U32")),i(17314,Op::JsonFieldU32(17312,17313)),

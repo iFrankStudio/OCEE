@@ -676,3 +676,6 @@
 
 ### 2026-11-22 — 等起点A-only/A+B原生首次1/2，L失败保留，修复版待CI
 - [Run #44994405005](https://github.com/iFrankStudio/OCEE/actions/runs/44994405005) @ `bb401d1a` 已完成：**R=U32(1)真成功**，A47350/B24/C-SEND61/step3383；**L=U32(0)失败**，A12015/B0/C0/step1025、无成功local Exec。两臂初始world state hash和共同root/初始化费用完全一致；无法把L未完成成本当成功。已独立提交`2bd9fc9`仅真Exec Gas有界重试修复，新一轮两臂完整复测尚未验证；必须保留首次红例。
+
+### 2026-11-22 — 更正L失败根因：原root的P1切换被误截获；撤回无证据gas重试
+- [二次 CI #44994931874](https://github.com/iFrankStudio/OCEE/actions/runs/44994931874) @ `9d9afdc8` 两臂均在启动前`InvalidProgram("repeat limit exceeds 256")`，无完整任务执行，原红例保留。进一步读源码发现`switch_active`最初用于P1学习路由，原研究者`L`在操作数还未产生时截获P1，直接Read缺失对象而导致U32(0)。先前将L失败猜测为isolated Exec缺gas**缺乏依据**，现从开发图中撤销后置非法/未经证实的有界Gas重试。修复后只在switch目标hash**确为S45 P2**时接受本地或远端选择，P1切换完全原样，仍为相同收费genesis/程序内容hash两臂、同任务同资源；待第三版原生配对验证。完整负例及纠偏见[实验记录](./experiments/E001/DEV-P2-EQUAL-ORIGIN-LOCAL-REMOTE-PAIR.md)。

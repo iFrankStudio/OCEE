@@ -28,3 +28,11 @@
 两个臂完全相同的初始分叉前world hash `fbc7c3ea81d07491f9543465ace977a2fc5ef2a215b845e482bc820fa6a1b286`、共同root hash `46c40f910b11f26316542c689169526376e7bb9b144b919644009fae4794c28a`、P2专家hash `0f9163bdff40a2ac5cbee63586353ea394f639d6dc7cc190ac34c811634c518e`。R的真正RemoteEval u64 ID118与RESULT来自内核确认，L未发送C/B。**不能以L失败时的12015 A gas与R成功的47350比较净效用。**
 
 后置有界Gas-only重试修复另在 `2bd9fc9255574093d5c2df55304b04e585911a20`，不改变原样本与资源，追加`local_exec_gas`日志核实低余额下隔离Exec失败的机制；R也必须在修复后新root hash下重新验收，不能以首次R成功代替。
+
+## 2026-11-22 — 二次原生根程序校验失败，纠正首次真正根因
+
+[Run #44994931874](https://github.com/iFrankStudio/OCEE/actions/runs/44994931874) @ `9d9afdc8a3f89666a6fc24471f40a23d1517a965`：两臂均在程序启动前由VM verifier拒绝，`InvalidProgram("repeat limit exceeds 256")`，因为后置候选的 `RepeatBounded limit=2048` 超出语言约束。因此**0条新任务运行**；不代表L/R工程活性阴性。
+
+重新审计根控制流发现先前的因果解释存在错误：`switch_active`既用于**早期P1学习专家切换**，也用于最终P2远程专家切换。原研究者控制路由会在第一次P1 handover就截获并转到本地Read `REMOTE_VALUES`，而这时真正的第四操作数尚未生成；L于是于step1025失败且没有本地Exec。故**第一次L失败不能归因为孤立Exec缺gas**，该诊断只是未经证实的候选假设。
+
+第三版修复保持两臂完全相同的root/工具安装、初始world hash和费用、同一seed/真实任务与14k tick停止条件，**只**在`switch_active`先将目标hash与实际S45 P2专家hash作VM `EqBytes` 对照；若目的为P1则完全保留原switch（不读取路线开关），唯目标P2时才读取等额付费的一字节路由并执行L或R。撤回无证据的Gas重试及非法RepeatBounded，保留local Exec错误审计、首次原生1/2与二次VM校验红例。两臂需在新源码下**重新运行实际完整任务**，不能把早期R成功与未来L成功混为同一修复版本。
