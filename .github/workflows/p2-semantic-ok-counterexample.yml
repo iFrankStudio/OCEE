@@ -1,9 +1,6 @@
 name: P2 Semantic-Ok False-Success Counterexample
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/p2-semantic-ok-counterexample.yml'
+  # Real native three-arm 3/3 accepted Run #45002443707; replay manually.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-semantic-ok-${{ github.ref }}
