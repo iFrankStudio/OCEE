@@ -1,0 +1,27 @@
+name: P2 Semantic-Ok False-Success Counterexample
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2-semantic-ok-counterexample.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-semantic-ok-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-counterexample:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [VALID, ABSENT, CORRUPT]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_SEMANTIC_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Real metered and typed valid missing or wrong local executable
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_semantic_ok_counterexample_native -- --ignored --show-output

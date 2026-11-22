@@ -1659,3 +1659,227 @@ fn p2_feedback_route_from_real_exec_availability(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+
+/// All arms share this content-identical active root. The RESEARCHER
+/// supplies a candidate hash as paid private data; the ACTOR reads it,
+/// then executes that content-addressed program on self-created operands.
+fn p2_semantic_ok_registry_root()->Program{
+    use ocee_organism_vm::{Block,Instruction,Op,Param,Terminator,Type,WorldCall};
+    fn lit(x:&[u8])->Op{
+        Op::ConstBytes{hex:x.iter().map(|v|format!("{v:02x}")).collect()}
+    }
+    let honest_hash=local_fold4_vm_program().content_hash().unwrap();
+    let mut root=p2_feedback_availability_route_root(&honest_hash);
+    let f=&mut root.functions[0];
+    let local=f.blocks.iter_mut().find(|b|b.id=="equal_local_exec").unwrap();
+    local.instructions=vec![
+        Instruction{id:18001,op:lit(b"/self/work/local-fold-candidate")}
+    ];
+    local.terminator=Terminator::Yield{
+        call:WorldCall::Read,args:vec![18001],
+        next:"semantic_candidate_status".into(),next_args:vec![17220]
+    };
+    f.blocks.push(Block{
+        id:"semantic_candidate_status".into(),
+        params:vec![
+            Param{id:17220,ty:Type::Bytes},Param{id:18020,ty:Type::Bytes}
+        ],
+        instructions:vec![
+            Instruction{id:18021,op:lit(b"code")},
+            Instruction{id:18022,op:Op::JsonFieldString(18020,18021)},
+            Instruction{id:18023,op:lit(b"Ok")},
+            Instruction{id:18024,op:Op::EqBytes(18022,18023)}
+        ],
+        terminator:Terminator::Branch{
+            condition:18024,if_true:"semantic_candidate_exec".into(),
+            true_args:vec![17220,18020],if_false:"failed".into(),
+            false_args:vec![]
+        }
+    });
+    f.blocks.push(Block{
+        id:"semantic_candidate_exec".into(),
+        params:vec![
+            Param{id:17220,ty:Type::Bytes},Param{id:18020,ty:Type::Bytes}
+        ],
+        instructions:vec![
+            Instruction{id:18031,op:lit(b"payload")},
+            Instruction{id:18032,op:Op::JsonFieldBytes(18020,18031)},
+            Instruction{id:18033,op:lit(b"payload")},
+            Instruction{id:18034,op:Op::JsonFieldBytes(17220,18033)}
+        ],
+        terminator:Terminator::Yield{
+            call:WorldCall::Exec,args:vec![18032,18034],
+            next:"equal_local_exec_reply".into(),next_args:vec![]
+        }
+    });
+    root.validate().expect("semantic negative-control root must validate");
+    root
+}
+
+/// Canonical executable that returns real FOLD32 plus one, still U32.
+/// A false-success result must NOT be manufactured as host fake feedback.
+fn corrupted_fold4_ok()->Program{
+    use ocee_organism_vm::{Instruction,Op,Terminator};
+    let mut p=local_fold4_vm_program();
+    let b=&mut p.functions[0].blocks[0];
+    let original=match b.terminator{
+        Terminator::Return{value}=>value,_=>panic!("unexpected FOLD32 shape")
+    };
+    let id=b.instructions.iter().map(|i|i.id).max().unwrap()+1;
+    b.instructions.push(Instruction{id,op:Op::ConstU32(1)});
+    b.instructions.push(Instruction{id:id+1,op:Op::Add(original,id)});
+    b.terminator=Terminator::Return{value:id+1};
+    p.validate().expect("wrong algorithm must be well-typed");
+    p
+}
+
+/// The CORRUPT arm passes when genuine, charged, semantically WRONG
+/// output was accepted by the old active root as successful.
+#[test]
+#[ignore = "explicit three-arm charged semantic-Ok false-success control"]
+fn p2_semantic_ok_counterexample_native(){
+    let arm=std::env::var("OCEE_P2_SEMANTIC_ARM").expect("matrix arm");
+    assert!(["VALID","ABSENT","CORRUPT"].contains(&arm.as_str()));
+    let honest=local_fold4_vm_program();
+    let altered=corrupted_fold4_ok();
+    let honest_hash=honest.content_hash().unwrap();
+    let altered_hash=altered.content_hash().unwrap();
+    assert_ne!(honest_hash,altered_hash);
+    let candidate=if arm=="CORRUPT"{&altered}else{&honest};
+    let hash=candidate.content_hash().unwrap();
+    let root=p2_semantic_ok_registry_root();
+    let root_hash=root.content_hash().unwrap();
+    let mut w=boot_with_protocol_seed_budget(
+        8,2027,12_000,s45_p2_scoped_result_wait(),root);
+    if arm!="ABSENT"{
+        let r=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:format!("/self/versions/{hash}"),
+            expected_version:None,bytes:candidate.canonical_bytes()
+        }));
+        assert_eq!(r.code,Code::Ok);
+    }
+    let r=w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:"/self/work/local-fold-candidate".into(),
+        expected_version:None,bytes:hash.as_bytes().to_vec()
+    }));
+    assert_eq!(r.code,Code::Ok);
+    let genesis=w.audit.iter().map(|x|
+        x.result.gas_charged+x.result.vm_gas_charged).sum::<u64>();
+    assert_eq!(genesis+w.state.nodes[&NodeId::A].gas_available,12_000);
+    let prehash=w.state_hash();
+    assert_eq!(prehash,World::from_snapshot(&w.snapshot_json())
+        .unwrap().state_hash());
+    let mut invalid=0u64;
+    let mut gas_refusals=0u64;
+    for _ in 0..14_000{
+        let result=w.tick_autonomous(ORGANISM_ID);
+        if result.code==Code::Gas{gas_refusals+=1;}
+        if matches!(result.code,Code::InvalidCode|Code::Denied){invalid+=1;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let host=&w.state.organisms[&ORGANISM_ID];
+    let claimed=host.vm_continuation.as_ref()
+        .is_some_and(|c|c.finished)&&host.last_return==Some(Value::U32(1));
+    let actual_bytes=&w.state.objects.get(REMOTE_VALUES)
+        .expect("root-generated operands").bytes;
+    assert_eq!(actual_bytes.len(),16);
+    let values=actual_bytes.chunks_exact(4).map(|p|
+        u32::from_le_bytes(p.try_into().unwrap())).collect::<Vec<_>>();
+    let expected=fold32(&values).unwrap();
+    let output=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|obj|{
+            assert_eq!(obj.bytes.len(),4);
+            u32::from_le_bytes(obj.bytes[..4].try_into().unwrap())
+        });
+    let a_vm=w.audit.iter().map(|x|x.result.vm_gas_charged).sum::<u64>();
+    let a_actions=w.audit.iter().map(|x|x.result.gas_charged).sum::<u64>();
+    let b=b_total(&w);
+    let mut exec_ok=Vec::<u32>::new();
+    let mut missing=0usize;
+    let mut c_send=0usize;
+    let mut remote=Vec::<u64>::new();
+    let mut result_ids=Vec::<u64>::new();
+    let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+    for item in &w.audit{
+        match &item.action{
+            Some(Action::Exec{program_hash,input,..}) if program_hash==&hash=>{
+                assert_eq!(input.as_slice(),actual_bytes.as_slice());
+                if item.result.code==Code::Ok{
+                    let Value::U32(n)=serde_json::from_slice::<Value>(
+                        &item.result.payload).unwrap() else{
+                            panic!("the pure program must return typed U32")
+                        };
+                    exec_ok.push(n);
+                }
+                if item.result.code==Code::NotFound{missing+=1;}
+            },
+            Some(Action::Send{destination:NodeId::C,bytes,..})
+                if item.result.code==Code::Ok=>{
+                c_send+=1;
+                if let Ok(frame)=decoder.decode(bytes){
+                    let id=u64::from_le_bytes(
+                        item.result.payload[..8].try_into().unwrap());
+                    match frame.operation{
+                        Operation::RemoteEval if frame.body.len()==18=>remote.push(id),
+                        Operation::Result=>result_ids.push(id),_=>()
+                    }
+                }
+            },
+            _=>()
+        }
+    }
+    let confirmed=w.audit.iter().filter_map(|x|match &x.action{
+        Some(Action::ConfirmResponseFor{request_id,..})
+            if x.result.code==Code::Ok=>Some(*request_id),_=>None
+    }).collect::<Vec<_>>();
+    let wrong_claim=claimed&&output!=Some(expected);
+    println!(
+        "P2_SEMANTIC_OK arm={arm} claimed={claimed} correct={} \\
+         wrong_claim={wrong_claim} root={root_hash} hash={hash} \\
+         honest={honest_hash} corrupt={altered_hash} prehash={prehash} \\
+         genesis_A={genesis} A_vm={a_vm} A_actions={a_actions} A_total={} \\
+         B={b} C_sends={c_send} exec_ok={exec_ok:?} missing={missing} \\
+         remote={remote:?} results={result_ids:?} confirmed={confirmed:?} \\
+         Gas_refusals={gas_refusals} step={} expected={expected} output={output:?}",
+        output==Some(expected),a_vm+a_actions,w.state.step);
+    assert_eq!(invalid,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    assert!(claimed,"must actually finish and claim U32(1)");
+    match arm.as_str(){
+        "VALID"=>{
+            assert_eq!(exec_ok,vec![expected]);
+            assert_eq!(missing,0);
+            assert_eq!(output,Some(expected));
+            assert!(!wrong_claim);
+            assert_eq!(b,0);
+            assert_eq!(c_send,0);
+        },
+        "ABSENT"=>{
+            assert!(exec_ok.is_empty());
+            assert_eq!(missing,1);
+            assert_eq!(output,Some(expected));
+            assert!(!wrong_claim);
+            assert_eq!(b,24);
+            assert_eq!(remote.len(),1);
+            assert!(confirmed.contains(&remote[0]));
+            assert!(result_ids.iter().any(|id|confirmed.contains(id)));
+            assert_eq!(w.state.service_events.iter().filter(|e|
+                e.b_gas_charged>0).count(),1);
+        },
+        "CORRUPT"=>{
+            let wrong=expected.wrapping_add(1);
+            assert_eq!(exec_ok,vec![wrong]);
+            assert_eq!(missing,0);
+            assert_eq!(output,Some(wrong));
+            assert!(wrong_claim,
+                "a green test means the negative counterexample IS real");
+            assert_eq!(b,0);
+            assert_eq!(c_send,0);
+        },
+        _=>unreachable!()
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
