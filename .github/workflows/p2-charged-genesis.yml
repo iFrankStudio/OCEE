@@ -1,0 +1,21 @@
+name: P2 Charged Genesis Under Actual 12k Epoch
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/p2-charged-genesis.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-charged-genesis-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  charged-start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Real 12k genesis writes and autonomous budget without host credit reset
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_charged_genesis_in_12k_a_epoch_with_no_credit_reset -- --ignored --show-output

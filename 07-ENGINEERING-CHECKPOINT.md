@@ -642,3 +642,6 @@
 
 ### 2026-11-22 — P2 富裕资源成功后，开始E001式A gas压力校准（未验收）
 - [预先固定的资源校准协议](./experiments/E001/DEV-P2-A-GAS-PRESSURE.md) 与 [两seed 2027/587 原生定向工作流](./.github/workflows/p2-resource-pressure.yml)。此前[保留集4/4](https://github.com/iFrankStudio/OCEE/actions/runs/44983342484)使用高达A 100000 gas/epoch的装载与运行夹具，不能替代E001初始12000、8192步下调4000/epoch的验证。新测试保持原S45协议/世界语义不变，明确将研究者已计费装载记为**特权free-genesis反事实**，运行前重置A账户12000、计划真实资源变更事件。选两组已见开发seed（省资源2027、高成本587），最大原14000个自主tick，区分任务成功、失败和未完成删失；完整账本与真实B24/ACK/RESULT判据不放宽。**待原生CI日志，不得提前记通过或失败**。
+
+### 2026-11-22 — 补充收费基因组初始条件验证（seed2027，待原生验收）
+- 前述免费装载压力试验已显示seed2027在12000 A gas/epoch的初始资源下活动运行成功，初始基因组装载曾实际消耗8818 A gas但由实验夹具重置余额；现追加[真实收费genesis对照](./experiments/E001/DEV-P2-A-GAS-PRESSURE.md)与[独立定向CI](./.github/workflows/p2-charged-genesis.yml)，强制先用12000真实额度写四次研究者提供的程序并验算余额，再保留余量让个体活动且不特权补偿，8192步按E001要求降4000。seed仍为已公开2027，非新独立保留样本；不改变S45活动程序及其hash。**候选待CI验证，不预报活性结论。**

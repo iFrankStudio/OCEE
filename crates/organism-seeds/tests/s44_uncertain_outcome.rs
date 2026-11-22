@@ -27,10 +27,14 @@ fn boot_with(delay:u64,p2:Program,root:Program)->World{
     boot_with_protocol_seed(delay,42,p2,root)
 }
 fn boot_with_protocol_seed(delay:u64,protocol_seed:u64,p2:Program,root:Program)->World{
+    boot_with_protocol_seed_budget(delay,protocol_seed,100_000,p2,root)
+}
+fn boot_with_protocol_seed_budget(delay:u64,protocol_seed:u64,
+    a_gas_per_epoch:u64,p2:Program,root:Program)->World{
     let seed=55;
     let p1=s40_p1_consumer();
     let mut w=World::with_protocol(Config{
-        seed,message_delay:delay,a_gas_per_epoch:100_000,..Config::default()
+        seed,message_delay:delay,a_gas_per_epoch,..Config::default()
     },Family::P2,protocol_seed);
     let a=vec![1];let b=vec![2,0];
     let task=TransformTask{
@@ -868,6 +872,116 @@ fn p2_a_gas_12k_then_4k_existing_activity_under_real_epoch_grants(){
         assert!(!w.state.objects.contains_key(
             "/self/results/p2-job0/value_le"),
             "no valid final result can be written on failure or censoring");
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
+
+
+/// Separate strict-boot developmental control: initial genome Writes
+/// really draw on the 12k epoch-0 A budget. No free genesis refill.
+#[test]
+#[ignore = "targeted charged-genesis calibration, never default workspace"]
+fn p2_charged_genesis_in_12k_a_epoch_with_no_credit_reset(){
+    use ocee_world_kernel::{EventKind,ScheduledEvent};
+    // Already observed development seed: cannot count as new holdout.
+    let mut w=boot_with_protocol_seed_budget(8,2027,12_000,
+        s45_p2_scoped_result_wait(),s45_scoped_result_root());
+    assert_eq!(w.state.step,4,"exactly four real genesis writes");
+    let genesis_a=w.audit.iter().map(|r|
+        r.result.gas_charged+r.result.vm_gas_charged).sum::<u64>();
+    let available=w.state.nodes[&NodeId::A].gas_available;
+    assert!(genesis_a>0 && genesis_a<12_000);
+    assert_eq!(available+genesis_a,12_000,
+        "no charged setup gas can be silently reset/refunded");
+    assert_eq!(w.state.nodes[&NodeId::A].gas_per_epoch,12_000);
+    let genome_hash=s45_p2_scoped_result_wait().content_hash().unwrap();
+    w.schedule_event(ScheduledEvent{
+        due_step:8192,priority:0,sequence_no:0,
+        kind:EventKind::ResourceChange{
+            node:NodeId::A,gas_per_epoch:4_000
+        }
+    });
+    let genesis_events=w.audit.len();
+    let mut gas_refusals=0u64;
+    let mut invalid=0u64;
+    for _ in 0..14_000{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        if r.code==Code::Gas{gas_refusals+=1;}
+        if matches!(r.code,Code::Denied|Code::InvalidCode){invalid+=1;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let host=&w.state.organisms[&ORGANISM_ID];
+    let finished=host.vm_continuation.as_ref()
+        .is_some_and(|c|c.finished);
+    let returned=host.last_return.clone();
+    let success=finished&&returned==Some(Value::U32(1));
+    let b=b_total(&w);
+    let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+    let mut remote=Vec::new();
+    let mut result=Vec::new();
+    for record in w.audit.iter().skip(genesis_events){
+        let Some(Action::Send{destination:NodeId::C,bytes,..})=&record.action
+            else{continue};
+        if record.result.code!=Code::Ok{continue;}
+        let Ok(frame)=decoder.decode(bytes)else{continue};
+        let id=u64::from_le_bytes(record.result.payload[..8]
+            .try_into().unwrap());
+        match frame.operation{
+            Operation::RemoteEval if frame.body.len()==18=>remote.push(id),
+            Operation::Result=>result.push(id),
+            _=>(),
+        }
+    }
+    let confirmed=w.audit.iter().skip(genesis_events).filter_map(
+        |a|match &a.action{
+            Some(Action::ConfirmResponseFor{request_id,..})
+                if a.result.code==Code::Ok=>Some(*request_id),
+            _=>None,
+        }).collect::<Vec<_>>();
+    let a_vm=w.audit.iter().skip(genesis_events)
+        .map(|a|a.result.vm_gas_charged).sum::<u64>();
+    let a_act=w.audit.iter().skip(genesis_events)
+        .map(|a|a.result.gas_charged).sum::<u64>();
+    let next_epoch=w.state.nodes[&NodeId::A].gas_per_epoch;
+    println!(
+        "P2_CHARGED_GENESIS seed=2027 delay=8 initial_epoch=12000 \
+         genesis_a={genesis_a} initial_remaining={available} \
+         success={success} finished={finished} return={returned:?} \
+         B={b} remote_ids={remote:?} result_ids={result:?} \
+         confirmed_remote={} confirmed_result={} \
+         A_vm={a_vm} A_actions={a_act} gas_refusals={gas_refusals} \
+         invalid={invalid} step={} final_epoch={next_epoch} \
+         program_hash={genome_hash}",
+        remote.iter().any(|id|confirmed.contains(id)),
+        result.iter().any(|id|confirmed.contains(id)),w.state.step);
+    assert_eq!(invalid,0);
+    assert!(b<=24 && remote.len()<=1);
+    assert!(w.state.service_events.iter()
+        .filter(|e|e.b_gas_charged>0).count()<=1);
+    assert!(w.state.guarded_restarts.is_empty());
+    if w.state.step>=8193{
+        assert_eq!(next_epoch,4_000);
+    }else{
+        assert_eq!(next_epoch,12_000);
+    }
+    if success{
+        assert_eq!(b,24);
+        assert_eq!(remote.len(),1);
+        assert!(confirmed.contains(&remote[0]));
+        assert!(result.iter().any(|id|confirmed.contains(id)));
+        let actual=u32::from_le_bytes(w.state.objects[
+            "/self/results/p2-job0/value_le"].bytes[..4]
+            .try_into().unwrap());
+        let operands=w.state.objects[REMOTE_VALUES].bytes
+            .chunks_exact(4)
+            .map(|bytes|u32::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(actual,fold32(&operands).unwrap());
+    }else{
+        assert!(!w.state.objects.contains_key(
+            "/self/results/p2-job0/value_le"));
     }
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
