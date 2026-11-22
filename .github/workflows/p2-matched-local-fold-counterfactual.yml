@@ -1,0 +1,21 @@
+name: P2 Matched-Operand Local FOLD32 Marginal Cost
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/p2-matched-local-fold-counterfactual.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-matched-fold-cost-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  matched-operands-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native paid S45 task then real local VM FOLD32 on identical learned operands
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_matched_local_fold4_cost_after_real_paid_s45_task -- --ignored --show-output

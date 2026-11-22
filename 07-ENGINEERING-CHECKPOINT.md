@@ -660,3 +660,6 @@
 ### 2026-11-22 — P2收费genesis与真实A降额4k同轨迹原生验收成功
 - [GitHub Actions #44989858138](https://github.com/iFrankStudio/OCEE/actions/runs/44989858138) @ `11f5845cb7f76ff3b43e7f7b31248a24e61291d0`，**completed/success；Rust单项1/1 PASS（564.36s）**。固定已见开发seed587/P2延迟8，研究者提供S45初始程序在真实A12000额度内四次Write支付8818、首次活动余额3182，未补回；step8192正规降至4000，降额后仍产生**267个有效VM tick、真实VM gas9911**；在step10303个体真U32(1)/B24只一次，RemoteEval u64 ID206，ACK和RESULT真正因果确认、fold32和快照一致，Gas拒绝7500，Invalid/Denied为0。活动A VM94229+world动作3105，加启动8818后真实总A**106152 gas**，原S45活动程序hash未变化。此前free-genesis seed587成功step8217，两实验严格保留不同初始化条件；这次补齐此前无法合并的单条组合轨迹。
 - [原生研究报告与明确局限](./experiments/E001/DEV-P2-CHARGED-GENESIS-DOWNSHIFT.md)。仅证实固定研究者专用程序在分epoch紧资源中有状态继续执行并完成一次真实任务；**不证明**个体自行优化A资源、创造协议适配器、跨家族演化或远程任务净成本优势；G0 GO、G1/G2 NO-GO，E001未校准/正式预注册。完成的一次性workflow恢复仅手动。
+
+### 2026-11-22 — 同一真实四U32操作数的A本地/远程计算边际成本对照（待原生CI）
+- 实时main `9632f8dbdc2d89d0ccb007f78e5e0d3de878404e` 已复核，无新自动提交。上一轮已证明seed587收费genesis及4k降额能完成；**远程计算是否节省A资源仍缺证据**。启动[研究协议](./experiments/E001/DEV-P2-MATCHED-LOCAL-FOLD-COST.md)及[唯一原生目标CI](./.github/workflows/p2-matched-local-fold-counterfactual.yml)：固定已见开发P2 seed2027，收费12000 A启动，原S45先自行生成16字节真实REMOTE_VALUES并成功B24/因果认证，之后仅由外部研究夹具从真实完成快照分叉，使用研究者额外编制的通用纯VM本地FOLD32，原样接收同一16字节，原生真实A注册/EXEC扣费、对比逐项真实A/B和C通信成本。本地纯实现使用ByteAt/Add/Div及绕转/溢出控制，禁止宿主提前提供结果，不能算个体自行发现本地算法或完整同起点A-only对照。**现仅代码和实验设计提交，未取得新CI结论，G0 GO、G1/G2 NO-GO**。
