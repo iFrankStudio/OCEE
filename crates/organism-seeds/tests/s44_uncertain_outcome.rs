@@ -1597,6 +1597,17 @@ fn p2_feedback_route_from_real_exec_availability(){
          confirmed_ids={confirmed:?} gas_refusals={gas_refusals} \\
          step={} observed={observed:?} expected={expected}",
         a_vm+a_actions,w.state.step);
+    if !success {
+        println!("P2_FEEDBACK_FAILURE_DIAG condition={condition} objects={} \
+            remote_values_present={} root_hash={root_hash}",
+            w.state.objects.len(),w.state.objects.contains_key(REMOTE_VALUES));
+        for r in w.audit.iter().rev().take(42){
+            let action=format!("{:?}",r.action);
+            println!("P2_FEEDBACK_AUDIT step={} code={:?} gas={} vm_gas={} action={}",
+                r.step,r.result.code,r.result.gas_charged,
+                r.result.vm_gas_charged,action.chars().take(180).collect::<String>());
+        }
+    }
     assert_eq!(invalid,0);
     assert!(w.state.guarded_restarts.is_empty());
     assert!(success,"actual full task, not just safe failure, must complete");

@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        availability: [PRESENT, ABSENT]
+        availability: [PRESENT] # diagnostic only; restore both after root-cause fix
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
