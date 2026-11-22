@@ -1447,3 +1447,177 @@ fn p2_equal_origin_researcher_route_full_task_pair(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+
+/// Follow-up to the paid L/R pair: the ACTIVE VM attempts its actually
+/// installed local tool and selects the P2 service ONLY after an observed
+/// NotFound response. The investigator never writes a route byte.
+/// This is fixed researcher-authored availability fallback, NOT a learned
+/// cost policy or autonomous creation of a tool.
+fn p2_feedback_availability_route_root(local_hash:&str)->Program{
+    use ocee_organism_vm::{Block,Instruction,Op,Param,Terminator,Type};
+    fn lit(v:&[u8])->Op{
+        Op::ConstBytes{hex:v.iter().map(|b|format!("{b:02x}")).collect()}
+    }
+    let mut root=equal_origin_route_root(local_hash);
+    let f=&mut root.functions[0];
+    let sw=f.blocks.iter_mut().find(|b|b.id=="switch_active").unwrap();
+    // P1 still hands over to its ordinary specialist. Only P2 tries A first.
+    sw.terminator=Terminator::Branch{
+        condition:17101,if_true:"equal_local_read".into(),true_args:vec![],
+        if_false:"equal_remote_switch".into(),false_args:vec![700]
+    };
+    // No investigator route object is consulted; remove the unreachable
+    // route reader and gates instead of leaking another hidden permission.
+    f.blocks.retain(|b|!matches!(b.id.as_str(),
+        "equal_route_read"|"equal_route_reply"|
+        "equal_route_decode"|"equal_route_remote_gate"));
+    let exec_reply=f.blocks.iter_mut().find(|b|
+        b.id=="equal_local_exec_reply").unwrap();
+    exec_reply.terminator=Terminator::Branch{
+        condition:17304,if_true:"equal_local_pack".into(),
+        true_args:vec![17300],if_false:"availability_missing_gate".into(),
+        false_args:vec![17300]
+    };
+    let p2_hash=s45_p2_scoped_result_wait().content_hash().unwrap();
+    f.blocks.push(Block{
+        id:"availability_missing_gate".into(),
+        params:vec![Param{id:17500,ty:Type::Bytes}],
+        instructions:vec![
+            Instruction{id:17501,op:lit(b"code")},
+            Instruction{id:17502,op:Op::JsonFieldString(17500,17501)},
+            Instruction{id:17503,op:lit(b"NotFound")},
+            Instruction{id:17504,op:Op::EqBytes(17502,17503)},
+            Instruction{id:17505,op:lit(p2_hash.as_bytes())}
+        ],
+        terminator:Terminator::Branch{
+            condition:17504,if_true:"equal_remote_switch".into(),
+            true_args:vec![17505],if_false:"failed".into(),
+            false_args:vec![]
+        }
+    });
+    root.validate().expect("finite typed VM feedback-routed root");
+    root
+}
+
+/// Two bounded real-world runs: local executable genuinely present or
+/// genuinely absent at paid genesis. They are NOT equal-initial-capability
+/// cost controls; they test an organism-controlled branch on actual EXEC
+/// feedback (Ok vs NotFound), not researcher selection of L/R.
+/// CI must inspect both full task results; safety green alone is not enough.
+#[test]
+#[ignore = "charged VM choice from actual local EXEC availability; expensive"]
+fn p2_feedback_route_from_real_exec_availability(){
+    let condition=std::env::var("OCEE_P2_AVAILABILITY").expect("availability");
+    assert!(condition=="PRESENT"||condition=="ABSENT");
+    let local=local_fold4_vm_program();
+    let local_hash=local.content_hash().unwrap();
+    let root=p2_feedback_availability_route_root(&local_hash);
+    let root_hash=root.content_hash().unwrap();
+    let p2=s45_p2_scoped_result_wait();
+    let p2_hash=p2.content_hash().unwrap();
+    let mut w=boot_with_protocol_seed_budget(8,2027,12_000,p2,root);
+    if condition=="PRESENT"{
+        let r=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:format!("/self/versions/{local_hash}"),
+            expected_version:None,bytes:local.canonical_bytes()
+        }));
+        assert_eq!(r.code,Code::Ok);
+    }
+    let genesis=w.audit.iter().map(|r|
+        r.result.gas_charged+r.result.vm_gas_charged).sum::<u64>();
+    assert_eq!(genesis+w.state.nodes[&NodeId::A].gas_available,12_000);
+    let prehash=w.state_hash();
+    assert_eq!(prehash,World::from_snapshot(&w.snapshot_json())
+        .unwrap().state_hash());
+    let mut gas_refusals=0u64;
+    let mut invalid=0u64;
+    for _ in 0..14_000{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        if r.code==Code::Gas{gas_refusals+=1;}
+        if matches!(r.code,Code::InvalidCode|Code::Denied){invalid+=1;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let host=&w.state.organisms[&ORGANISM_ID];
+    let finished=host.vm_continuation.as_ref().is_some_and(|c|c.finished);
+    let success=finished&&host.last_return==Some(Value::U32(1));
+    let a_vm=w.audit.iter().map(|r|r.result.vm_gas_charged).sum::<u64>();
+    let a_actions=w.audit.iter().map(|r|r.result.gas_charged).sum::<u64>();
+    let b=b_total(&w);
+    let mut exec_ok=0usize;
+    let mut exec_not_found=0usize;
+    let mut c_sends=0usize;
+    let mut remote_ids=Vec::<u64>::new();
+    let mut result_ids=Vec::<u64>::new();
+    let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+    for r in &w.audit{
+        match &r.action{
+            Some(Action::Exec{program_hash,input,..}) if program_hash==&local_hash=>{
+                assert_eq!(input.len(),16);
+                if r.result.code==Code::Ok{exec_ok+=1;}
+                if r.result.code==Code::NotFound{exec_not_found+=1;}
+            },
+            Some(Action::Send{destination:NodeId::C,bytes,..})
+                if r.result.code==Code::Ok=>{
+                c_sends+=1;
+                if let Ok(frame)=decoder.decode(bytes){
+                    let id=u64::from_le_bytes(r.result.payload[..8].try_into().unwrap());
+                    match frame.operation{
+                        Operation::RemoteEval if frame.body.len()==18=>
+                            remote_ids.push(id),
+                        Operation::Result=>result_ids.push(id),
+                        _=>()
+                    }
+                }
+            },
+            _=>()
+        }
+    }
+    let confirmed=w.audit.iter().filter_map(|r|match &r.action{
+        Some(Action::ConfirmResponseFor{request_id,..})
+            if r.result.code==Code::Ok=>Some(*request_id),
+        _=>None
+    }).collect::<Vec<_>>();
+    let bytes=&w.state.objects.get(REMOTE_VALUES)
+        .expect("common root generated actual fourth operand").bytes;
+    assert_eq!(bytes.len(),16);
+    let values=bytes.chunks_exact(4).map(|c|
+        u32::from_le_bytes(c.try_into().unwrap())).collect::<Vec<_>>();
+    let expected=fold32(&values).unwrap();
+    let observed=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|o|u32::from_le_bytes(o.bytes[..4].try_into().unwrap()));
+    println!(
+        "P2_FEEDBACK_ROUTE condition={condition} success={success} \\
+         genesis_A={genesis} prehash={prehash} root_hash={root_hash} \\
+         p2_hash={p2_hash} local_hash={local_hash} A_vm={a_vm} \\
+         A_actions={a_actions} A_total={} B={b} C_sends={c_sends} \\
+         exec_ok={exec_ok} exec_not_found={exec_not_found} \\
+         remote_ids={remote_ids:?} result_ids={result_ids:?} \\
+         confirmed_ids={confirmed:?} gas_refusals={gas_refusals} \\
+         step={} observed={observed:?} expected={expected}",
+        a_vm+a_actions,w.state.step);
+    assert_eq!(invalid,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    assert!(success,"actual full task, not just safe failure, must complete");
+    assert_eq!(observed,Some(expected));
+    if condition=="PRESENT"{
+        assert_eq!(exec_ok,1);
+        assert_eq!(exec_not_found,0);
+        assert_eq!(c_sends,0);
+        assert_eq!(b,0);
+        assert!(confirmed.is_empty());
+    }else{
+        assert_eq!(exec_ok,0);
+        assert_eq!(exec_not_found,1);
+        assert_eq!(b,24);
+        assert!(c_sends>0);
+        assert_eq!(remote_ids.len(),1);
+        assert!(confirmed.contains(&remote_ids[0]));
+        assert!(result_ids.iter().any(|id|confirmed.contains(id)));
+        assert_eq!(w.state.service_events.iter()
+            .filter(|e|e.b_gas_charged>0).count(),1);
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}

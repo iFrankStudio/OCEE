@@ -1,0 +1,27 @@
+name: P2 VM Feedback-Selected Local Availability or Remote Fallback
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2-feedback-route.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-feedback-route-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  feedback-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        availability: [PRESENT, ABSENT]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_AVAILABILITY: ${{ matrix.availability }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Paid active VM chooses on actual local EXEC feedback
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_feedback_route_from_real_exec_availability -- --ignored --show-output
