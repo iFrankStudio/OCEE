@@ -1601,7 +1601,7 @@ fn p2_feedback_route_from_real_exec_availability(){
         println!("P2_FEEDBACK_FAILURE_DIAG condition={condition} objects={} \
             remote_values_present={} root_hash={root_hash}",
             w.state.objects.len(),w.state.objects.contains_key(REMOTE_VALUES));
-        for r in w.audit.iter().rev().take(42){
+        for r in w.audit.iter().rev().filter(|r|r.action.is_some()).take(18){
             let action=format!("{:?}",r.action);
             println!("P2_FEEDBACK_AUDIT step={} code={:?} gas={} vm_gas={} action={}",
                 r.step,r.result.code,r.result.gas_charged,

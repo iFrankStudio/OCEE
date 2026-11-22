@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        availability: [PRESENT] # diagnostic only; restore both after root-cause fix
+        availability: [PRESENT] # inspect actual last 18 actions before pre-epoch failure; restore both
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
