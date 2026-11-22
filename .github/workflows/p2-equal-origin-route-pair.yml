@@ -1,0 +1,27 @@
+name: P2 Equal-Origin A-only vs A+B Full Task
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/p2-equal-origin-route-pair.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-equal-origin-route-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  paired-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        route: [L, R]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_PAIR_ROUTE: ${{ matrix.route }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Same paid baseline and identical root, researcher fixed local or remote route
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_equal_origin_researcher_route_full_task_pair -- --ignored --show-output

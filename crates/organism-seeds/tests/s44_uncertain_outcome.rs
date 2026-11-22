@@ -1218,3 +1218,210 @@ fn p2_matched_local_fold4_cost_after_real_paid_s45_task(){
         install.gas_charged,executed.gas_charged,
         marginal_local_gas,local_world.state.step,values.len());
 }
+
+
+/// Common paid learning root and specialist capabilities; a RESEARCHER
+/// intervention on /self/compute-route selects L or R at the normal
+/// S45 root handover AFTER learning real fourth remote operand.
+fn equal_origin_route_root(local_hash:&str)->Program{
+    use ocee_organism_vm::{Block,Instruction,Op,Param,Terminator,Type,WorldCall};
+    fn lit(v:&[u8])->Op{Op::ConstBytes{hex:v.iter().map(|b|format!("{b:02x}")).collect()}}
+    fn i(id:u32,op:Op)->Instruction{Instruction{id,op}}
+    fn p(id:u32,ty:Type)->Param{Param{id,ty}}
+    fn b(id:&str,params:Vec<Param>,ins:Vec<Instruction>,term:Terminator)->Block{
+        Block{id:id.into(),params,instructions:ins,terminator:term}
+    }
+    fn branch(c:u32,t:&str,ta:Vec<u32>,f:&str,fa:Vec<u32>)->Terminator{
+        Terminator::Branch{condition:c,if_true:t.into(),true_args:ta,
+            if_false:f.into(),false_args:fa}
+    }
+    fn y(call:WorldCall,args:Vec<u32>,next:&str,carry:Vec<u32>)->Terminator{
+        Terminator::Yield{call,args,next:next.into(),next_args:carry}
+    }
+    let mut root=s45_scoped_result_root();
+    let f=&mut root.functions[0];
+    let sw=f.blocks.iter_mut().find(|b|b.id=="switch_active")
+        .expect("original S40 paid switch");
+    assert_eq!(sw.params[0].id,700);
+    let mut remote=sw.clone();
+    remote.id="equal_remote_switch".into();
+    sw.instructions=vec![i(17101,lit(b"/self/compute-route"))];
+    sw.terminator=y(WorldCall::Read,vec![17101],
+        "equal_route_reply",vec![700]);
+    f.blocks.extend([
+        remote,
+        b("equal_route_reply",vec![p(700,Type::Bytes),p(17110,Type::Bytes)],vec![
+            i(17111,lit(b"code")),i(17112,Op::JsonFieldString(17110,17111)),
+            i(17113,lit(b"Ok")),i(17114,Op::EqBytes(17112,17113))
+        ],branch(17114,"equal_route_decode",vec![700,17110],"failed",vec![])),
+        b("equal_route_decode",vec![p(700,Type::Bytes),p(17120,Type::Bytes)],vec![
+            i(17121,lit(b"payload")),i(17122,Op::JsonFieldBytes(17120,17121)),
+            i(17123,lit(b"L")),i(17124,Op::EqBytes(17122,17123)),
+        ],branch(17124,"equal_local_read",vec![],
+            "equal_route_remote_gate",vec![700,17122])),
+        b("equal_route_remote_gate",vec![p(700,Type::Bytes),p(17130,Type::Bytes)],vec![
+            i(17131,lit(b"R")),i(17132,Op::EqBytes(17130,17131)),
+        ],branch(17132,"equal_remote_switch",vec![700],"failed",vec![])),
+        b("equal_local_read",vec![],vec![i(17201,lit(REMOTE_VALUES.as_bytes()))],
+            y(WorldCall::Read,vec![17201],"equal_local_read_reply",vec![])),
+        b("equal_local_read_reply",vec![p(17210,Type::Bytes)],vec![
+            i(17211,lit(b"code")),i(17212,Op::JsonFieldString(17210,17211)),
+            i(17213,lit(b"Ok")),i(17214,Op::EqBytes(17212,17213))
+        ],branch(17214,"equal_local_exec",vec![17210],"failed",vec![])),
+        b("equal_local_exec",vec![p(17220,Type::Bytes)],vec![
+            i(17221,lit(b"payload")),i(17222,Op::JsonFieldBytes(17220,17221)),
+            i(17223,lit(local_hash.as_bytes())),
+        ],y(WorldCall::Exec,vec![17223,17222],"equal_local_exec_reply",vec![])),
+        b("equal_local_exec_reply",vec![p(17300,Type::Bytes)],vec![
+            i(17301,lit(b"code")),i(17302,Op::JsonFieldString(17300,17301)),
+            i(17303,lit(b"Ok")),i(17304,Op::EqBytes(17302,17303))
+        ],branch(17304,"equal_local_pack",vec![17300],"failed",vec![])),
+        b("equal_local_pack",vec![p(17310,Type::Bytes)],vec![
+            i(17311,lit(b"payload")),i(17312,Op::JsonFieldBytes(17310,17311)),
+            i(17313,lit(b"U32")),i(17314,Op::JsonFieldU32(17312,17313)),
+            i(17315,Op::ConstU32(65536)),i(17316,Op::Mod(17314,17315)),
+            i(17317,Op::Div(17314,17315)),i(17318,Op::PackU16Le(17316)),
+            i(17319,Op::PackU16Le(17317)),i(17320,Op::Concat(17318,17319)),
+            i(17321,lit(b"/self/results/p2-job0/value_le")),
+            i(17322,Op::ConstU32(u32::MAX))
+        ],y(WorldCall::Write,vec![17321,17320,17322],
+            "equal_local_saved",vec![])),
+        b("equal_local_saved",vec![p(17400,Type::Bytes)],vec![
+            i(17401,lit(b"code")),i(17402,Op::JsonFieldString(17400,17401)),
+            i(17403,lit(b"Ok")),i(17404,Op::EqBytes(17402,17403))
+        ],branch(17404,"equal_local_done",vec![],"failed",vec![])),
+        b("equal_local_done",vec![],vec![i(17410,Op::ConstU32(1))],
+            Terminator::Return{value:17410}),
+    ]);
+    root.validate().expect("typed common A-only/A+B routed root");
+    root
+}
+
+/// Separate native CI job per route, same initial snapshot hash and
+/// initial program hashes. Neither route is the organism's own choice.
+#[test]
+#[ignore = "explicit same-snapshot A-only vs A+B full-task pair"]
+fn p2_equal_origin_researcher_route_full_task_pair(){
+    let arm=std::env::var("OCEE_P2_PAIR_ROUTE").expect("matrix route");
+    assert!(arm=="L" || arm=="R");
+    let local=local_fold4_vm_program();
+    let local_hash=local.content_hash().unwrap();
+    let root=equal_origin_route_root(&local_hash);
+    let root_hash=root.content_hash().unwrap();
+    let p2=s45_p2_scoped_result_wait();
+    let p2_hash=p2.content_hash().unwrap();
+    let mut base=boot_with_protocol_seed_budget(8,2027,12_000,p2,root);
+    let install=base.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:format!("/self/versions/{local_hash}"),
+        expected_version:None,bytes:local.canonical_bytes()
+    }));
+    assert_eq!(install.code,Code::Ok);
+    let genesis=base.audit.iter().map(|r|
+        r.result.gas_charged+r.result.vm_gas_charged).sum::<u64>();
+    let remaining=base.state.nodes[&NodeId::A].gas_available;
+    assert_eq!(genesis+remaining,12_000);
+    assert_eq!(base.state.step,5);
+    let before_hash=base.state_hash();
+    let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+    assert_eq!(w.state_hash(),before_hash);
+    let route=w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:"/self/compute-route".into(),
+        expected_version:None,bytes:arm.as_bytes().to_vec()
+    }));
+    assert_eq!(route.code,Code::Ok);
+    assert_eq!(route.gas_charged,3);
+    let mut gas_refusals=0u64;
+    let mut invalid=0u64;
+    for _ in 0..14_000{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        if r.code==Code::Gas{gas_refusals+=1;}
+        if matches!(r.code,Code::InvalidCode|Code::Denied){invalid+=1;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let host=&w.state.organisms[&ORGANISM_ID];
+    let finished=host.vm_continuation.as_ref().is_some_and(|c|c.finished);
+    let ret=host.last_return.clone();
+    let success=finished&&ret==Some(Value::U32(1));
+    let a_vm=w.audit.iter().map(|r|r.result.vm_gas_charged).sum::<u64>();
+    let a_actions=w.audit.iter().map(|r|r.result.gas_charged).sum::<u64>();
+    let a_total=a_vm+a_actions;
+    let b=b_total(&w);
+    let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+    let mut c_sends=0usize;
+    let mut bandwidth=0u64;
+    let mut remote_ids=Vec::<u64>::new();
+    let mut result_ids=Vec::<u64>::new();
+    let mut local_exec=Vec::<u64>::new();
+    for record in &w.audit{
+        match &record.action{
+            Some(Action::Send{destination:NodeId::C,bytes,..})
+                if record.result.code==Code::Ok=>{
+                c_sends+=1;bandwidth+=record.result.bandwidth_charged;
+                if let Ok(frame)=decoder.decode(bytes){
+                    let id=u64::from_le_bytes(record.result.payload[..8]
+                        .try_into().unwrap());
+                    match frame.operation{
+                        Operation::RemoteEval if frame.body.len()==18=>remote_ids.push(id),
+                        Operation::Result=>result_ids.push(id),
+                        _=>()
+                    }
+                }
+            },
+            Some(Action::Exec{program_hash,input,..})
+                if program_hash==&local_hash && record.result.code==Code::Ok=>{
+                assert_eq!(input.len(),16);
+                local_exec.push(record.result.gas_charged)
+            },
+            _=>()
+        }
+    }
+    let confirmed=w.audit.iter().filter_map(|r|match &r.action{
+        Some(Action::ConfirmResponseFor{request_id,..})
+            if r.result.code==Code::Ok=>Some(*request_id),
+        _=>None
+    }).collect::<Vec<_>>();
+    let bytes=w.state.objects.get(REMOTE_VALUES)
+        .expect("common root computed fourth operand").bytes.clone();
+    assert_eq!(bytes.len(),16);
+    let values=bytes.chunks_exact(4).map(|c|
+        u32::from_le_bytes(c.try_into().unwrap())).collect::<Vec<_>>();
+    let expected=fold32(&values).unwrap();
+    let output=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|obj|{
+            assert_eq!(obj.bytes.len(),4);
+            u32::from_le_bytes(obj.bytes[..4].try_into().unwrap())
+        });
+    println!(
+        "P2_EQUAL_ORIGIN arm={arm} success={success} finished={finished} \\
+         return={ret:?} prehash={before_hash} root_hash={root_hash} \\
+         p2_hash={p2_hash} local_hash={local_hash} \\
+         genesis_A={genesis} route_A={} remaining={remaining} \\
+         A_vm={a_vm} A_actions={a_actions} A_total={a_total} B={b} \\
+         C_sends={c_sends} C_send_bandwidth={bandwidth} \\
+         remote_ids={remote_ids:?} result_ids={result_ids:?} \\
+         local_exec={local_exec:?} gas_refusals={gas_refusals} \\
+         invalid={invalid} final_step={} output={output:?} expected={expected}",
+        route.gas_charged,w.state.step);
+    assert_eq!(invalid,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    assert!(success,"full task must succeed in both fixed-route arms");
+    assert_eq!(output,Some(expected));
+    if arm=="L"{
+        assert_eq!(b,0);
+        assert_eq!(c_sends,0);
+        assert!(remote_ids.is_empty() && result_ids.is_empty());
+        assert_eq!(local_exec,vec![165]);
+        assert!(confirmed.is_empty());
+    }else{
+        assert_eq!(b,24);
+        assert_eq!(w.state.service_events.iter()
+            .filter(|event|event.b_gas_charged>0).count(),1);
+        assert_eq!(remote_ids.len(),1);
+        assert!(confirmed.contains(&remote_ids[0]));
+        assert!(result_ids.iter().any(|id|confirmed.contains(id)));
+        assert!(local_exec.is_empty());
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
