@@ -645,3 +645,7 @@
 
 ### 2026-11-22 — 补充收费基因组初始条件验证（seed2027，待原生验收）
 - 前述免费装载压力试验已显示seed2027在12000 A gas/epoch的初始资源下活动运行成功，初始基因组装载曾实际消耗8818 A gas但由实验夹具重置余额；现追加[真实收费genesis对照](./experiments/E001/DEV-P2-A-GAS-PRESSURE.md)与[独立定向CI](./.github/workflows/p2-charged-genesis.yml)，强制先用12000真实额度写四次研究者提供的程序并验算余额，再保留余量让个体活动且不特权补偿，8192步按E001要求降4000。seed仍为已公开2027，非新独立保留样本；不改变S45活动程序及其hash。**候选待CI验证，不预报活性结论。**
+
+### 2026-11-22 — A 12k→4k真实epoch资源压力：原生2/2成功（带free-genesis重要限制）
+- [Run #44987651536](https://github.com/iFrankStudio/OCEE/actions/runs/44987651536) @ `2452464e299b1c39192ef911a47e3a4dcd3cf7c3` completed/success，2独立原生jobs：协议seed2027在每epoch 12000下第3103步真`U32(1)`/B24一次、VM35934+A操作1318、Gas拒绝2022次；seed587第8217步真`U32(1)`/B24一次、VM94045+A操作3097、Gas拒绝5419次，正规资源事件已在8192将其A额度降为4000/epoch。均通过真实u64 ID ACK/RESULT确认、fold32及快照校验，无盲重试/未授权重启。
+- **此两实例预置基因组由研究者在100000 gas配置下写入花费8818，然后强制把账户补回12000**；这是一种有利的free-genesis反事实，不能报告成完整E001资源符合。单独的实际12k计费基因组对照（seed2027）仍需读取本独立[charged-genesis workflow](./.github/workflows/p2-charged-genesis.yml)结论。此阶段没有证明4000/epoch下长期自治、工具原创或本地基线净收益。完整记录见[资源压力报告](./experiments/E001/DEV-P2-A-GAS-PRESSURE.md)。研究门槛G0 GO、G1/G2 NO-GO，E001未预注册/校准。

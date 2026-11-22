@@ -1,9 +1,7 @@
 name: P2 Existing Program Under E001-like A Gas Limits
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/p2-resource-pressure.yml"
+  # Native 2/2 confirmed in Run #44987651536 at 2452464e.
+  # Expensive completed research runs are manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-a-gas-pressure-${{ github.ref }}

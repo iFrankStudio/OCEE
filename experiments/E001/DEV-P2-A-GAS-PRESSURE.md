@@ -35,3 +35,21 @@ P2 冻结开发保留实例[四项真正通过](https://github.com/iFrankStudio/
 新测试在`World::with_protocol(Config{a_gas_per_epoch:12000,...})`创建世界后，**直接在初始12000配额内**按原四次Write写入相同P1/P2/root与active hash。各Write必须真实 `Code::Ok`；检查 `initial_remaining + genesis_a = 12000`，不再进行特权余额重置，随后的所有自主VM/世界动作均共用已扣费的初始账户。其余参数、P2程序、世界任务、消息delay8、8192步降到4000的事件，以及14k自主tick截断均保持不变。安全和成功需经过真正B24、ACK/RESULT请求ID认证、fold32对照与快照校验；测试绿不能隐含活性成功，须读取 `P2_CHARGED_GENESIS` 日志。
 
 该测试仍是**研究者提供的专用初始程序**，不是原生O型个体或自行发明协议，不能称为完整E001正式实验或证明跨episode长期生存。与同seed免费装载的首次实验不独立；不得在结果出来后改规则称为盲测。资源账本要把初始Write与活动VM/动作区分报告。
+
+
+## 2026-11-22 — 实际资源压力原生验证结果：两协议2/2任务成功
+
+[**GitHub Actions Run #44987651536**](https://github.com/iFrankStudio/OCEE/actions/runs/44987651536) 代码SHA `2452464e299b1c39192ef911a47e3a4dcd3cf7c3`，**completed/success**，两个独立原生 Rust matrix jobs 均 completed/success，`P2_A_GAS_PRESSURE` stdout真实返回值不是只把安全测试绿当作任务成功。
+
+| 已见开发P2 seed | 真实终止/结果 | B gas / 真实RemoteEval ID | Phase0/Phase2 scoped waits | 活动VM A gas | 活动世界动作A gas | gas被拒次数 | 最后step | 结束时A每epoch |
+|---|---|---|---|---:|---:|---:|---:|---:|
+| 2027 | `finished=true, U32(1)` | 24 / 118 | 343 / 6 | 35,934 | 1,318 | 2,022 | 3,103 | 12,000 |
+| 587 | `finished=true, U32(1)` | 24 / 206 | 612 / 290 | 94,045 | 3,097 | 5,419 | 8,217 | 4,000 |
+
+两组都真B只扣一次，真C服务ACK和RESULT分别 `ConfirmResponseFor` Ok，落盘RESULT与真实operand `fold32`核对一致，VM程序hash保持 `0f9163bdff40a2ac5cbee63586353ea394f639d6dc7cc190ac34c811634c518e`，无VM Invalid/Denied、无无因Root重启、无重复B SEND，状态快照一致。
+
+**资源事实**：两组均从装载完成后的真实 A 账户 `gas_available=12000`、`gas_per_epoch=12000` 开始活动，其 epoch补充由正常world scheduler执行，没有给活动个体额外越权动作额度；当逻辑step到8192时由正规 `ScheduledEvent::ResourceChange` 将 A epoch补充降为4000，587在step8217完成、结束状态确认4000/epoch。2027在step3103完成，**未**经历降额，不能拿它证明4000阶段行为。Gas拒绝2022/5419次代表额度耗尽导致的挂起与下一epoch继续执行，不代表能力自发提升。高额度旧测试2027在step1103完成、587在step2811完成；真实等待时间显著增加。
+
+**必须披露的限制**：这两组的研究者初始 P1/P2/root程序在100000/epoch夹具中写入，四次初始化真实扣A **8818 gas**，随后研究者直接将A额度重置为12000；所以本实验是明确标注的 **free-genesis有利反事实**，其活动总A gas不包含启动成本。本记录不隐瞒该区别。另一个 **真正计费genesis** 的seed2027目标测试已单独提交并运行于 [另一个工作流](https://github.com/iFrankStudio/OCEE/actions/workflows/p2-charged-genesis.yml)，在其真实CI结论出炉前不得提前记通过。
+
+该证据只支持固定研究者预置协议专家在两个已见开发P2实例上的真实分epoch继续执行与资源压力下任务成功；没有主动资源策略优化，没有本地计算同工作项基线和净节约，未证明跨协议家族自主迁移/工具发明，也不构成E001正式预注册集。**科学G0 GO，G1/G2 NO-GO，E001未完成校准预注册。** 定向工作流在本结果封存提交后恢复仅手动，避免重复执行约5—9分钟的昂贵回归。
