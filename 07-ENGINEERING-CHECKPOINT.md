@@ -670,3 +670,6 @@
 
 ### 2026-11-22 — 原始快照同起点完整任务A-only/A+B配对（开发集，待原生验证）
 - 已复核main `54db435fc98bbb9202814a3e96de4a5d0ce6952e` 与最新原生记录。此前同真实U32末端反事实不具完整任务等起点。新增[执行前固定的配对方案](./experiments/E001/DEV-P2-EQUAL-ORIGIN-LOCAL-REMOTE-PAIR.md)和[只跑两臂的原生CI](./.github/workflows/p2-equal-origin-route-pair.yml)：固定已见P2 seed2027，12k gas/epoch收费装载P1、原S45 P2、完全相同根程序及本地FOLD32，分叉前hash完全一致；两臂只由**研究者**等额Write一字节L/R。共同root完成原公共学习、probe、第四操作数后，选择真实本地VM Exec与付费Write，或原S45真实远程B24+ACK/RESULT，严格对齐任务、观察/资源/初始能力；各记录A/B/C gas和完成/失败分母。**路由是研究者预设，不是自主资源优化；CI未验收，不能声称成果**。
+
+### 2026-11-22 — 同起点路由配对首轮L失败与后置有界gas重试（开发修复）
+- [首轮Run #44994405005](https://github.com/iFrankStudio/OCEE/actions/runs/44994405005) @ `bb401d1a989802fb9579b01f9ddb292882909aa2` 的L臂真U32(0)失败于step1025，B0/C-SEND0/无成功本地Exec、gas拒绝981；R当时仍运行，严禁报完整任务2/2。初步诊断是隔离Exec在低可用A余额下返回Gas，原本root分支非Ok即失败，区别于连续VM的跨epoch进度保存；现开发后置修复仅允许本地Exec遇真Gas时经`RepeatBounded limit2048`重新Read输入并付费重试，其他非Ok仍fail-closed，不增加A额度/改变seed/路由/算法工具；追加实际Exec-Gas日志用于验证机制。**这不是重新预注册，需重新原生验证两臂。** 详见[完整研究记录](./experiments/E001/DEV-P2-EQUAL-ORIGIN-LOCAL-REMOTE-PAIR.md)。

@@ -1275,7 +1275,20 @@ fn equal_origin_route_root(local_hash:&str)->Program{
         b("equal_local_exec_reply",vec![p(17300,Type::Bytes)],vec![
             i(17301,lit(b"code")),i(17302,Op::JsonFieldString(17300,17301)),
             i(17303,lit(b"Ok")),i(17304,Op::EqBytes(17302,17303))
-        ],branch(17304,"equal_local_pack",vec![17300],"failed",vec![])),
+        ],branch(17304,"equal_local_pack",vec![17300],
+            "equal_local_gas_gate",vec![17302])),
+        // A local Exec is an atomic isolated call. If the active A
+        // account cannot afford its full execution at this tick,
+        // retry only a *real Gas* feedback under a finite VM bound.
+        // Other errors remain fail-closed, and no extra A gas is minted.
+        b("equal_local_gas_gate",vec![p(17500,Type::Bytes)],vec![
+            i(17501,lit(b"Gas")),i(17502,Op::EqBytes(17500,17501))
+        ],branch(17502,"equal_local_retry",vec![],"failed",vec![])),
+        b("equal_local_retry",vec![],vec![],
+            Terminator::RepeatBounded{
+                limit:2048,body:"equal_local_read".into(),body_args:vec![],
+                done:"failed".into(),done_args:vec![]
+            }),
         b("equal_local_pack",vec![p(17310,Type::Bytes)],vec![
             i(17311,lit(b"payload")),i(17312,Op::JsonFieldBytes(17310,17311)),
             i(17313,lit(b"U32")),i(17314,Op::JsonFieldU32(17312,17313)),
@@ -1376,6 +1389,17 @@ fn p2_equal_origin_researcher_route_full_task_pair(){
             _=>()
         }
     }
+    let local_exec_gas=w.audit.iter().filter_map(|r|match &r.action{
+        Some(Action::Exec{program_hash,..}) if program_hash==&local_hash
+            && r.result.code==Code::Gas=>Some((r.step,r.result.gas_charged)),
+        _=>None
+    }).collect::<Vec<_>>();
+    let failed_local_attempts=w.audit.iter().filter_map(|r|match &r.action{
+        Some(Action::Exec{program_hash,..}) if program_hash==&local_hash
+            && r.result.code!=Code::Ok && r.result.code!=Code::Gas=>
+                Some((r.step,r.result.code)),
+        _=>None
+    }).collect::<Vec<_>>();
     let confirmed=w.audit.iter().filter_map(|r|match &r.action{
         Some(Action::ConfirmResponseFor{request_id,..})
             if r.result.code==Code::Ok=>Some(*request_id),
@@ -1400,7 +1424,8 @@ fn p2_equal_origin_researcher_route_full_task_pair(){
          A_vm={a_vm} A_actions={a_actions} A_total={a_total} B={b} \\
          C_sends={c_sends} C_send_bandwidth={bandwidth} \\
          remote_ids={remote_ids:?} result_ids={result_ids:?} \\
-         local_exec={local_exec:?} gas_refusals={gas_refusals} \\
+         local_exec={local_exec:?} local_exec_gas={local_exec_gas:?} \\
+         local_exec_bad={failed_local_attempts:?} gas_refusals={gas_refusals} \\
          invalid={invalid} final_step={} output={output:?} expected={expected}",
         route.gas_charged,w.state.step);
     assert_eq!(invalid,0);
