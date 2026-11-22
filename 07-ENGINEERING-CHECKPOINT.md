@@ -673,3 +673,6 @@
 
 ### 2026-11-22 — 同起点路由配对首轮L失败与后置有界gas重试（开发修复）
 - [首轮Run #44994405005](https://github.com/iFrankStudio/OCEE/actions/runs/44994405005) @ `bb401d1a989802fb9579b01f9ddb292882909aa2` 的L臂真U32(0)失败于step1025，B0/C-SEND0/无成功本地Exec、gas拒绝981；R当时仍运行，严禁报完整任务2/2。初步诊断是隔离Exec在低可用A余额下返回Gas，原本root分支非Ok即失败，区别于连续VM的跨epoch进度保存；现开发后置修复仅允许本地Exec遇真Gas时经`RepeatBounded limit2048`重新Read输入并付费重试，其他非Ok仍fail-closed，不增加A额度/改变seed/路由/算法工具；追加实际Exec-Gas日志用于验证机制。**这不是重新预注册，需重新原生验证两臂。** 详见[完整研究记录](./experiments/E001/DEV-P2-EQUAL-ORIGIN-LOCAL-REMOTE-PAIR.md)。
+
+### 2026-11-22 — 等起点A-only/A+B原生首次1/2，L失败保留，修复版待CI
+- [Run #44994405005](https://github.com/iFrankStudio/OCEE/actions/runs/44994405005) @ `bb401d1a` 已完成：**R=U32(1)真成功**，A47350/B24/C-SEND61/step3383；**L=U32(0)失败**，A12015/B0/C0/step1025、无成功local Exec。两臂初始world state hash和共同root/初始化费用完全一致；无法把L未完成成本当成功。已独立提交`2bd9fc9`仅真Exec Gas有界重试修复，新一轮两臂完整复测尚未验证；必须保留首次红例。

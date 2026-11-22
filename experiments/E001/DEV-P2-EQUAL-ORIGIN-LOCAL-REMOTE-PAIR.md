@@ -15,3 +15,16 @@
 首次[Run #44994405005](https://github.com/iFrankStudio/OCEE/actions/runs/44994405005) @ `bb401d1a989802fb9579b01f9ddb292882909aa2`：本地L臂在第1025步`finished=true, return=U32(0)`，B0、C-SEND0、没有任何本地Exec成功，原始安全与初始化约束满足。分叉前世界hash为`fbc7c3ea81d07491f9543465ace977a2fc5ef2a215b845e482bc820fa6a1b286`，研究者相同工具初始化gas9435、路由Write3、A总gas12015；L臂第1025步主动失败，**不应标记为已完成全任务配对**。R臂于此记录创建时尚在运行，结果需另记。请保留此开发红例和后续修复实验的源码区别。
 
 分析高优先级机制缺口：根的本地`WorldCall::Exec`是**不可跨tick继续的隔离原子调用**，其执行预算为`min(A余额,VM_SLICE_GAS)`；当A余额不足时返回`Code::Gas`，原始实验的本地分支将任何非Ok立即判为失败，可能在初始epoch耗尽时误放弃任务。它不同于可跨tick持久化的活动根continuation。修复版不改变L/R选择、初始程序、样本seed、成本许可或成功判据；只对本地Exec真实`Gas`反馈添加总数2048的`RepeatBounded`（重读真实16字节再尝试Exec），其它状态仍fail-closed；不会调用B、补A或延长14k活动tick。额外输出`local_exec_gas`实际尝试历史以确认故障机制。此属**看到开发失败后的修复**，不能回写为首次预注册成功；需原生重新验证两臂。
+
+## 2026-11-22 — 首轮R正例与L阴性结果封存
+
+[Run #44994405005](https://github.com/iFrankStudio/OCEE/actions/runs/44994405005) @ `bb401d1a989802fb9579b01f9ddb292882909aa2` workflow completed/failure，R、L两独立原生jobs：
+
+| 路由 | 任务 | 初始genesis/route A | A总gas | B gas | C成功SEND / 带宽 | Gas拒绝 | 终止step |
+|---|---|---|---:|---:|---|---:|---:|
+| L | **U32(0)失败**；无成功本地Exec | 9435 / 3 | 12015 | 0 | 0 / 0 | 981 | 1025 |
+| R | **U32(1)成功**；结果1415179467 | 9435 / 3 | 47350（VM36572、动作10778） | 24一次 | 61 / 1726 | 2277 | 3383 |
+
+两个臂完全相同的初始分叉前world hash `fbc7c3ea81d07491f9543465ace977a2fc5ef2a215b845e482bc820fa6a1b286`、共同root hash `46c40f910b11f26316542c689169526376e7bb9b144b919644009fae4794c28a`、P2专家hash `0f9163bdff40a2ac5cbee63586353ea394f639d6dc7cc190ac34c811634c518e`。R的真正RemoteEval u64 ID118与RESULT来自内核确认，L未发送C/B。**不能以L失败时的12015 A gas与R成功的47350比较净效用。**
+
+后置有界Gas-only重试修复另在 `2bd9fc9255574093d5c2df55304b04e585911a20`，不改变原样本与资源，追加`local_exec_gas`日志核实低余额下隔离Exec失败的机制；R也必须在修复后新root hash下重新验收，不能以首次R成功代替。
