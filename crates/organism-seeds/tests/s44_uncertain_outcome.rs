@@ -724,3 +724,151 @@ fn p2_frozen_holdout_independent_protocol_instance(){
     assert_eq!(world.state_hash(),
         World::from_snapshot(&world.snapshot_json()).unwrap().state_hash());
 }
+
+
+/// Developmental resource pressure calibration. Never substitute its
+/// pre-provisioned genome for E001's fully charged genesis.
+#[test]
+#[ignore = "expensive two-seed resource profile; run only in targeted CI"]
+fn p2_a_gas_12k_then_4k_existing_activity_under_real_epoch_grants(){
+    use ocee_world_kernel::{EventKind,ScheduledEvent};
+    let seed:u64=std::env::var("OCEE_P2_GAS_SEED")
+        .expect("CI pins the selected development seed")
+        .parse().expect("numeric seed");
+    assert!([2027_u64,587].contains(&seed));
+    let p2=s45_p2_scoped_result_wait();
+    let program_hash=p2.content_hash().unwrap();
+    let root=s45_scoped_result_root();
+    let mut w=boot_with_protocol_seed(8,seed,p2,root);
+    let genesis_steps=w.state.step;
+    let genesis_events=w.audit.len();
+    let genome_install_a=w.audit.iter()
+        .map(|r|r.result.gas_charged+r.result.vm_gas_charged)
+        .sum::<u64>();
+
+    // The legacy fixture registered a complete seeded genome with
+    // 100k/epoch. Treat that as OFF-LEDGER GENESIS for this test.
+    // At time of first autonomous tick, eliminate the 100k credit
+    // and set A's actual account and replenishment ceiling to 12k.
+    // This is optimistic for E001: genesis was not independently
+    // made affordable. Do not report an end-to-end resource pass.
+    assert_eq!(w.state.config.a_gas_per_epoch,100_000);
+    assert!(genesis_steps<8192);
+    w.state.config.a_gas_per_epoch=12_000;
+    let node=w.state.nodes.get_mut(&NodeId::A).unwrap();
+    node.gas_per_epoch=12_000;
+    node.gas_available=12_000;
+    w.schedule_event(ScheduledEvent{
+        due_step:8192,priority:0,sequence_no:0,
+        kind:EventKind::ResourceChange{
+            node:NodeId::A,gas_per_epoch:4_000
+        }
+    });
+
+    // Preserve the previous 14_000 autonomous-tick observation limit.
+    // If the organism is still active at the limit, report censored;
+    // never silently grant more gas/ticks or count as a completed task.
+    let mut gas_refusals=0u64;
+    let mut invalid=0u64;
+    for _ in 0..14_000{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        if r.code==Code::Gas{gas_refusals+=1;}
+        if matches!(r.code,Code::Denied|Code::InvalidCode){invalid+=1;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let host=&w.state.organisms[&ORGANISM_ID];
+    let finished=host.vm_continuation.as_ref()
+        .is_some_and(|c|c.finished);
+    let returned=host.last_return.clone();
+    let success=finished&&returned==Some(Value::U32(1));
+    let b=b_total(&w);
+    let scoped=host.vm_continuation.as_ref()
+        .map(|c|c.loop_counters.clone()).unwrap_or_default();
+    let phase0=scoped.get("s45_remote_retry").copied().unwrap_or(0);
+    let phase2=scoped.get("s45_result_retry").copied().unwrap_or(0);
+    let decoder=&w.state.protocol_service.as_ref().unwrap().protocol;
+    let mut remote=Vec::new();
+    let mut results=Vec::new();
+    for record in w.audit.iter().skip(genesis_events){
+        let Some(Action::Send{destination:NodeId::C,bytes,..})
+            =&record.action else{continue};
+        if record.result.code!=Code::Ok{continue;}
+        let Ok(frame)=decoder.decode(bytes)else{continue};
+        assert_eq!(record.result.payload.len(),8);
+        let id=u64::from_le_bytes(record.result.payload[..8]
+            .try_into().unwrap());
+        match frame.operation{
+            Operation::RemoteEval if frame.body.len()==18=>remote.push(id),
+            Operation::Result=>results.push(id),
+            _=>{},
+        }
+    }
+    let confirmed=w.audit.iter().skip(genesis_events)
+        .filter_map(|a|match &a.action{
+            Some(Action::ConfirmResponseFor{request_id,..})
+                if a.result.code==Code::Ok=>Some(*request_id),
+            _=>None,
+        }).collect::<Vec<_>>();
+    let operating_vm=w.audit.iter().skip(genesis_events)
+        .map(|a|a.result.vm_gas_charged).sum::<u64>();
+    let operating_actions=w.audit.iter().skip(genesis_events)
+        .map(|a|a.result.gas_charged).sum::<u64>();
+    let a=&w.state.nodes[&NodeId::A];
+    let after_downshift=w.state.step>=8193;
+    println!(
+        "P2_A_GAS_PRESSURE seed={seed} limit=14000 \
+         initial_epoch=12000 downshift_at=8192 final_epoch={} \
+         genesis_unmetered_a={genome_install_a} \
+         finished={finished} success={success} return={returned:?} \
+         B={b} remote_ids={remote:?} result_candidates={} \
+         confirmed_remote={} confirmed_result={} \
+         phase0_wait={phase0} phase2_wait={phase2} \
+         A_vm={operating_vm} A_actions={operating_actions} \
+         gas_refusals={gas_refusals} invalid={invalid} \
+         final_step={} final_a_available={} program_hash={program_hash}",
+        a.gas_per_epoch,results.len(),
+        remote.iter().any(|id|confirmed.contains(id)),
+        results.iter().any(|id|confirmed.contains(id)),
+        w.state.step,a.gas_available);
+    // Invariants apply even when a resource-limited organism stops
+    // learning, refuses an action, or is censored at 14k ticks.
+    assert_eq!(invalid,0,"low A quota must not cause invalid VM execution");
+    assert!(b<=24);
+    assert!(remote.len()<=1,"no duplicate B request");
+    assert!(w.state.service_events.iter()
+        .filter(|e|e.b_gas_charged>0).count()<=1);
+    assert!(w.state.guarded_restarts.is_empty());
+    assert!(phase0<=896 && phase2<=896);
+    for prefix in ["s45_remote_retry:","s45_result_retry:"]{
+        for (key,value) in scoped.iter().filter(|(k,_)|k.starts_with(prefix)){
+            assert!(*value<=6,"scoped wait safety {key}={value}");
+        }
+    }
+    if after_downshift{
+        assert_eq!(a.gas_per_epoch,4_000,
+            "true resource event must be applied at epoch boundary");
+    }else{
+        assert_eq!(a.gas_per_epoch,12_000);
+    }
+    if success{
+        assert_eq!(b,24);
+        assert_eq!(remote.len(),1);
+        assert!(confirmed.contains(&remote[0]));
+        assert!(results.iter().any(|id|confirmed.contains(id)));
+        let actual=u32::from_le_bytes(w.state.objects[
+            "/self/results/p2-job0/value_le"].bytes[..4]
+            .try_into().unwrap());
+        let operands=w.state.objects[REMOTE_VALUES].bytes
+            .chunks_exact(4).map(|chunk|
+                u32::from_le_bytes(chunk.try_into().unwrap()))
+            .collect::<Vec<_>>();
+        assert_eq!(actual,fold32(&operands).unwrap());
+    }else{
+        assert!(!w.state.objects.contains_key(
+            "/self/results/p2-job0/value_le"),
+            "no valid final result can be written on failure or censoring");
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}

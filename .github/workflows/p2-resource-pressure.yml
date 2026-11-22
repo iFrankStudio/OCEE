@@ -1,0 +1,27 @@
+name: P2 Existing Program Under E001-like A Gas Limits
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/p2-resource-pressure.yml"
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-a-gas-pressure-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  calibrated-resource-episode:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [2027, 587]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_GAS_SEED: ${{ matrix.seed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run unchanged S45 P2 with 12k A gas per epoch and 4k after step 8192
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_a_gas_12k_then_4k_existing_activity_under_real_epoch_grants -- --ignored --show-output
