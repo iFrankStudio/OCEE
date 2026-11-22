@@ -1,9 +1,6 @@
 name: P2 Paid Zero-Anchor Witness and Shared-Fault Limits
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/p2-zero-anchor-witness.yml'
+  # Native corrected 4/4 Run #45039761198; manual replay only.
   # Native first run #45039624800 rejected this root: MAX_BLOCKS=128.
   # Rerun after entry-reachable control-flow pruning; no VM limit change.
   workflow_dispatch:
