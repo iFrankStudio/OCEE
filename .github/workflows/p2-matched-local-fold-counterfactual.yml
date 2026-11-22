@@ -1,10 +1,8 @@
 name: P2 Matched-Operand Local FOLD32 Marginal Cost
 # Replayed after exact ActionResult field fix; original red #44991946675 retained.
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/p2-matched-local-fold-counterfactual.yml"
+  # Native matched-input A/B marginal cost Run #44992095414 completed success.
+  # Preserve the initial red compile run #44991946675 for audit.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-matched-fold-cost-${{ github.ref }}

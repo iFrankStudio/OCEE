@@ -663,3 +663,7 @@
 
 ### 2026-11-22 — 同一真实四U32操作数的A本地/远程计算边际成本对照（待原生CI）
 - 实时main `9632f8dbdc2d89d0ccb007f78e5e0d3de878404e` 已复核，无新自动提交。上一轮已证明seed587收费genesis及4k降额能完成；**远程计算是否节省A资源仍缺证据**。启动[研究协议](./experiments/E001/DEV-P2-MATCHED-LOCAL-FOLD-COST.md)及[唯一原生目标CI](./.github/workflows/p2-matched-local-fold-counterfactual.yml)：固定已见开发P2 seed2027，收费12000 A启动，原S45先自行生成16字节真实REMOTE_VALUES并成功B24/因果认证，之后仅由外部研究夹具从真实完成快照分叉，使用研究者额外编制的通用纯VM本地FOLD32，原样接收同一16字节，原生真实A注册/EXEC扣费、对比逐项真实A/B和C通信成本。本地纯实现使用ByteAt/Add/Div及绕转/溢出控制，禁止宿主提前提供结果，不能算个体自行发现本地算法或完整同起点A-only对照。**现仅代码和实验设计提交，未取得新CI结论，G0 GO、G1/G2 NO-GO**。
+
+### 2026-11-22 — 首次原生同一真实操作数A本地FOLD32边际成本反事实通过
+- 原始[Run #44991946675](https://github.com/iFrankStudio/OCEE/actions/runs/44991946675) @ `000ad9a`因测试误取ActionResult.result.gas_charged而编译E0609失败，未运行；仅修正4处字段访问。修复[**原生Run #44992095414**](https://github.com/iFrankStudio/OCEE/actions/runs/44992095414) @ `718c710ac55c5afbc48a2f96cd4ab7a5f3f9d36b` **completed/success，1/1 Rust测试（264.37s）**，原S45收费genesis开发seed2027真实完成任务step3351、B24一次、真正ACK/RESULT请求ID认证，原A总gas**46457**（VM36310+动作10147，含genesis8818）、发往C真实成功SEND**61次**、A→C计费带宽**1726**。从原world快照分支，由研究者另写的**通用纯VM本地FOLD32**真实扣A安装**346**、对原root实际生成的同四个LE U32执行仅**165**，合计**511 A gas**；结果都为`1415179467`，与B及独立fold32一致，原世界/个体决策不变、无第二次B。
+- 这是首次真正量化**已知四个U32时末端本地FOLD32便宜**；不是同起点等任务对照，不能直接将46457/511相减称远端净亏损：远端路径还承担公共任务学习、工具验证与未知第四操作数生成，本地算法由研究者预制且只在事后得到实际操作数。**尚无远程执行对A的净节约证据，必须开展A-only与A+B完整等资源配对基线及长期复用控制**。详见[实验原生账本与局限](./experiments/E001/DEV-P2-MATCHED-LOCAL-FOLD-COST.md)，旧workspace CI取消状态不变，科学G0 GO、G1/G2 NO-GO，E001未校准/正式预注册。定向工作流恢复只手动。
