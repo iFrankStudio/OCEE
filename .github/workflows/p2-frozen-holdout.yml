@@ -1,9 +1,7 @@
 name: P2 Frozen Holdout Four Protocol Instances
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/p2-frozen-holdout.yml"
+  # Run #44983342484 at a8c812a: four native jobs passed.
+  # Archived heavy holdout: replay only by explicit dispatch.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-frozen-holdout-${{ github.ref }}

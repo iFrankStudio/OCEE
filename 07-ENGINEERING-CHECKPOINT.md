@@ -635,3 +635,7 @@
 ### 2026-11-22 — 执行前冻结的四P2协议实例保留集：原生运行候选
 - 自动研究 [预先冻结的保留集协议](./experiments/E001/DEV-P2-FROZEN-HOLDOUT-PROTOCOL.md) 定义全程 delay8 / P2 protocol seed **311, 587, 941, 2027**，被测活动P2代码为 S45 Phase0+Phase2 已验证版 `4cbf8743`（当前 `main` 无该程序的语义更改）。本次只添加 [一项被显式忽略的原生保留集测试](./crates/organism-seeds/tests/s44_uncertain_outcome.rs) 及 [四种子定向矩阵CI](./.github/workflows/p2-frozen-holdout.yml)，不改变个体程序、协议、世界或资源。每实例独立运行原14k tick夹具、持续delay8、日志输出实际成功/B/ACK/RESULT/等待/VM gas及真实opcode作用域边界；失败仍纳入分母4。
 - 初始状态：**仅代码已提交，CI及保留集活性未验收**；测试绿仅意味无B双扣/盲重试、所有明确安全断言成立，不等于四条均成功。与正式E001预注册无关，G0 GO、G1/G2 NO-GO。
+
+### 2026-11-22 — 执行前冻结的4个 P2 开发保留实例原生 4/4 成功
+- [唯一首次原生 Run #44983342484](https://github.com/iFrankStudio/OCEE/actions/runs/44983342484) @ `a8c812a0f59ca5477e00c36080c2019e2fddbbf7`，**completed/success，四个隔离的Rust matrix jobs全部通过**，真实任务 `U32(1)`、独立fold32、B24一次、真正C-SEND/ACK与RESULT的u64 ID认证、快照及双层界限均通过。预先冻结协议seed 311/587/941/2027，全部在原本固定 `message_delay=8` 下执行，且被测P2程序哈希四组一致 `0f9163bdff40a2ac5cbee63586353ea394f639d6dc7cc190ac34c811634c518e`。
+- 四组的Phase0/Phase2等待分别300/366、612/294、348/342、348/6；VM gas分别75,721、94,248、76,969、36,466；A动作gas分别11,552、11,925、11,554、10,156；完成tick分别2167、2811、2223、1103。成功为**4/4预固定开发保留实例**，不是正式E001确认性集/真正未知语法自主发现。原研究夹具 `a_gas_per_epoch=100000` 明显高于E001初始12000、后4000的资源门槛，仍没有A/B/C/D对照或净成本优势证据；G0 GO、G1/G2 NO-GO，E001未校准/未预注册。完整逐实例原生记录见[保留集报告](./experiments/E001/DEV-P2-FROZEN-HOLDOUT-PROTOCOL.md)，工作流恢复仅手动。

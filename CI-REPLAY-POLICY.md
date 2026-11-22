@@ -108,3 +108,7 @@ The earlier [workspace Run #44861571121](https://github.com/iFrankStudio/OCEE/ac
 新代码改动后两固定seed的校准属于**使用原失败样本进行修复**（development-set regression），**不是**见过结果后仍可称作“盲测成功”的独立证据；它只强力支持“此两例Phase0等待额度是可修复的关键故障因素”。原实验的成功率仍是S44 0/2、旧S45 0/2，不变；修复后S45本次仅2/2。不能直接宣称未知协议泛化、E001 H1/H2/H3、现实网络exactly-once或赛博生命产生。正式 E001 G0 GO、G1/G2 NO-GO及未校准/未预注册不变。
 
 两个本轮临时工作流push触发均已恢复仅手动`workflow_dispatch`，防止后续无意重复执行约7分钟的原生全程多seed探索。
+
+## 2026-11-22 — P2 four frozen holdout protocol instances, native 4/4 PASS
+
+Four precommitted development holdout P2 seeds (311, 587, 941, 2027) at global delay=8 ran on native Rust matrix jobs in [Run #44983342484](https://github.com/iFrankStudio/OCEE/actions/runs/44983342484), source SHA `a8c812a0f59ca5477e00c36080c2019e2fddbbf7`. Four jobs independently completed success; actual organism task outputs were all U32(1), with exactly one B24 service event each and true SEND/ACK/RESULT confirmation, independent fold32 and snapshot invariants. All used the same S45 active P2 program hash. This is development holdout evidence only, with the generous fixture A gas/epoch=100000; it does not validate the E001 resource budget or generic autonomous learning. Full frozen plan, timings, scoped loop counts and A cost table: [protocol and report](./experiments/E001/DEV-P2-FROZEN-HOLDOUT-PROTOCOL.md). The previously archived full-workspace CI was cancelled; do not describe this narrow matrix as whole-workspace regression. Workflow `p2-frozen-holdout.yml` restored to `workflow_dispatch` only in the final documentation commit marked `[skip ci]`.
