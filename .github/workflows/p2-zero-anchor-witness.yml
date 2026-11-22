@@ -1,0 +1,27 @@
+name: P2 Paid Zero-Anchor Witness and Shared-Fault Limits
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2-zero-anchor-witness.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-zero-anchor-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-zero-anchor:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [VALID, COMMON_PLUS_ONE, COMMON_DOUBLE, DISAGREE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_ZERO_ANCHOR_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Real paid zero-anchor witness and adversarial zero-preserving failure
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_zero_anchor_witness_native -- --ignored --show-output

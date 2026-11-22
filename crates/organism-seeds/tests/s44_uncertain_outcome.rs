@@ -2236,3 +2236,303 @@ fn p2_metered_disagreement_native(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+
+/// Public task-law anchor: FOLD32 of four zero words is exactly zero.
+/// This is a RESEARCHER-AUTHORED domain constraint, not a newly learned
+/// theorem or a world API that leaks the unknown job's true answer.
+/// The active root really calls its own installed tool on zero bytes,
+/// pays A gas, and accepts only the genuine typed zero response.
+fn p2_zero_anchor_witness_root()->Program{
+    use ocee_organism_vm::{Block,Instruction,Op,Param,Terminator,Type,WorldCall};
+    fn lit(v:&[u8])->Op{
+        Op::ConstBytes{hex:v.iter().map(|x|format!("{x:02x}")).collect()}
+    }
+    fn p(id:u32)->Param{Param{id,ty:Type::Bytes}}
+    fn ins(id:u32,op:Op)->Instruction{Instruction{id,op}}
+    fn branch(
+        cond:u32,yes:&str,ya:Vec<u32>,no:&str,na:Vec<u32>
+    )->Terminator{
+        Terminator::Branch{
+            condition:cond,if_true:yes.into(),true_args:ya,
+            if_false:no.into(),false_args:na
+        }
+    }
+    let zero_response=serde_json::to_vec(&Value::U32(0)).unwrap();
+    let mut root=p2_metered_disagreement_root();
+    let f=&mut root.functions[0];
+    let compare=f.blocks.iter_mut().find(|b|b.id=="dual_agreement")
+        .expect("two real Exec results must already have been compared");
+    compare.terminator=branch(19064,"zero_anchor_registry_read",
+        vec![19000],"failed",vec![]);
+    f.blocks.extend([
+        Block{
+            id:"zero_anchor_registry_read".into(),
+            params:vec![p(19500)],
+            instructions:vec![
+                ins(19501,lit(b"/self/work/local-fold-candidate"))
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Read,args:vec![19501],
+                next:"zero_anchor_registry_reply".into(),
+                next_args:vec![19500]
+            }
+        },
+        Block{
+            id:"zero_anchor_registry_reply".into(),
+            params:vec![p(19500),p(19510)],
+            instructions:vec![
+                ins(19511,lit(b"code")),
+                ins(19512,Op::JsonFieldString(19510,19511)),
+                ins(19513,lit(b"Ok")),
+                ins(19514,Op::EqBytes(19512,19513))
+            ],
+            terminator:branch(19514,"zero_anchor_exec",
+                vec![19500,19510],"failed",vec![])
+        },
+        Block{
+            id:"zero_anchor_exec".into(),
+            params:vec![p(19500),p(19520)],
+            instructions:vec![
+                ins(19521,lit(b"payload")),
+                ins(19522,Op::JsonFieldBytes(19520,19521)),
+                ins(19523,lit(&[0u8;16]))
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Exec,args:vec![19522,19523],
+                next:"zero_anchor_status".into(),next_args:vec![19500]
+            }
+        },
+        Block{
+            id:"zero_anchor_status".into(),
+            params:vec![p(19500),p(19530)],
+            instructions:vec![
+                ins(19531,lit(b"code")),
+                ins(19532,Op::JsonFieldString(19530,19531)),
+                ins(19533,lit(b"Ok")),
+                ins(19534,Op::EqBytes(19532,19533))
+            ],
+            terminator:branch(19534,"zero_anchor_value",
+                vec![19500,19530],"failed",vec![])
+        },
+        Block{
+            id:"zero_anchor_value".into(),
+            params:vec![p(19500),p(19540)],
+            instructions:vec![
+                ins(19541,lit(b"payload")),
+                ins(19542,Op::JsonFieldBytes(19540,19541)),
+                ins(19543,lit(&zero_response)),
+                ins(19544,Op::EqBytes(19542,19543))
+            ],
+            terminator:branch(19544,"equal_local_pack",
+                vec![19500],"failed",vec![])
+        }
+    ]);
+    root.validate().expect("typed paid zero-anchor witness root");
+    root
+}
+
+/// A deliberately adversarial shared fault that defeats a zero anchor:
+/// output F(x)+F(x), hence F(0)=0 yet general nonzero results are wrong.
+/// Two distinct program graphs receive the same semantic defect.
+fn doubled_fold4(mut p:Program)->Program{
+    use ocee_organism_vm::{Instruction,Op,Terminator};
+    let block=&mut p.functions[0].blocks[0];
+    let old=match block.terminator{
+        Terminator::Return{value}=>value,
+        _=>panic!("pure candidate must return a U32")
+    };
+    let next=block.instructions.iter().map(|i|i.id).max().unwrap()+1;
+    block.instructions.push(Instruction{
+        id:next,op:Op::Add(old,old)
+    });
+    block.terminator=Terminator::Return{value:next};
+    p.validate().expect("typed zero-preserving wrong tool");
+    p
+}
+
+/// Four arms, one active root: an honest success, detected common +1,
+/// zero-preserving shared x2 failure, and the earlier disagreement guard.
+/// The only expected answer in the ROOT is the public zero-input law.
+/// In particular, no true job answer crosses from host into the VM.
+#[test]
+#[ignore = "four real paid native zero-anchor trajectories"]
+fn p2_zero_anchor_witness_native(){
+    let arm=std::env::var("OCEE_P2_ZERO_ANCHOR_ARM").expect("matrix arm");
+    assert!(["VALID","COMMON_PLUS_ONE","COMMON_DOUBLE","DISAGREE"]
+        .contains(&arm.as_str()));
+    let first_good=local_fold4_vm_program();
+    let second_good=alternate_fold4_vm_program();
+    let first_plus=corrupted_fold4_ok();
+    let second_plus=alternate_corrupted_fold4();
+    let first_double=doubled_fold4(local_fold4_vm_program());
+    let second_double=doubled_fold4(alternate_fold4_vm_program());
+    let (primary,secondary)=match arm.as_str(){
+        "VALID"=>(&first_good,&second_good),
+        "COMMON_PLUS_ONE"=>(&first_plus,&second_plus),
+        "COMMON_DOUBLE"=>(&first_double,&second_double),
+        "DISAGREE"=>(&first_good,&second_plus),
+        _=>unreachable!()
+    };
+    let primary_hash=primary.content_hash().unwrap();
+    let secondary_hash=secondary.content_hash().unwrap();
+    assert_ne!(primary_hash,secondary_hash);
+    let root=p2_zero_anchor_witness_root();
+    let root_hash=root.content_hash().unwrap();
+    let mut w=boot_with_protocol_seed_budget(
+        8,2027,12_000,s45_p2_scoped_result_wait(),root);
+    for tool in [primary,secondary]{
+        let hash=tool.content_hash().unwrap();
+        let install=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,
+            key:format!("/self/versions/{hash}"),
+            expected_version:None,bytes:tool.canonical_bytes()
+        }));
+        assert_eq!(install.code,Code::Ok);
+    }
+    for (key,value) in [
+        ("/self/work/local-fold-candidate",&primary_hash),
+        ("/self/work/local-fold-verifier",&secondary_hash)
+    ]{
+        let write=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:key.into(),expected_version:None,
+            bytes:value.as_bytes().to_vec()
+        }));
+        assert_eq!(write.code,Code::Ok);
+    }
+    let genesis=w.audit.iter().map(|a|
+        a.result.gas_charged+a.result.vm_gas_charged).sum::<u64>();
+    assert_eq!(genesis+w.state.nodes[&NodeId::A].gas_available,12_000);
+    let init_hash=w.state_hash();
+    assert_eq!(init_hash,World::from_snapshot(&w.snapshot_json())
+        .unwrap().state_hash());
+    let mut invalid=0usize;
+    let mut gas_denied=0usize;
+    for _ in 0..14_000{
+        let action=w.tick_autonomous(ORGANISM_ID);
+        if action.code==Code::Gas{gas_denied+=1;}
+        if matches!(action.code,Code::InvalidCode|Code::Denied){
+            invalid+=1;
+        }
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let host=&w.state.organisms[&ORGANISM_ID];
+    let finished=host.vm_continuation.as_ref()
+        .is_some_and(|c|c.finished);
+    let claimed=finished&&host.last_return==Some(Value::U32(1));
+    let raw=&w.state.objects.get(REMOTE_VALUES)
+        .expect("actual organism-created operands").bytes;
+    assert_eq!(raw.len(),16);
+    let inputs=raw.chunks_exact(4).map(|b|
+        u32::from_le_bytes(b.try_into().unwrap())).collect::<Vec<_>>();
+    let correct=fold32(&inputs).unwrap();
+    assert_ne!(correct,0);
+    let saved=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|obj|u32::from_le_bytes(obj.bytes[..4].try_into().unwrap()));
+    let mut task_first=Vec::<u32>::new();
+    let mut task_second=Vec::<u32>::new();
+    let mut anchor_first=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut anchor_second=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut send_count=0usize;
+    for audit in &w.audit{
+        match &audit.action{
+            Some(Action::Exec{program_hash,input,..})
+                if program_hash==&primary_hash ||
+                   program_hash==&secondary_hash=>{
+                let value=if audit.result.code==Code::Ok{
+                    let Value::U32(n)=serde_json::from_slice::<Value>(
+                        &audit.result.payload).unwrap() else{
+                        panic!("only typed U32 payloads are allowed")
+                    };
+                    Some(n)
+                }else{None};
+                let target=program_hash==&primary_hash;
+                if input.as_slice()==raw.as_slice(){
+                    if let Some(n)=value{
+                        if target{task_first.push(n)}
+                        else{task_second.push(n)}
+                    }
+                }else if input.as_slice()==[0u8;16]{
+                    if target{
+                        anchor_first.push((audit.result.code,value,
+                            audit.result.gas_charged));
+                    }else{
+                        anchor_second.push((audit.result.code,value,
+                            audit.result.gas_charged));
+                    }
+                }else{
+                    panic!("any other Exec input violates frozen protocol");
+                }
+            },
+            Some(Action::Send{destination:NodeId::C,..})
+                if audit.result.code==Code::Ok=>send_count+=1,
+            _=>()
+        }
+    }
+    let a_vm=w.audit.iter().map(|a|a.result.vm_gas_charged).sum::<u64>();
+    let a_actions=w.audit.iter().map(|a|a.result.gas_charged).sum::<u64>();
+    let b=b_total(&w);
+    println!(
+        "P2_ZERO_ANCHOR arm={arm} root={root_hash} primary={primary_hash} \\
+         secondary={secondary_hash} init_hash={init_hash} \\
+         genesis_A={genesis} A_vm={a_vm} A_actions={a_actions} \\
+         A_total={} B={b} C_sends={send_count} \\
+         first={task_first:?} second={task_second:?} \\
+         witness_primary={anchor_first:?} witness_secondary={anchor_second:?} \\
+         finished={finished} return={:?} claimed={claimed} \\
+         actual_correct={correct} stored={saved:?} \\
+         invalid={invalid} gas_denied={gas_denied} step={}",
+        a_vm+a_actions,host.last_return,w.state.step
+    );
+    assert_eq!(invalid,0);
+    assert_eq!(b,0);
+    assert_eq!(send_count,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    assert!(finished);
+    let correct_result=correct;
+    let plus=correct.wrapping_add(1);
+    let double=correct.wrapping_mul(2);
+    match arm.as_str(){
+        "VALID"=>{
+            assert_eq!(task_first,vec![correct_result]);
+            assert_eq!(task_second,vec![correct_result]);
+            assert_eq!(anchor_first.iter().filter(|(c,v,_)|
+                *c==Code::Ok&&*v==Some(0)).count(),1);
+            assert!(anchor_second.is_empty());
+            assert!(claimed);
+            assert_eq!(saved,Some(correct_result));
+        },
+        "COMMON_PLUS_ONE"=>{
+            assert_eq!(task_first,vec![plus]);
+            assert_eq!(task_second,vec![plus]);
+            assert_eq!(anchor_first.iter().filter(|(c,v,_)|
+                *c==Code::Ok&&*v==Some(1)).count(),1);
+            assert!(!claimed);
+            assert_eq!(host.last_return,Some(Value::U32(0)));
+            assert_eq!(saved,None);
+        },
+        "COMMON_DOUBLE"=>{
+            assert_ne!(double,correct_result);
+            assert_eq!(task_first,vec![double]);
+            assert_eq!(task_second,vec![double]);
+            assert_eq!(anchor_first.iter().filter(|(c,v,_)|
+                *c==Code::Ok&&*v==Some(0)).count(),1);
+            assert!(claimed,
+                "zero-preserving shared fault must expose a false success");
+            assert_eq!(saved,Some(double));
+        },
+        "DISAGREE"=>{
+            assert_eq!(task_first,vec![correct_result]);
+            assert_eq!(task_second,vec![plus]);
+            assert!(anchor_first.is_empty()&&anchor_second.is_empty(),
+                "disagreement must exit before extra witness");
+            assert!(!claimed);
+            assert_eq!(host.last_return,Some(Value::U32(0)));
+            assert_eq!(saved,None);
+        },
+        _=>unreachable!()
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}
