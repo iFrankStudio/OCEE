@@ -2328,6 +2328,37 @@ fn p2_zero_anchor_witness_root()->Program{
                 vec![19500],"failed",vec![])
         }
     ]);
+    // The S45 lineage retains blocks whose edges became unreachable
+    // after the researcher changed the P2 handover to two local tools.
+    // The VM has a HARD 128-block program limit, so remove ONLY blocks
+    // not reachable from the function's original entry. This is a
+    // semantics-preserving control-flow projection, not a raised limit.
+    // Jump/Yield/Branch/Repeat edges are all visited explicitly.
+    let mut reachable=std::collections::BTreeSet::<String>::new();
+    let mut pending=vec![f.blocks[0].id.clone()];
+    while let Some(id)=pending.pop(){
+        if !reachable.insert(id.clone()){continue;}
+        let block=f.blocks.iter().find(|candidate|candidate.id==id)
+            .expect("every reachable target must exist");
+        match &block.terminator{
+            Terminator::Return{..}=>(),
+            Terminator::Jump{target,..}=>pending.push(target.clone()),
+            Terminator::Branch{if_true,if_false,..}=>{
+                pending.push(if_true.clone());
+                pending.push(if_false.clone());
+            },
+            Terminator::RepeatBounded{body,done,..} |
+            Terminator::RepeatScoped{body,done,..}=>{
+                pending.push(body.clone());
+                pending.push(done.clone());
+            },
+            Terminator::Yield{next,..}=>pending.push(next.clone())
+        }
+    }
+    let original_block_count=f.blocks.len();
+    f.blocks.retain(|candidate|reachable.contains(&candidate.id));
+    assert!(f.blocks.len()<original_block_count,
+        "this corrective patch must really prune dead blocks");
     root.validate().expect("typed paid zero-anchor witness root");
     root
 }

@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/p2-zero-anchor-witness.yml'
+  # Native first run #45039624800 rejected this root: MAX_BLOCKS=128.
+  # Rerun after entry-reachable control-flow pruning; no VM limit change.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-zero-anchor-${{ github.ref }}
