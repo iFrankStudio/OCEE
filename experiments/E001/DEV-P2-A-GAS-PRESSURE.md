@@ -1,6 +1,6 @@
 # P2 既有活动程序的 A gas 压力校准（开发组，非正式 E001）
 
-**状态：执行前协议与测试代码已提交；CI尚未运行。本实验不进行程序或参数调优。**
+**状态：原生资源压力2/2成功，另有收费genesis单实例1/1成功。下文保留执行前固定协议及执行后结果；非正式E001。**
 
 ## 起因与冻结条件
 
@@ -53,3 +53,14 @@ P2 冻结开发保留实例[四项真正通过](https://github.com/iFrankStudio/
 **必须披露的限制**：这两组的研究者初始 P1/P2/root程序在100000/epoch夹具中写入，四次初始化真实扣A **8818 gas**，随后研究者直接将A额度重置为12000；所以本实验是明确标注的 **free-genesis有利反事实**，其活动总A gas不包含启动成本。本记录不隐瞒该区别。另一个 **真正计费genesis** 的seed2027目标测试已单独提交并运行于 [另一个工作流](https://github.com/iFrankStudio/OCEE/actions/workflows/p2-charged-genesis.yml)，在其真实CI结论出炉前不得提前记通过。
 
 该证据只支持固定研究者预置协议专家在两个已见开发P2实例上的真实分epoch继续执行与资源压力下任务成功；没有主动资源策略优化，没有本地计算同工作项基线和净节约，未证明跨协议家族自主迁移/工具发明，也不构成E001正式预注册集。**科学G0 GO，G1/G2 NO-GO，E001未完成校准预注册。** 定向工作流在本结果封存提交后恢复仅手动，避免重复执行约5—9分钟的昂贵回归。
+
+## 2026-11-22 — 收费genesis首次原生CI确证（与免费genesis对照）
+
+[**Run #44988134196**](https://github.com/iFrankStudio/OCEE/actions/runs/44988134196) @ `2c50ac7490370f30571d44997e8f28fed052731d`，workflow/job **completed/success**，Rust `p2_charged_genesis_in_12k_a_epoch_with_no_credit_reset` 1 passed/0 failed，305.55s。由原始`P2_CHARGED_GENESIS`日志审计：
+
+- **收费启动**：研究者预先编制但按真实世界Write装载的P1/P2/root及active共4条操作，在原生`A=12000 gas/epoch`下总扣费**8818 gas**；首个自主tick剩余**3182 gas**，严格满足`8818+3182=12000`，**没有任何特权补满初始余额**。
+- **真实任务成功**：固定已见协议seed2027、C延迟8；返回`finished=true, Some(U32(1))`，远程B只扣**24一次**，真实`REMOTE_EVAL` SEND ID **118**与合法RESULT ID **120**均有内核`ConfirmResponseFor`成功，独立`fold32`核验最终落盘结果、快照hash一致，VM无Invalid/Denied或错误root重启。
+- **成本及时间**：初始genesis**8818** + 活动VM **36310** + 活动world动作 **1329** = **总A gas 46457**，由真实epoch额度补充支付；Gas拒绝**2266**次后第**3351**步完成。程序哈希仍为`0f9163bdff40a2ac5cbee63586353ea394f639d6dc7cc190ac34c811634c518e`。同已见seed的免费重置启动版在step3103结束，收费启动延后248步，但同样安全完成。
+- **关键局限**：此seed2027在8192步前完成，故收费genesis测试**没有**直接走过4000/epoch降额；另一个free-genesis seed587在8217步成功，但不能拼接两个不同行为轨迹当作“完整收费启动且经历降额”证据。程序本身依然由研究者写好，未发现自主创造协议策略/净A节省；仍是开发工程证据，不构成E001正式确认性预注册。**G0 GO，G1/G2 NO-GO**。
+
+本工作流恢复仅`workflow_dispatch`，避免在普通push中无谓重放。

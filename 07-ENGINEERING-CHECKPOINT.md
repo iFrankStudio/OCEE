@@ -649,3 +649,7 @@
 ### 2026-11-22 — A 12k→4k真实epoch资源压力：原生2/2成功（带free-genesis重要限制）
 - [Run #44987651536](https://github.com/iFrankStudio/OCEE/actions/runs/44987651536) @ `2452464e299b1c39192ef911a47e3a4dcd3cf7c3` completed/success，2独立原生jobs：协议seed2027在每epoch 12000下第3103步真`U32(1)`/B24一次、VM35934+A操作1318、Gas拒绝2022次；seed587第8217步真`U32(1)`/B24一次、VM94045+A操作3097、Gas拒绝5419次，正规资源事件已在8192将其A额度降为4000/epoch。均通过真实u64 ID ACK/RESULT确认、fold32及快照校验，无盲重试/未授权重启。
 - **此两实例预置基因组由研究者在100000 gas配置下写入花费8818，然后强制把账户补回12000**；这是一种有利的free-genesis反事实，不能报告成完整E001资源符合。单独的实际12k计费基因组对照（seed2027）仍需读取本独立[charged-genesis workflow](./.github/workflows/p2-charged-genesis.yml)结论。此阶段没有证明4000/epoch下长期自治、工具原创或本地基线净收益。完整记录见[资源压力报告](./experiments/E001/DEV-P2-A-GAS-PRESSURE.md)。研究门槛G0 GO、G1/G2 NO-GO，E001未预注册/校准。
+
+### 2026-11-22 — 初始12000 A gas真正计费的P2启动与任务原生成功
+- [Run #44988134196](https://github.com/iFrankStudio/OCEE/actions/runs/44988134196) @ `2c50ac7490370f30571d44997e8f28fed052731d` completed/success，原生1/1：协议seed2027，4次初始genome Write在真实首epoch12000额度内扣8818（初始余3182，无特权补满），后续VM36310+A动作1329、Gas拒绝2266次，**step3351真U32(1)和B24只一次**，ACK/RESULT实际u64 ID118/120内核认证、fold32与快照一致，无无因重启。合计总A gas46457，跨epoch正常补充。
+- 收费启动实例早于8192结束，故尚未直接验证“收费启动 + 4000额度降额”同时成立；另一个free-genesis seed587确实降额后完成，须严格分开。无自主生成协议/净资源优势证据。 [协议与原生账本](./experiments/E001/DEV-P2-A-GAS-PRESSURE.md)，定向CI仅手动，科学G0 GO、G1/G2 NO-GO。
