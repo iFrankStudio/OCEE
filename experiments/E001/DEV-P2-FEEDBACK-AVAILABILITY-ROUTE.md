@@ -1,6 +1,6 @@
 # P2 实际 EXEC 反馈驱动的可用性路由（开发性候选）
 
-状态：代码已提交，原生 Rust 两臂尚待实际运行。此实验不构成 E001 正式预注册、净效用学习或开放式演化证据。
+状态：最终同一修复版原生两臂 2/2 真实任务成功，前序失败完整留档。此实验不构成 E001 正式预注册、净效用学习或开放式演化证据。
 
 ## 动机与已知负例
 
@@ -26,3 +26,28 @@
 - [第一次PRESENT末段诊断 Run #44997843628](https://github.com/iFrankStudio/OCEE/actions/runs/44997843628) @ 9e02d6a：同样在1025失败，最后42个tick大部分因Gas不足没有动作，说明失败根已经在上一资源周期进入回退分支；还不足以确定动作根因。
 - [第二次只看最后实际动作 Run #44998024761](https://github.com/iFrankStudio/OCEE/actions/runs/44998024761) @ 9cef866：根因明确，第40步Read真实 remote-values-le成功，第41步实际 Exec 本地程序hash c600ba0f...，本次仅支付85 A gas、返回 Code::Gas；原根直接将非Ok且非NotFound当作失败，进入failed回传，而不是留存可恢复的预算不足状态。长时间Gas拒绝后第1024步VM支出33，返回失败U32(0)。此前“根本没执行本地工具”的表述应更正为“实际尝试并收费，但一次完整Exec没成功”；不得把Gas理解为本地能力缺失。
 - 根据上述原生事实，只对本地Exec的真实Gas分支新增总8次受VM验证的 RepeatBounded 重读+重新Exec，NotFound仍唯一远程触发，非法反馈fail-closed；不改变协议seed2027、12k/epoch、14k tick、初始工具能力或任务，不补偿旧失败扣费。后置两臂须在新的完整Root hash下同时重验，**本段写入时原生回归尚待结果**。
+
+## 2026-11-22 — 同一修复版两臂原生 2/2 通过
+
+[最终原生 Run #44998219987](https://github.com/iFrankStudio/OCEE/actions/runs/44998219987) @ afcfa56b37d8950629ac9e7617a4855ecef5bae9：workflow completed/success，PRESENT 与 ABSENT 两个隔离 matrix Rust jobs 各 1 passed、0 failed。先前首次实验 #44997491803 的红例和诊断 #44997843628、#44998024761 的红例保持可追溯；看到失败后增加 Gas-only 本地重试的结果不能标为预注册成功。工作任务、P2 seed2027、消息延迟8、12k A/epoch、14k tick观察窗口均没有更改。
+
+| 实测 | PRESENT：本地工具安装 | ABSENT：本地工具不存在 |
+|---|---:|---:|
+| 完整任务 U32(1)、正确结果 1415179467 | 成功 | 成功 |
+| 共同活动根内容哈希 | d1de40fe...e1e7db | d1de40fe...e1e7db |
+| 有偿 genesis A gas | 9447 | 9101 |
+| A VM gas（含运行） | 2421 | 36614 |
+| A 世界动作 gas（含启动） | 9897 | 10441 |
+| 真实总 A gas | **12318** | **47055** |
+| B gas | **0** | **24（一次）** |
+| 真正向 C 成功 SEND | **0** | **61** |
+| 本地 Exec Ok / NotFound | 1 / 0 | 0 / 1 |
+| 远程 RemoteEval ID | 无 | 118 |
+| 已获真实服务认证的请求与结果 ID | 不需要 | 118、120 |
+| 活动中 Gas 拒绝次数 | 983 | 2263 |
+| 完成 world step | **1028** | **3368** |
+| 独立 fold32 / 快照恢复 / 无非法重启 | 通过 | 通过 |
+
+PRESENT 初版于 step41 真实尝试本地 Exec，仅扣 85 A gas 后返回 Gas；它不是 NotFound，更不是没有发起 Exec。最终版在真实资源不足时有界地重读并重试，随后完成 1 次本地 Exec Ok，B/C 零使用。ABSENT 在真实 Exec NotFound 后由同一个根程序选择远程专家，真实 B 消费仅一次，u64 RemoteEval 与 RESULT 通过 ConfirmResponseFor；两种条件均使用活动VM自身的真实世界反馈，而非实验者写 L/R 路由字节。
+
+**成本比较不能越界**：PRESENT/ABSENT 的初始工具集及有偿装载成本不同；绝不能把 47055-12318 当作同起点净效用差。等起点但研究者路由的已封存对照才给出本地12236、远程47359 A gas。当前策略仍是研究者预置，不能检测成功返回但语义错误的本地工具，也未学会跨 episode 累计收益或生成新协议程序。G0 GO；G1/G2 NO-GO；E001 尚未校准、未预注册。昂贵的工作流已恢复为手动 workflow_dispatch。

@@ -1,9 +1,6 @@
 name: P2 VM Feedback-Selected Local Availability or Remote Fallback
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/p2-feedback-route.yml'
+  # Native 2/2 passed Run #44998219987; replay only on explicit dispatch.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-feedback-route-${{ github.ref }}
@@ -15,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        availability: [PRESENT, ABSENT] # revalidate both after bounded Gas-only retry
+        availability: [PRESENT, ABSENT]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
