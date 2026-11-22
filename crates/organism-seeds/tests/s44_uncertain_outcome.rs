@@ -1492,8 +1492,35 @@ fn p2_feedback_availability_route_root(local_hash:&str)->Program{
         ],
         terminator:Terminator::Branch{
             condition:17504,if_true:"equal_remote_switch".into(),
-            true_args:vec![17505],if_false:"failed".into(),
-            false_args:vec![]
+            true_args:vec![17505],if_false:"availability_gas_gate".into(),
+            false_args:vec![17500]
+        }
+    });
+    // The native red run #44998024761 proved that this real EXEC can
+    // debit 85 A gas and return Gas at step 41, just before the epoch
+    // replenishment. Gas means temporary budget pressure, NOT a
+    // missing algorithm. Keep the same local route and retry at most 8
+    // times; each attempt remains an ordinary paid world Exec action.
+    // In particular, Gas is NEVER treated as NotFound/remote consent.
+    f.blocks.push(Block{
+        id:"availability_gas_gate".into(),
+        params:vec![Param{id:17510,ty:Type::Bytes}],
+        instructions:vec![
+            Instruction{id:17511,op:lit(b"code")},
+            Instruction{id:17512,op:Op::JsonFieldString(17510,17511)},
+            Instruction{id:17513,op:lit(b"Gas")},
+            Instruction{id:17514,op:Op::EqBytes(17512,17513)}
+        ],
+        terminator:Terminator::Branch{
+            condition:17514,if_true:"availability_exec_retry".into(),
+            true_args:vec![],if_false:"failed".into(),false_args:vec![]
+        }
+    });
+    f.blocks.push(Block{
+        id:"availability_exec_retry".into(),params:vec![],instructions:vec![],
+        terminator:Terminator::RepeatBounded{
+            limit:8,body:"equal_local_read".into(),body_args:vec![],
+            done:"failed".into(),done_args:vec![]
         }
     });
     root.validate().expect("finite typed VM feedback-routed root");
