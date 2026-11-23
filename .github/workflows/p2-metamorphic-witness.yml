@@ -1,9 +1,6 @@
 name: P2 Task-Linked Metamorphic Witness
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/p2-metamorphic-witness.yml'
+  # 2026-11-23: final native 4/4 Run #45100054624; manual replay only.
   # First native Run #45099227328: all arms rejected by strict MAX_BLOCKS=128.
   # Retry only after safe same-edge block compaction, never raise VM limits.
   # Forensic #45099701115 proved P1 Write Code::Gas at step27. Full matrix replay.
