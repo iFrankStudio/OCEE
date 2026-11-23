@@ -23,7 +23,7 @@ impl Value {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WorldCall { Observe, Read, Write, PublishTool, ReclaimVersion, IndexVersionRefs, ReclaimIndexedVersion, Send, Receive, Exec, Probe, VerifyProbe, RenewProbe, ArmTaskFence, FenceStatus, RestartRoot, FenceStatusFor, RestartRootFor, RequestOutcomeFor, ConfirmResponseFor }
+pub enum WorldCall { Observe, Read, Write, WriteIndexed, PublishTool, ReclaimVersion, IndexVersionRefs, ReclaimIndexedVersion, Send, Receive, Exec, Probe, VerifyProbe, RenewProbe, ArmTaskFence, FenceStatus, RestartRoot, FenceStatusFor, RestartRootFor, RequestOutcomeFor, ConfirmResponseFor }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Param { pub id: u32, pub ty: Type }
@@ -366,7 +366,7 @@ fn check_call(call:WorldCall,args:&[u32],defs:&BTreeMap<u32,Type>) -> Result<(),
         WorldCall::Observe|WorldCall::IndexVersionRefs|WorldCall::Receive|WorldCall::FenceStatus|WorldCall::RestartRoot=>&[],
         WorldCall::Read|WorldCall::ReclaimVersion|WorldCall::ReclaimIndexedVersion|WorldCall::Send|WorldCall::Probe|WorldCall::VerifyProbe|WorldCall::RenewProbe|WorldCall::ArmTaskFence|WorldCall::FenceStatusFor|WorldCall::RestartRootFor|WorldCall::RequestOutcomeFor=>&[Type::Bytes],
         WorldCall::Exec|WorldCall::ConfirmResponseFor=>&[Type::Bytes,Type::Bytes],
-        WorldCall::Write|WorldCall::PublishTool=>&[Type::Bytes,Type::Bytes,Type::U32],
+        WorldCall::Write|WorldCall::WriteIndexed|WorldCall::PublishTool=>&[Type::Bytes,Type::Bytes,Type::U32],
     };
     if args.len()!=signature.len() {return Err(bad("world call arity")); }
     for (reg,ty) in args.iter().zip(signature) {need(defs,*reg,*ty)?;}
