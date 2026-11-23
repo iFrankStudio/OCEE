@@ -1,0 +1,28 @@
+name: S29 Paid Benign Certificate Churn and Cross-Epoch Continuation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-benign-index-churn.yml'
+      - 'crates/organism-seeds/tests/s29_reclaim_version.rs'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-benign-index-churn-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-benign-churn:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [QUIET, BEFORE_INDEX, AFTER_INDEX, EPOCH_GAP]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_CHURN_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify paid certificate survival, real churn and epoch replay
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_benign_churn_native -- --ignored --show-output
