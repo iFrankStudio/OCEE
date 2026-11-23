@@ -1,6 +1,6 @@
 # OCEE GitHub Actions 运行预算与实验复核制度
 
-**状态：2026-11-23。仓库改为public后GitHub-hosted runner已恢复；最新S29跨epoch证书失效研究定向原生4/4成功，历史工作流默认手动重放。以下2026-11-20私有仓库阻断记录为历史事实。**
+**状态：2026-11-23。仓库改为public后GitHub-hosted runner已恢复；最新S29有偿资源门控维护专项原生5/5成功（首轮4/5的测试夹具红例有据可查），历史工作流默认手动重放。以下2026-11-20私有仓库阻断记录为历史事实。**
 
 ## 为什么调整
 - OCEE 目前约26个 `*.yml` 工作流。此前S28–S40的定向工作流往往把共享 `crates/world-kernel/src/lib.rs`、`crates/organism-seeds/src/lib.rs`、`crates/organism-vm/src/lib.rs` 列入 push triggers，一次研究小改动在私有仓库可能触发十余个独立Rust job、部分运行超过数十分钟。历史实验需要保留用于复核，但不应在每次main直接提交时同时执行。
@@ -154,3 +154,12 @@ Initial compile-only failure [#44991946675](https://github.com/iFrankStudio/OCEE
 ## 2026-11-23 — S29 有偿本人版本目录→有限VM动态回收 首次4/4
 
 从实时main `7557be27e3ca`、此前源级差分6/6成功出发，**先冻结**[实验安全/资源判据](./experiments/E001/DEV-S29-PAID-OWN-INVENTORY-BOUNDED-DISCOVERY-PROTOCOL.md) @8698549b，再提交付费Read目录、无候选hash常量的有限搜索VM与4个定向原生arm；仅由`.github/workflows/s29-paid-catalog-discovery.yml`新增文件路径过滤触发一次4-job Rust矩阵。**[原生Run #45180137615](https://github.com/iFrankStudio/OCEE/actions/runs/45180137615) @b905f6bdd0 completed/success，四个独立job每个1 passed/0 failed，首次运行全部成功、无本轮红例。** CATALOG_CONTRACT首次真目录读取27A、真实自有版本总数10、BadRequest/Gas边界正确；DYNAMIC_RECOVERY现有活动VM真根据支付的目录反馈动态尝试`Conflict,Conflict,Ok(8A)`并安全回收276B，VM A700+世界Action1702；PIN_AND_CONTINUATION拒绝有偿pin指向的真实活引用，改选另一279B候选并保留真实snapshot全文字节一致；INVALIDATED_CERT在新的有偿长引用使原证书失效后8次GC全部Conflict/0A，不误删。前置P2任务全部保持B20。结论是有限受费候选身份发现，不是内生目标/长程净收益；专项4/4不是全工作区新一轮全量重测。完成归档后专项workflow应回到**`workflow_dispatch` only**，避免旧昂贵世界被每个push重复触发。
+
+
+## 2026-11-23 — S29付费资源门控维护：首轮4/5红例→修改夹具后完整5/5
+
+从实时main `68e8fe661d5e`先提交[资源决策冻结协议](./experiments/E001/DEV-S29-RESOURCE-BUDGET-TRIGGER-PROTOCOL.md) @f25a225d，再提交`crates/organism-seeds/tests/s29_reclaim_version.rs`新的**同一无目标hash常量VM**：既有paid资源Status读2A（used/capacity/a_available）→ `free<4096B && A>=3000`才继续已有catalog/Index/GC，无内核/VM能力新增；5个真正的Rust arm包括正常高压、空闲跳过、下一真实epoch资源缩减跳过、异步pin竞态及全部候选受保护反例。工作流只由新增`.github/workflows/s29-resource-budget-gate.yml`自身路径限定首次push触发单矩阵。
+
+- **失败必须可见**：[Run #45202464053](https://github.com/iFrankStudio/OCEE/actions/runs/45202464053) @`2af48822c8aabdf21286dd6672d5165e678318e6`，首轮**4/5**，唯一红臂`PROTECTED_ONLY`因为研究者只对新增3旧版本创建活pin，却忽略前置P2真实目录还有其他可删历史版本，真实VM安全回收并返回1；不是错误GC。先在原冻结协议添加失败记录和夹具修正边界，再只修改该arm：对真实全部10个已安装程序分别发出真实A付费64B自有pin，仍要求全Conflict、零释放；其它4臂、预冻结阈值、root、seed、索引与GC行为均不改。
+- **[Run #45203295504](https://github.com/iFrankStudio/OCEE/actions/runs/45203295504) @`8560eb39adacf1201685cacdee1b2661cfdff2bb` completed/success，五个独立Ubuntu Rust job全部1/1=**5/5**。实际P2 B20均正确、原root只激活一次、全arm真实audit与snapshot replay确定性。PRESSURE真实空闲2048B/A11157，VM780+Action1704=2484A，回收276B；相同固定root下SPARE空闲8192B，VM82+Action2=84A、零目录/索引/GC（局部避免**2400A**，但没有释放可能的276B）。LOW_A靠真实跨epoch`ResourceChange(A,2400)`跳过昂贵索引，VM81+Action2=83A。RACE_AFTER_SENSOR研究者追加有偿64B pin，GC保护活引用后继续释放另一个279B，VM868+Action1711A（含研究者6A）；修正后的PROTECTED_ONLY 10个真活引用，仅剩1408B空间却执行1目录、1索引、8次GC全Conflict/0A，VM1236+Action1709=**2945A但回收0B**。详见[完整实验](./experiments/E001/DEV-S29-RESOURCE-BUDGET-TRIGGER-PROTOCOL.md)。
+- 执行完恢复本次定向工作流**`workflow_dispatch` only**，后续只在资源状态语义、VM门控策略、目录/GC收费和引用安全需要时重放一次；不得因为共享原有root测试历史太多而无关多触发。此5/5既不是全Rust workspace回归，也不是正式E001校准/预注册。**G0 GO、G1/G2 NO-GO**。
