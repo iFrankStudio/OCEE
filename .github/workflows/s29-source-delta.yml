@@ -1,0 +1,27 @@
+name: S29 Paid Per-Source Reference Delta and Transport Safety
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-source-delta.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-source-delta-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-source-delta:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [LEGACY_WRITE, DELTA_SINGLE, DELTA_MULTI, DELTA_ADD_AND_STALE, VM_DELTA, TRANSPORT_LEASE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_DELTA_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Paid per-source CAS, multi-holder guards and real VM intent
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_source_delta_native -- --ignored --show-output
