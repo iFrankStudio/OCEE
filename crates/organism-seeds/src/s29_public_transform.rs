@@ -231,3 +231,60 @@ pub fn s29_evidence_selected_root(p1:&str,p2:&str)->Program{
     root.validate().expect("S29 frozen VM multi-operator example selection graph");
     root
 }
+
+
+/// S29 development follow-up: a registered, syntactically valid inherited
+/// transform may be semantically wrong for the NEW world's public labels.
+/// The active VM pays a genuine first EXEC, rejects its wrong value, then
+/// re-selects from the same three researcher-supplied generic operators.
+/// The new program is installed with an immutable content hash and the
+/// observed registry version is updated with a bounded CAS0 transaction.
+/// A stale (version >=1) registry cannot be overwritten by this recovery.
+/// NOTE: version objects written BEFORE a failed CAS remain as auditable
+/// orphan candidates; adoption itself is never claimed in that case.
+pub fn s29_feedback_repair_root(p1:&str,p2:&str)->Program{
+    let mut root=s29_evidence_selected_root(p1,p2);
+    let f=&mut root.functions[0];
+    let first=f.blocks.iter_mut().find(|b|b.id=="s29_check1_ok")
+        .expect("actual first inherited EXEC must be checked");
+    // First mismatching labelled sample triggers bounded fresh selection.
+    // After selecting the right generic Op, full two-label checks still run.
+    first.terminator=br(6414,
+        "s29_check2",vec![101,103,104,105],
+        "s29_len1",ids());
+    // Repaired/reselected versions may replace the known first registry
+    // version, but not any silently concurrent / newer version.
+    let register=f.blocks.iter_mut().find(|b|b.id=="s29_register")
+        .expect("new version is paid installed before registry WRITE");
+    register.instructions.iter_mut().find(|i|i.id==6321)
+        .expect("old missing-only WRITE version flag").op=Op::ConstU32(0);
+    let feedback=f.blocks.iter_mut().find(|b|b.id=="s29_registered")
+        .expect("real write feedback");
+    feedback.terminator=br(6333,"s29_check1",plus(ids(),105),
+        "s29_cas_conflict",plus(plus(ids(),105),6331));
+    let b=Type::Bytes;
+    f.blocks.extend([
+        // If the CAS0 cannot match because registry is missing, retry
+        // *only once* with expected_version=None (a new object).
+        // On a stale/in-use registry the fallback is Conflict too and
+        // final U32(0), preserving the old registry content/version.
+        bl("s29_cas_conflict",extended(&[(105,b),(106,b)]),vec![
+            i(6920,lit(b"Conflict")),
+            i(6921,Op::EqBytes(106,6920)),
+        ],br(6921,"s29_create_missing",
+            plus(ids(),105),"failed",vec![])),
+        bl("s29_create_missing",extended(&[(105,b)]),vec![
+            i(6922,lit(REGISTRY.as_bytes())),
+            i(6923,Op::ConstU32(u32::MAX)),
+        ],y(WorldCall::Write,vec![6922,105,6923],
+            "s29_created_reply",plus(ids(),105))),
+        bl("s29_created_reply",extended(&[(105,b),(106,b)]),vec![
+            i(6924,lit(b"code")),
+            i(6925,Op::JsonFieldString(106,6924)),
+            i(6926,lit(b"Ok")),
+            i(6927,Op::EqBytes(6925,6926)),
+        ],br(6927,"s29_check1",plus(ids(),105),"failed",vec![])),
+    ]);
+    root.validate().expect("S29 bounded feedback repair and CAS adoption");
+    root
+}
