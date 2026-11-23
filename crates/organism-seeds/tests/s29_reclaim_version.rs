@@ -3162,15 +3162,28 @@ fn test_resource_budget_gate_arm(arm:&str){
         assert_eq!(w.state.nodes[&NodeId::A].gas_available,2400);
         assert_eq!(w.state.last_granted_epoch,Some(next/length));
     }
+    let mut fully_protected_pin_bytes=0u64;
     if arm=="PROTECTED_ONLY"{
-        // All three genuine orphan versions now have distinct PAID pins.
-        // A resource gate cannot know this from storage and gas alone.
-        for (i,h) in candidates.iter().enumerate(){
+        // First-run research fixture mistake (#45202464053): pinning only
+        // three researcher-added orphans did NOT guarantee that the real
+        // existing P2 world had no other reclaimable installed version.
+        // Enumerate ALL actual actor-owned installed versions in this
+        // researcher-only negative-control setup, and pay for one 64-byte
+        // full raw-hash pin per version, including the original three.
+        let actual_versions=w.state.objects.iter().filter_map(|(k,o)|{
+            let hash=k.strip_prefix("/self/versions/")?;
+            (o.owner==ORGANISM_ID && hash.len()==64).then_some(hash.to_owned())
+        }).collect::<Vec<_>>();
+        assert!(candidates.iter().all(|h|actual_versions.contains(h)));
+        assert!(!actual_versions.is_empty());
+        fully_protected_pin_bytes=actual_versions.len() as u64 * 64;
+        assert!(fully_protected_pin_bytes<=2048);
+        for (i,h) in actual_versions.iter().enumerate(){
             put(&mut w,format!("/self/pins/s29-gate-{i}"),
                 h.as_bytes().to_vec());
         }
         assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
-            used+192);
+            used+fully_protected_pin_bytes);
     }
     let start=w.state.step;
     let (vm_before,action_before)=spend(&w);
@@ -3198,8 +3211,8 @@ fn test_resource_budget_gate_arm(arm:&str){
     let (reported_used,cap,a_remaining,observed_step)=
         resource_status_receipt(&w,start);
     if arm=="PROTECTED_ONLY"{
-        assert_eq!(reported_used,used+192);
-        assert_eq!(cap-reported_used,2048-192);
+        assert_eq!(reported_used,used+fully_protected_pin_bytes);
+        assert_eq!(cap-reported_used,2048-fully_protected_pin_bytes);
     }else{
         assert_eq!(reported_used,used);
         assert_eq!(cap-reported_used,expected_free);
@@ -3269,8 +3282,8 @@ fn test_resource_budget_gate_arm(arm:&str){
             e.result.payload.as_slice().try_into().unwrap()))
         .sum::<u64>();
     assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
-        used + if arm=="PROTECTED_ONLY"{192}else if pinned.is_some(){64}else{0}
-        - reclaimed);
+        used + fully_protected_pin_bytes +
+        if pinned.is_some(){64}else{0} - reclaimed);
     let (vm_after,action_after)=spend(&w);
     println!("S29_RESOURCE_GATE {arm} root={root} \
         observed_step={observed_step} free={} a_remaining={} \
