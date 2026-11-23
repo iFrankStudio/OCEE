@@ -310,3 +310,71 @@ pub fn s29_feedback_repair_root(p1:&str,p2:&str)->Program{
     root.validate().expect("S29 bounded feedback repair and CAS adoption");
     root
 }
+
+
+/// A first-example collision does not make an inherited tool correct:
+/// its genuine second EXEC may still disagree with the public second label.
+/// Recover the full two-label task through a *paid* public Read; reselect
+/// within the already disclosed 3-op grammar and CAS-adopt the new version.
+/// Crucially, the post-repair second EXEC follows a separate one-pass graph,
+/// so no control path can restart repair indefinitely or bypass VM limits.
+pub fn s29_second_label_repair_root(p1:&str,p2:&str)->Program{
+    let mut root=s29_feedback_repair_root(p1,p2);
+    let f=&mut root.functions[0];
+    let second=f.blocks.iter_mut().find(|b|b.id=="s29_check2_ok")
+        .expect("initial second labelled Exec must remain observable");
+    second.terminator=br(6514,"s29_held",vec![202,203],
+        "s29_second_recover_read",vec![]);
+    let repaired_first=f.blocks.iter_mut()
+        .find(|b|b.id=="s29_repaired_result")
+        .expect("the repaired first check is already single-pass");
+    repaired_first.terminator=br(6938,"s29_repaired_check2",
+        vec![101,103,104,105],"failed",vec![]);
+    // Exactly the same typed arithmetic and feedback validation as
+    // the original second public sample, but no edge back to repair.
+    let mut second_exec=f.blocks.iter()
+        .find(|b|b.id=="s29_check2").unwrap().clone();
+    second_exec.id="s29_repaired_check2".into();
+    if let Terminator::Yield{next,..}=&mut second_exec.terminator{
+        *next="s29_repaired_check2_reply".into();
+    }else{panic!("second check must actually yield a paid Exec");}
+    let mut second_reply=f.blocks.iter()
+        .find(|b|b.id=="s29_check2_reply").unwrap().clone();
+    second_reply.id="s29_repaired_check2_reply".into();
+    if let Terminator::Branch{if_true,..}=&mut second_reply.terminator{
+        *if_true="s29_repaired_check2_ok".into();
+    }else{panic!("second check must distinguish failed Exec");}
+    let mut second_ok=f.blocks.iter()
+        .find(|b|b.id=="s29_check2_ok").unwrap().clone();
+    second_ok.id="s29_repaired_check2_ok".into();
+    second_ok.terminator=br(6514,"s29_held",vec![202,203],
+        "failed",vec![]);
+    let b=Type::Bytes;
+    // The old second-sample success path no longer carries the first
+    // sample, so recover both labels via a real charged public Read.
+    let sample_instrs=f.blocks.iter()
+        .find(|bl|bl.id=="s29_sample")
+        .unwrap().instructions.iter()
+        .filter(|inst|inst.id!=6018)
+        .cloned().collect::<Vec<_>>();
+    f.blocks.extend([
+        bl("s29_second_recover_read",vec![],vec![
+            i(7010,lit(b"/public/E001/transform"))
+        ],y(WorldCall::Read,vec![7010],
+            "s29_second_recover_reply",vec![])),
+        bl("s29_second_recover_reply",vec![p(7011,b)],vec![
+            i(7012,lit(b"code")),
+            i(7013,Op::JsonFieldString(7011,7012)),
+            i(7014,lit(b"Ok")),
+            i(7015,Op::EqBytes(7013,7014)),
+        ],br(7015,"s29_second_recover_parse",vec![7011],
+            "failed",vec![])),
+        bl("s29_second_recover_parse",vec![p(6001,b)],
+            sample_instrs,
+            j("s29_len1",vec![6012,6013,6014,6015,6017])),
+        second_exec,second_reply,second_ok
+    ]);
+    root.validate().expect(
+        "S29 second labelled feedback repair must stay statically bounded");
+    root
+}
