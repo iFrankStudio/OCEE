@@ -933,6 +933,29 @@ impl World {
                 ActionResult::ok(view, 1, 0)
             }
             Action::Read {key,..} => {
+                // Development-only own-resource sensor, not a hidden task
+                // oracle or a privileged version-list/read capability.
+                // Values are exact real kernel state, constrained to the
+                // VM's U32 typed observation range (never truncated).
+                if key=="/sys/resource-status" {
+                    let used=self.state.organisms[&actor].storage_used;
+                    let cap=self.state.nodes[&NodeId::A].storage_capacity;
+                    let balance=self.state.nodes[&NodeId::A].gas_available;
+                    if u32::try_from(used).is_err() ||
+                        u32::try_from(cap).is_err() ||
+                        u32::try_from(balance).is_err() {
+                        return ActionResult::fail(Code::Quota);
+                    }
+                    let gas=2;
+                    if let Err(code)=self.spend_a_gas(gas) {
+                        return ActionResult::fail(code);
+                    }
+                    let left=self.state.nodes[&NodeId::A].gas_available;
+                    let payload=serde_json::to_vec(&serde_json::json!({
+                        "used":used,"capacity":cap,"a_available":left
+                    })).expect("own resources serializable");
+                    return ActionResult::ok(payload,gas,0);
+                }
                 // S40: ordinary metered per-actor metadata. This isn't a
                 // writable object, and exposes no code or secret data.
                 // It permits a restarted VM to use correct monotonic CAS
