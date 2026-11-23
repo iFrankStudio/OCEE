@@ -1,9 +1,7 @@
 name: S29 Paid Self-Version Catalog and Bounded VM Discovery
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-paid-catalog-discovery.yml'
+  # Verified native #45180137615: first paid catalog/VM discovery matrix 4/4.
+  # Manual rerun only when trusted catalog or index safety changes.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-paid-version-catalog-${{ github.ref }}
