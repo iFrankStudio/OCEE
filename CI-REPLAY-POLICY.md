@@ -135,3 +135,10 @@ Initial compile-only failure [#44991946675](https://github.com/iFrankStudio/OCEE
 研究者先在[预冻结协议](./experiments/E001/DEV-S29-CROSS-EPOCH-CERTIFICATE-CHURN-PROTOCOL.md)写入QUIET、BEFORE_INDEX、AFTER_INDEX、EPOCH_GAP固定四臂，随后只给`.github/workflows/s29-benign-index-churn.yml`新增一次对相应测试和自身文件路径限定的push触发，未触发所有S29/P2历史工作流。首次[原生Run #45151720848](https://github.com/iFrankStudio/OCEE/actions/runs/45151720848) @`e12f53c91617ade9aac3722552055990b250eef5` **4个真实Rust job均1/1通过，0编译红、0机制红，completed/success**。同根、同P2 B20业务、同三候选834B，正常1B外部Write在Index后诱发额外1667A扫描，维护累计VM+Action A1887→3888；跨epoch snapshot保持真实continuation及全部audit重放等值。账本和限制不在CI政策重复扩写，以研究协议为准。
 
 本次只验收独立四臂研究测试，不追认全工作区Rust通过。后续工作流改回`workflow_dispatch` only；如要复核手动选S29 Paid Benign Certificate Churn and Cross-Epoch Continuation，而不是每次碰共享内核都自动跑四臂。文档变更使用`[skip ci]`，严格禁止为节省开销抹除历史失败或虚报认证结果。
+
+
+## 2026-11-23 — S29安全短写入认证证书首次原生4/4
+
+先提交[执行前冻结协议](./experiments/E001/DEV-S29-CERTIFIED-SHORT-WRITE-PRESERVATION.md) @443dac77，再实现World::apply_action中现有Write有偿安全保留及四臂原生对照，并仅一次创建路径限定`.github/workflows/s29-certified-short-write.yml`的push触发验证。**[原生Run #45156166086](https://github.com/iFrankStudio/OCEE/actions/runs/45156166086) @da177c8ea2578865057b7a8ecaf64d887f7b8a1d completed/success，4个独立Rust job各1/1通过，未有本轮编译或行为红例。** SHORT_WRITE/FAILED_CAS各只需1次1667A索引、真实回收834B、VM191+Action1697=1888A；LIVE_HASH_PIN真实保留64B活引用且GC两次Conflict；OLD_REF_REMOVED正确保持旧引用超集，直到另一次付费全索引才允许回收。与上轮相同世界轨迹但旧内核AFTER_INDEX合计3888A的开发配对差**节省2000A**。此专项4/4是实现与安全验收，不代表整个Rust workspace已新一轮全绿；完整指标见[研究报告](./experiments/E001/DEV-S29-CERTIFIED-SHORT-WRITE-PRESERVATION.md)。
+
+归档后将专项工作流恢复为**`workflow_dispatch` only**，以后仅在引用追踪或写入预失效语义改变时有针对性复核；保留S29旧失效行为的原生证据，不让旧基线自动触发消耗CI资源。
