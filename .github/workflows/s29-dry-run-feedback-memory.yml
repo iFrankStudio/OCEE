@@ -1,0 +1,27 @@
+name: S29 Paid Dry-Run Memory, One-Round Cooldown and Recovery
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-dry-run-feedback-memory.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-dry-memory-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-paid-dry-run:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [PAIRED_INDISTINGUISHABILITY, DRY_REPEAT, RELEASE_AFTER_COOLDOWN, STALE_MEMORY_CAS]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_DRY_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native paid observation indistinguishability and persistent risk feedback
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_dry_run_memory_native -- --ignored --show-output
