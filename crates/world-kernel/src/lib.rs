@@ -966,6 +966,61 @@ impl World {
                 ActionResult::ok(view, 1, 0)
             }
             Action::Read {key,..} => {
+                // Development-only, paid, owner-only immutable program catalog.
+                // A catalog lists installed SELF versions, not garbage-safe
+                // candidates. Only the real kernel ReclaimIndexedVersion may
+                // decide whether a reported hash is currently reclaimable.
+                if let Some(raw_page)=key.strip_prefix("/sys/self-version-catalog/"){
+                    let page=match raw_page.parse::<u32>(){
+                        Ok(p) if p<=127 && p.to_string()==raw_page=>p,
+                        _=>return ActionResult::fail(Code::BadRequest),
+                    };
+                    let mut versions=Vec::<(u64,String)>::new();
+                    let mut scanned_key_bytes=0u64;
+                    for (object_key,object) in &self.state.objects {
+                        let Some(hash)=object_key.strip_prefix("/self/versions/")
+                            else{continue};
+                        if object.owner!=actor || hash.len()!=64 ||
+                            !hash.bytes().all(|b|b.is_ascii_digit() ||
+                                (b'a'..=b'f').contains(&b)){
+                            continue;
+                        }
+                        scanned_key_bytes=match scanned_key_bytes
+                            .checked_add(object_key.len() as u64){
+                            Some(n)=>n,None=>return ActionResult::fail(Code::Quota)
+                        };
+                        if u32::try_from(object.bytes.len()).is_err(){
+                            return ActionResult::fail(Code::Quota);
+                        }
+                        versions.push((object.bytes.len() as u64,hash.into()));
+                        if versions.len()>1024 {
+                            return ActionResult::fail(Code::Quota);
+                        }
+                    }
+                    // Prefer cheaper physical reclaim candidates without
+                    // exposing active/registered/ref-count protection status.
+                    versions.sort();
+                    const PAGE_SIZE:usize=8;
+                    let start=page as usize * PAGE_SIZE;
+                    let count=versions.len().saturating_sub(start).min(PAGE_SIZE);
+                    let entries=versions.iter().skip(start).take(count)
+                        .map(|(bytes,hash)|serde_json::json!({
+                            "hash":hash,"bytes":bytes
+                        })).collect::<Vec<_>>();
+                    let payload=serde_json::to_vec(&serde_json::json!({
+                        "page":page,"count":count,"total":versions.len(),
+                        "entries":entries
+                    })).expect("version catalog metadata serializable");
+                    let scanned=match scanned_key_bytes
+                        .checked_add(payload.len() as u64) {
+                        Some(n)=>n,None=>return ActionResult::fail(Code::Quota)
+                    };
+                    let gas=2+scanned.div_ceil(64);
+                    if let Err(code)=self.spend_a_gas(gas){
+                        return ActionResult::fail(code);
+                    }
+                    return ActionResult::ok(payload,gas,0);
+                }
                 // Development-only, atomic own-object CAS observation:
                 // strictly map canonical suffixes to the requesting actor's
                 // existing /self/ data. No public, system, or cross-actor
