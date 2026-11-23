@@ -3404,3 +3404,438 @@ fn p2_two_coordinate_native(){
     assert_eq!(world.state_hash(),
         World::from_snapshot(&world.snapshot_json()).unwrap().state_hash());
 }
+
+
+/// An independently constructed, metered pure-VM reference verifier.
+/// Input = actual 16B little-endian FOLD32 operands || 4B claimed result.
+/// It uses the alternate power-of-two/bit-carry rotation program, rather
+/// than trusting the candidate's output or a VM-native FOLD opcode.
+/// IMPORTANT: the researcher authors/trusts this verifier; it is not an
+/// organism-discovered proof nor an untrusted proof certificate.
+fn exact_fold4_claim_verifier()->Program{
+    use ocee_organism_vm::{Block,Instruction,Op,Param,Terminator,Type};
+    let mut program=alternate_fold4_vm_program();
+    let f=&mut program.functions[0];
+    let entry=&mut f.blocks[0];
+    let computed=match entry.terminator{
+        Terminator::Return{value}=>value,
+        _=>panic!("reference algorithm must terminate normally")
+    };
+    let mut reg=entry.instructions.iter().map(|i|i.id).max().unwrap()+1;
+    let mut emit=|op:Op|{
+        let id=reg;
+        entry.instructions.push(Instruction{id,op});
+        reg+=1;
+        id
+    };
+    let zero=emit(Op::ConstU32(0));
+    let mut claim=zero;
+    for byte in 0u32..4{
+        let index=emit(Op::ConstU32(16+byte));
+        let mut part=emit(Op::ByteAt(0,index));
+        for _ in 0..(8*byte){
+            part=emit(Op::Add(part,part));
+        }
+        claim=emit(Op::Add(claim,part));
+    }
+    let equals=emit(Op::EqU32(computed,claim));
+    entry.terminator=Terminator::Branch{
+        condition:equals,
+        if_true:"ok".into(),true_args:vec![],
+        if_false:"bad".into(),false_args:vec![]
+    };
+    f.blocks.push(Block{
+        id:"ok".into(),params:vec![],
+        instructions:vec![Instruction{id:reg,op:Op::ConstU32(1)}],
+        terminator:Terminator::Return{value:reg}
+    });
+    f.blocks.push(Block{
+        id:"bad".into(),params:vec![],
+        instructions:vec![Instruction{id:reg+1,op:Op::ConstU32(0)}],
+        terminator:Terminator::Return{value:reg+1}
+    });
+    program.validate().expect("genuine full-input reference checker");
+    program
+}
+
+/// Deliberately compromised trust anchor: same typed U32 signature but
+/// unconditional 'accept'. The active root must demonstrate that it
+/// cannot infer correctness from Exec Ok without trusting/checking its
+/// verifier's identity and semantic specification.
+fn compromised_claim_verifier()->Program{
+    use ocee_organism_vm::{Block,Function,Instruction,Op,Param,Terminator,Type};
+    let program=Program{
+        format_version:1,
+        entry_function:"main".into(),
+        functions:vec![Function{
+            name:"main".into(),
+            args:vec![Type::Bytes],returns:Type::U32,
+            blocks:vec![Block{
+                id:"entry".into(),
+                params:vec![Param{id:0,ty:Type::Bytes}],
+                instructions:vec![Instruction{
+                    id:1,op:Op::ConstU32(1)
+                }],
+                terminator:Terminator::Return{value:1}
+            }]
+        }]
+    };
+    program.validate().expect("compromised but well-typed verifier");
+    program
+}
+
+/// Active root uses the existing real feedback-chosen primary tool,
+/// then a *different*, paid pure-VM checker on exact operands + claim.
+/// Its checker hash is loaded from a normal paid registry; the host does
+/// not inject any answer and the root is identical across four arms.
+fn p2_paid_exact_claim_checker_root()->Program{
+    use ocee_organism_vm::{Block,Instruction,Op,Param,Terminator,Type,WorldCall};
+    fn lit(v:&[u8])->Op{
+        Op::ConstBytes{hex:v.iter().map(|x|format!("{x:02x}")).collect()}
+    }
+    fn p(id:u32)->Param{Param{id,ty:Type::Bytes}}
+    fn i(id:u32,op:Op)->Instruction{Instruction{id,op}}
+    fn br(c:u32,t:&str,ta:Vec<u32>,f:&str,fa:Vec<u32>)->Terminator{
+        Terminator::Branch{
+            condition:c,if_true:t.into(),true_args:ta,
+            if_false:f.into(),false_args:fa
+        }
+    }
+    let mut root=p2_semantic_ok_registry_root();
+    let f=&mut root.functions[0];
+    let accepted=f.blocks.iter_mut()
+        .find(|x|x.id=="equal_local_exec_reply")
+        .expect("candidate must make genuine paid Exec");
+    accepted.terminator=br(17304,"ck_key_read",vec![17300],
+        "failed",vec![]);
+    f.blocks.extend([
+        Block{
+            id:"ck_key_read".into(),params:vec![p(21000)],
+            instructions:vec![
+                i(21001,lit(b"/self/work/exact-fold-checker"))
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Read,args:vec![21001],
+                next:"ck_key_reply".into(),next_args:vec![21000]
+            }
+        },
+        Block{
+            id:"ck_key_reply".into(),params:vec![p(21000),p(21010)],
+            instructions:vec![
+                i(21011,lit(b"code")),
+                i(21012,Op::JsonFieldString(21010,21011)),
+                i(21013,lit(b"Ok")),
+                i(21014,Op::EqBytes(21012,21013))
+            ],
+            terminator:br(21014,"ck_job_read",
+                vec![21000,21010],"failed",vec![])
+        },
+        Block{
+            id:"ck_job_read".into(),params:vec![p(21000),p(21020)],
+            instructions:vec![
+                i(21021,lit(b"payload")),
+                i(21022,Op::JsonFieldBytes(21020,21021)),
+                i(21023,lit(REMOTE_VALUES.as_bytes()))
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Read,args:vec![21023],
+                next:"ck_job_reply".into(),next_args:vec![21000,21022]
+            }
+        },
+        Block{
+            id:"ck_job_reply".into(),
+            params:vec![p(21000),p(21030),p(21031)],
+            instructions:vec![
+                i(21032,lit(b"code")),
+                i(21033,Op::JsonFieldString(21031,21032)),
+                i(21034,lit(b"Ok")),
+                i(21035,Op::EqBytes(21033,21034))
+            ],
+            terminator:br(21035,"ck_verify_exec",
+                vec![21000,21030,21031],"failed",vec![])
+        },
+        Block{
+            id:"ck_verify_exec".into(),
+            params:vec![p(21000),p(21040),p(21041)],
+            instructions:vec![
+                i(21042,lit(b"payload")),
+                i(21043,Op::JsonFieldBytes(21041,21042)),
+                i(21044,Op::JsonFieldBytes(21000,21042)),
+                i(21045,lit(b"U32")),
+                i(21046,Op::JsonFieldU32(21044,21045)),
+                i(21047,Op::ConstU32(65536)),
+                i(21048,Op::Mod(21046,21047)),
+                i(21049,Op::Div(21046,21047)),
+                i(21050,Op::PackU16Le(21048)),
+                i(21051,Op::PackU16Le(21049)),
+                i(21052,Op::Concat(21050,21051)),
+                i(21053,Op::Concat(21043,21052))
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Exec,args:vec![21040,21053],
+                next:"ck_verify_reply".into(),next_args:vec![21000]
+            }
+        },
+        Block{
+            id:"ck_verify_reply".into(),
+            params:vec![p(21000),p(21060)],
+            instructions:vec![
+                i(21061,lit(b"code")),
+                i(21062,Op::JsonFieldString(21060,21061)),
+                i(21063,lit(b"Ok")),
+                i(21064,Op::EqBytes(21062,21063))
+            ],
+            terminator:br(21064,"ck_accept",
+                vec![21000,21060],"failed",vec![])
+        },
+        Block{
+            id:"ck_accept".into(),
+            params:vec![p(21000),p(21070)],
+            instructions:vec![
+                i(21071,lit(b"payload")),
+                i(21072,Op::JsonFieldBytes(21070,21071)),
+                i(21073,lit(&serde_json::to_vec(&Value::U32(1)).unwrap())),
+                i(21074,Op::EqBytes(21072,21073))
+            ],
+            terminator:br(21074,"equal_local_pack",
+                vec![21000],"failed",vec![])
+        }
+    ]);
+    // The inherited S45 root retains retired routes. Cut only true
+    // entry-unreachable blocks, never the branch to the shared P1
+    // learning chain, its paid actions, or the exact checker path.
+    let mut reachable=std::collections::BTreeSet::<String>::new();
+    let mut pending=vec![f.blocks[0].id.clone()];
+    while let Some(id)=pending.pop(){
+        if !reachable.insert(id.clone()){continue;}
+        let node=f.blocks.iter().find(|b|b.id==id)
+            .expect("all reachable jump targets must exist");
+        match &node.terminator{
+            Terminator::Return{..}=>(),
+            Terminator::Jump{target,..}=>pending.push(target.clone()),
+            Terminator::Branch{if_true,if_false,..}=>{
+                pending.push(if_true.clone());
+                pending.push(if_false.clone());
+            },
+            Terminator::RepeatBounded{body,done,..}|
+            Terminator::RepeatScoped{body,done,..}=>{
+                pending.push(body.clone());
+                pending.push(done.clone());
+            },
+            Terminator::Yield{next,..}=>pending.push(next.clone())
+        }
+    }
+    f.blocks.retain(|b|reachable.contains(&b.id));
+    println!("P2_EXACT_CHECKER_ROOT blocks={} bytes={}",
+        f.blocks.len(),root.canonical_bytes().len());
+    root.validate().expect("exact checker must fit P2 typed root limits");
+    root
+}
+
+/// Four native paid full-task trajectories. A successful compromised
+/// verifier arm is intentionally a scientifically negative false success.
+#[test]
+#[ignore = "four paid full-result checker and compromised verifier trajectories"]
+fn p2_exact_checker_native(){
+    use ocee_organism_vm::run_isolated;
+    let arm=std::env::var("OCEE_P2_EXACT_ARM").expect("matrix condition");
+    assert!(["VALID","PLUS_ONE","RESIDUAL_FAULT","COMPROMISED_CHECKER"]
+        .contains(&arm.as_str()));
+    let correct=local_fold4_vm_program();
+    let plus_one=corrupted_fold4_ok();
+    let residual=invariant_tail_from_byte2(local_fold4_vm_program());
+    let reference=exact_fold4_claim_verifier();
+    let compromised=compromised_claim_verifier();
+    let candidate=match arm.as_str(){
+        "VALID"=>&correct,
+        "PLUS_ONE"=>&plus_one,
+        "RESIDUAL_FAULT"|"COMPROMISED_CHECKER"=>&residual,
+        _=>unreachable!()
+    };
+    let checker=if arm=="COMPROMISED_CHECKER"{
+        &compromised
+    }else{&reference};
+    let candidate_hash=candidate.content_hash().unwrap();
+    let checker_hash=checker.content_hash().unwrap();
+    assert_ne!(checker_hash,candidate_hash);
+    for numbers in [
+        [0u32,0,0,0],
+        [u32::MAX,u32::MAX,u32::MAX,u32::MAX],
+        [1,2,3,4],
+        [0x8000_0000,0x7fff_ffff,0x8000_0001,1]
+    ]{
+        let truth=fold32(&numbers).unwrap();
+        let args=numbers.iter().flat_map(|x|x.to_le_bytes())
+            .chain(truth.to_le_bytes()).collect::<Vec<_>>();
+        let (out,gas)=run_isolated(&reference,args.clone(),20_000)
+            .expect("independent real checker must accept true claim");
+        assert_eq!(out,Value::U32(1));
+        assert!(gas>0);
+        let wrong=numbers.iter().flat_map(|x|x.to_le_bytes())
+            .chain(truth.wrapping_add(1).to_le_bytes())
+            .collect::<Vec<_>>();
+        let (out,_) =run_isolated(&reference,wrong,20_000)
+            .expect("independent exact checker must reject wrong claim");
+        assert_eq!(out,Value::U32(0));
+    }
+    let root=p2_paid_exact_claim_checker_root();
+    let root_hash=root.content_hash().unwrap();
+    let mut w=boot_with_protocol_seed_budget(
+        8,2027,12_000,s45_p2_scoped_result_wait(),root
+    );
+    for tool in [candidate,checker]{
+        let hash=tool.content_hash().unwrap();
+        let installed=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,
+            key:format!("/self/versions/{hash}"),
+            expected_version:None,bytes:tool.canonical_bytes()
+        }));
+        assert_eq!(installed.code,Code::Ok,"pure program install must pay");
+    }
+    for (path,value) in [
+        ("/self/work/local-fold-candidate",&candidate_hash),
+        ("/self/work/exact-fold-checker",&checker_hash)
+    ]{
+        let stored=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,
+            key:path.into(),expected_version:None,
+            bytes:value.as_bytes().to_vec()
+        }));
+        assert_eq!(stored.code,Code::Ok,"paid registry write");
+    }
+    let genesis=w.audit.iter().map(|a|
+        a.result.vm_gas_charged+a.result.gas_charged).sum::<u64>();
+    assert_eq!(genesis+w.state.nodes[&NodeId::A].gas_available,12_000);
+    let before=w.state_hash();
+    assert_eq!(before,
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+    let mut gas_refused=0usize;
+    let mut invalid=0usize;
+    for _ in 0..14_000{
+        let outcome=w.tick_autonomous(ORGANISM_ID);
+        if outcome.code==Code::Gas{gas_refused+=1;}
+        if matches!(outcome.code,Code::Denied|Code::InvalidCode){invalid+=1;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let host=&w.state.organisms[&ORGANISM_ID];
+    let finished=host.vm_continuation.as_ref()
+        .is_some_and(|c|c.finished);
+    let returned=host.last_return.clone();
+    let claimed=finished&&returned==Some(Value::U32(1));
+    if !w.state.objects.contains_key(REMOTE_VALUES){
+        println!(
+            "P2_EXACT_EARLY arm={arm} return={returned:?} finished={finished} \\
+             init_A={genesis} step={} Gas={gas_refused} Invalid={invalid}",
+            w.state.step
+        );
+        for x in w.audit.iter().rev().filter(|a|a.action.is_some()).take(16){
+            println!(
+                "P2_EXACT_EARLY_AUDIT step={} code={:?} vm={} actionA={} action={:?}",
+                x.step,x.result.code,x.result.vm_gas_charged,
+                x.result.gas_charged,x.action.as_ref().map(std::mem::discriminant)
+            );
+        }
+        panic!("real task must create operand object");
+    }
+    let original=&w.state.objects[REMOTE_VALUES].bytes;
+    assert_eq!(original.len(),16);
+    let operands=original.chunks_exact(4).map(|v|
+        u32::from_le_bytes(v.try_into().unwrap())).collect::<Vec<_>>();
+    let truth=fold32(&operands).unwrap();
+    let bias=original.iter().skip(2).map(|x|u32::from(*x)).sum::<u32>();
+    assert!(bias>0,"frozen residual attack is nonzero");
+    let candidate_expected=match arm.as_str(){
+        "VALID"=>truth,
+        "PLUS_ONE"=>truth.wrapping_add(1),
+        "RESIDUAL_FAULT"|"COMPROMISED_CHECKER"=>truth.wrapping_add(bias),
+        _=>unreachable!()
+    };
+    let expected_checker=if arm=="VALID"||arm=="COMPROMISED_CHECKER"{
+        1
+    }else{0};
+    let mut tool_out=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut checker_out=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut checker_inputs=Vec::<Vec<u8>>::new();
+    let mut c_sends=0usize;
+    for a in &w.audit{
+        match &a.action{
+            Some(Action::Exec{program_hash,input,..})
+                if program_hash==&candidate_hash=>{
+                assert_eq!(input.as_slice(),original.as_slice());
+                let output=if a.result.code==Code::Ok{
+                    let Value::U32(n)=serde_json::from_slice::<Value>(
+                        &a.result.payload).unwrap() else{
+                        panic!("tool must return typed U32")
+                    };
+                    Some(n)
+                }else{None};
+                tool_out.push((a.result.code,output,a.result.gas_charged));
+            },
+            Some(Action::Exec{program_hash,input,..})
+                if program_hash==&checker_hash=>{
+                checker_inputs.push(input.clone());
+                let output=if a.result.code==Code::Ok{
+                    let Value::U32(n)=serde_json::from_slice::<Value>(
+                        &a.result.payload).unwrap() else{
+                        panic!("checker must return typed U32")
+                    };
+                    Some(n)
+                }else{None};
+                checker_out.push((a.result.code,output,a.result.gas_charged));
+            },
+            Some(Action::Send{destination:NodeId::C,..})
+                if a.result.code==Code::Ok=>c_sends+=1,
+            _=>()
+        }
+    }
+    let mut exact_input=original.clone();
+    exact_input.extend(candidate_expected.to_le_bytes());
+    let stored=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|o|{
+            assert_eq!(o.bytes.len(),4);
+            u32::from_le_bytes(o.bytes[..4].try_into().unwrap())
+        });
+    let vm_a=w.audit.iter().map(|a|a.result.vm_gas_charged).sum::<u64>();
+    let actions_a=w.audit.iter().map(|a|a.result.gas_charged).sum::<u64>();
+    let b=b_total(&w);
+    println!(
+        "P2_EXACT_CHECKER arm={arm} root={root_hash} first={candidate_hash} \\
+         checker={checker_hash} prehash={before} genesis_A={genesis} \\
+         vm_A={vm_a} actions_A={actions_a} total_A={} \\
+         B={b} C_sends={c_sends} tool={tool_out:?} checker={checker_out:?} \\
+         exact_input={checker_inputs:?} truth={truth} bias={bias} \\
+         claimed={claimed} return={returned:?} stored={stored:?} \\
+         Gas_refused={gas_refused} invalid={invalid} step={}",
+        vm_a+actions_a,w.state.step
+    );
+    assert!(finished);
+    assert_eq!(invalid,0);
+    assert_eq!(b,0);
+    assert_eq!(c_sends,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    assert_eq!(tool_out.iter().filter(|(c,v,_)|
+        *c==Code::Ok&&*v==Some(candidate_expected)).count(),1);
+    assert_eq!(checker_inputs,vec![exact_input],
+        "whole-input claim must actually reach paid checker");
+    assert_eq!(checker_out.len(),1);
+    assert_eq!(checker_out[0].0,Code::Ok);
+    assert_eq!(checker_out[0].1,Some(expected_checker));
+    assert!(checker_out[0].2>0);
+    if expected_checker==1{
+        assert!(claimed);
+        assert_eq!(stored,Some(candidate_expected));
+        if arm=="COMPROMISED_CHECKER"{
+            assert_ne!(stored,Some(truth),
+                "compromised checker must reveal false success");
+        }else{
+            assert_eq!(stored,Some(truth));
+        }
+    }else{
+        assert!(!claimed);
+        assert_eq!(returned,Some(Value::U32(0)));
+        assert_eq!(stored,None);
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}

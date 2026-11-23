@@ -1,0 +1,27 @@
+name: P2 Paid Exact-Result Verifier Trust Boundary
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2-paid-exact-checker.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-exact-checker-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-exact-checker:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [VALID, PLUS_ONE, RESIDUAL_FAULT, COMPROMISED_CHECKER]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_EXACT_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Genuine charged whole-input verifier and compromised trust anchor
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_exact_checker_native -- --ignored --show-output
