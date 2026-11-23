@@ -1,9 +1,7 @@
 name: S29 Metered Certified Short Write Preservation
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-certified-short-write.yml'
+  # Native #45156166086: first four-arm Rust run independently 4/4 passed.
+  # Re-run manually only when reference safety behavior changes.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-certified-short-write-${{ github.ref }}
