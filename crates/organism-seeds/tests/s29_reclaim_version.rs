@@ -1966,3 +1966,156 @@ fn s29_versioned_memory_native(){
         other=>panic!("unknown versioned metadata arm {other}")
     }
 }
+
+
+/// Frozen S29 follow-up: an unrelated one-byte own-object write is compared
+/// before and after a real paid reference-index build. No hash pin, new
+/// world/VM capability, reference-index mutation, or artificial CAS state.
+fn test_benign_churn_arm(arm:&str){
+    let (mut w,targets,root,new_hash,used)=setup_versioned_retry_world();
+    let start=w.state.step;
+    let (vm_before,action_before)=spend(&w);
+    let noise="/self/noise/s29-churn";
+    let mut branch_replay=false;
+    if arm=="BEFORE_INDEX"{
+        put(&mut w,noise.into(),b"x".to_vec());
+    }
+    if matches!(arm,"AFTER_INDEX"|"EPOCH_GAP"){
+        // Pause only after the VM's actual charged kernel Index action.
+        advance_to_true_index(&mut w);
+        assert!(w.state.version_ref_index.is_some());
+        put(&mut w,noise.into(),b"x".to_vec());
+        assert!(w.state.version_ref_index.is_none(),
+            "unrelated paid own-object write should invalidate index");
+        let mut memory_persisted=false;
+        for _ in 0..40{
+            let outcome=w.tick_autonomous(ORGANISM_ID);
+            assert!(!matches!(outcome.code,Code::Denied|Code::InvalidCode));
+            if matches!(&w.audit.last().unwrap().action,
+                Some(Action::Write{key,bytes,..})
+                    if key==S29_RISK_KEY&&bytes==b"1"){
+                assert_eq!(outcome.code,Code::Ok);
+                memory_persisted=true;break;
+            }
+        }
+        assert!(memory_persisted,
+            "real stale certificate must cause Conflict and paid risk1 CAS");
+        verify_memory(&w,b"1",0);
+        assert_eq!(gc_actions_since(&w,start).1,vec![Code::Conflict]);
+        if arm=="EPOCH_GAP"{
+            let old_epoch=w.state.step/w.state.config.epoch_length;
+            let continuation_before=serde_json::to_string(
+                &w.state.organisms[&ORGANISM_ID].vm_continuation).unwrap();
+            // The world keeps turning without this organism acting.
+            // One extra tick makes the next epoch's grant real.
+            while w.state.step/w.state.config.epoch_length==old_epoch{
+                w.tick(None);
+            }
+            w.tick(None);
+            assert!(w.state.step/w.state.config.epoch_length>old_epoch);
+            assert_eq!(serde_json::to_string(
+                &w.state.organisms[&ORGANISM_ID].vm_continuation).unwrap(),
+                continuation_before,
+                "the host's no-actor ticks cannot advance the VM");
+            verify_memory(&w,b"1",0);
+            let mut copy=World::from_snapshot(&w.snapshot_json()).unwrap();
+            run(&mut w,96);
+            run(&mut copy,96);
+            assert_eq!(w.snapshot_json(),copy.snapshot_json(),
+                "post-epoch live continuation/audit must replay exactly");
+            branch_replay=true;
+        }
+    }
+    if !branch_replay{
+        run(&mut w,96);
+    }
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)),"same bounded VM must reclaim all three");
+    let (indexes,gc,risk_writes)=gc_actions_since(&w,start);
+    let expected_gc=if matches!(arm,"AFTER_INDEX"|"EPOCH_GAP"){
+        vec![Code::Conflict,Code::Ok,Code::Ok,Code::Ok]
+    }else{vec![Code::Ok,Code::Ok,Code::Ok]};
+    assert_eq!(gc,expected_gc);
+    assert_eq!(indexes,
+        if matches!(arm,"AFTER_INDEX"|"EPOCH_GAP"){2}else{1});
+    if matches!(arm,"AFTER_INDEX"|"EPOCH_GAP"){
+        verify_memory(&w,b"0",1);
+        assert_eq!(risk_writes.len(),2);
+        assert_eq!(
+            risk_writes.iter().map(|(bytes,code,_)|(bytes.clone(),*code))
+                .collect::<Vec<_>>(),
+            vec![(b"1".to_vec(),Code::Ok),(b"0".to_vec(),Code::Ok)]);
+        assert!(risk_writes.iter().all(|(_,_,cost)|*cost>0));
+    }else{
+        assert!(!w.state.objects.contains_key(S29_RISK_KEY));
+        assert!(risk_writes.is_empty());
+    }
+    for hash in &targets{
+        assert!(!w.state.objects.contains_key(&version_key(hash)));
+    }
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(w.state.objects["/self/active"].bytes,root.as_bytes());
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used+u64::from(arm!="QUIET")
+            +u64::from(matches!(arm,"AFTER_INDEX"|"EPOCH_GAP"))-834);
+    assert_eq!(count_internal_active_switches(&w,start),0);
+    assert_eq!(b_gas(&w),20,"original P2 service may not run twice");
+    let mut index_gas=Vec::new();
+    let mut gc_gas=Vec::new();
+    let mut environment_gas=Vec::new();
+    for event in w.audit.iter().filter(|e|e.step>=start){
+        match &event.action{
+            Some(Action::IndexVersionRefs{..})=>
+                index_gas.push(event.result.gas_charged),
+            Some(Action::ReclaimIndexedVersion{..})=>
+                gc_gas.push((event.result.code,event.result.gas_charged)),
+            Some(Action::Write{key,..}) if key==noise=>
+                environment_gas.push(event.result.gas_charged),
+            _=>{}
+        }
+    }
+    assert_eq!(index_gas.len(),indexes);
+    assert!(index_gas.iter().all(|cost|*cost>0));
+    assert_eq!(environment_gas.len(),if arm=="QUIET"{0}else{1});
+    if arm!="QUIET"{assert!(environment_gas[0]>0);}
+    assert_eq!(gc_gas.iter().map(|x|x.0).collect::<Vec<_>>(),gc);
+    assert!(gc_gas.iter().filter(|x|x.0==Code::Ok).all(|x|x.1>0));
+    if matches!(arm,"AFTER_INDEX"|"EPOCH_GAP"){
+        let ix=w.audit.iter().find(|e|e.step>=start&&
+            matches!(e.action,Some(Action::IndexVersionRefs{..})))
+            .unwrap().step;
+        let write=w.audit.iter().find(|e|e.step>=start&&
+            matches!(&e.action,Some(Action::Write{key,..})
+                if key==noise)).unwrap().step;
+        let conflict=w.audit.iter().find(|e|e.step>=start&&
+            matches!(e.action,Some(Action::ReclaimIndexedVersion{..})))
+            .unwrap().step;
+        assert!(ix<write&&write<conflict,
+            "researcher mutation must follow paid index before real GC");
+    }
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    let (vm_after,action_after)=spend(&w);
+    println!("S29_CHURN {arm} root={root} indexes={indexes} \
+        index_A={index_gas:?} gc={gc:?} gc_A={gc_gas:?} \
+        researcher_noise_A={environment_gas:?} \
+        maintenance_plus_environment_VM_A={} \
+        maintenance_plus_environment_Action_A={} \
+        storage_delta={} B={} final_step={} final_epoch={} replay={} \
+        all_834B_reclaimed=true",
+        vm_after-vm_before,action_after-action_before,
+        (w.state.organisms[&ORGANISM_ID].storage_used as i64)-(used as i64),
+        b_gas(&w),w.state.step,
+        w.state.step/w.state.config.epoch_length,branch_replay);
+}
+#[test]
+#[ignore="paid S29 unrelated write timing and cross-epoch continuation"]
+fn s29_benign_churn_native(){
+    let arm=std::env::var("OCEE_S29_CHURN_ARM")
+        .expect("frozen benign index churn arm");
+    match arm.as_str(){
+        "QUIET"|"BEFORE_INDEX"|"AFTER_INDEX"|"EPOCH_GAP"=>
+            test_benign_churn_arm(&arm),
+        _=>panic!("unknown benign churn arm {arm}")
+    }
+}
