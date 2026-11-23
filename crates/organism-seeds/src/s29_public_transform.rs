@@ -260,7 +260,7 @@ pub fn s29_feedback_repair_root(p1:&str,p2:&str)->Program{
         .expect("old missing-only WRITE version flag").op=Op::ConstU32(0);
     let feedback=f.blocks.iter_mut().find(|b|b.id=="s29_registered")
         .expect("real write feedback");
-    feedback.terminator=br(6333,"s29_check1",plus(ids(),105),
+    feedback.terminator=br(6333,"s29_repaired_check1",plus(ids(),105),
         "s29_cas_conflict",plus(plus(ids(),105),6331));
     let b=Type::Bytes;
     f.blocks.extend([
@@ -283,7 +283,29 @@ pub fn s29_feedback_repair_root(p1:&str,p2:&str)->Program{
             i(6925,Op::JsonFieldString(106,6924)),
             i(6926,lit(b"Ok")),
             i(6927,Op::EqBytes(6925,6926)),
-        ],br(6927,"s29_check1",plus(ids(),105),"failed",vec![])),
+        ],br(6927,"s29_repaired_check1",plus(ids(),105),"failed",vec![])),
+        // A separate *single-pass* repaired validation graph. The initial
+        // check1 may branch back into candidate selection once, but this
+        // repaired check NEVER loops into selection. VM still forbids
+        // unbounded control-flow cycles; we do not change that verifier.
+        bl("s29_repaired_check1",extended(&[(105,b)]),vec![],
+            y(WorldCall::Exec,vec![105,100],
+                "s29_repaired_exec_reply",plus(ids(),105))),
+        bl("s29_repaired_exec_reply",extended(&[(105,b),(106,b)]),vec![
+            i(6930,lit(b"code")),
+            i(6931,Op::JsonFieldString(106,6930)),
+            i(6932,lit(b"Ok")),
+            i(6933,Op::EqBytes(6931,6932)),
+        ],br(6933,"s29_repaired_result",
+            plus(plus(ids(),105),106),"failed",vec![])),
+        bl("s29_repaired_result",extended(&[(105,b),(106,b)]),vec![
+            i(6934,lit(b"payload")),
+            i(6935,Op::JsonFieldBytes(106,6934)),
+            i(6936,lit(b"U32")),
+            i(6937,Op::JsonFieldU32(6935,6936)),
+            i(6938,Op::EqU32(6937,102)),
+        ],br(6938,"s29_check2",vec![101,103,104,105],
+            "failed",vec![])),
     ]);
     root.validate().expect("S29 bounded feedback repair and CAS adoption");
     root
