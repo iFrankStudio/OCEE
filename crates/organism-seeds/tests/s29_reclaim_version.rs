@@ -3309,3 +3309,526 @@ fn s29_resource_budget_gate_native(){
         other=>panic!("unknown resource gate arm {other}")
     }
 }
+
+
+// DEV S29: A researcher-authored, one-activation bounded feedback policy.
+// It does NOT know any installed program hash, receive a GC eligibility
+// oracle, or possess a new instruction/action. Negative discovery is only
+// inferred from actual charged Conflicts and persisted via paid own CAS.
+const S29_DRY_META:&str="/sys/self-object/maintenance/s29-dry-run";
+const S29_DRY_KEY:&str="/self/maintenance/s29-dry-run";
+fn dry_run_cooldown_root()->Program{
+    let mut p=resource_budget_catalog_root();
+    let f=&mut p.functions[0];
+    let old_entry=f.blocks.iter_mut().find(|b|b.id=="entry").unwrap();
+    old_entry.id="maintenance_entry".into();
+    let exhausted=f.blocks.iter_mut().find(|b|b.id=="search_header").unwrap();
+    assert!(matches!(&exhausted.terminator,Terminator::RepeatBounded{..}));
+    if let Terminator::RepeatBounded{done,done_args,..}=&mut exhausted.terminator{
+        *done="mark_dry".into();
+        done_args.clear();
+    }
+    let no_more=f.blocks.iter_mut().find(|b|b.id=="check_count").unwrap();
+    if let Terminator::Branch{if_true,true_args,..}=&mut no_more.terminator{
+        assert_eq!(if_true,"failed");
+        *if_true="mark_dry".into();
+        true_args.clear();
+    }else{panic!("existing finite search guard lost");}
+    let response_code=|reg:u32,expected:&[u8]|vec![
+        Instruction{id:30,op:lit(b"code")},
+        Instruction{id:31,op:Op::JsonFieldString(reg,30)},
+        Instruction{id:32,op:lit(expected)},
+        Instruction{id:33,op:Op::EqBytes(31,32)}
+    ];
+    let reply_param=||vec![Param{id:2,ty:Type::Bytes}];
+    let prefix=vec![
+        Block{
+            id:"entry".into(),
+            params:vec![Param{id:0,ty:Type::Bytes}],
+            instructions:vec![],
+            terminator:Terminator::Jump{
+                target:"round_header".into(),args:vec![]
+            }
+        },
+        Block{
+            id:"round_header".into(),params:vec![],
+            instructions:vec![],
+            terminator:Terminator::RepeatBounded{
+                limit:3,body:"probe_memory".into(),body_args:vec![],
+                done:"failed".into(),done_args:vec![]
+            }
+        },
+        Block{
+            id:"probe_memory".into(),params:vec![],
+            instructions:vec![Instruction{id:10,op:lit(S29_DRY_META.as_bytes())}],
+            terminator:Terminator::Yield{
+                call:WorldCall::Read,args:vec![10],
+                next:"probe_memory_reply".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"probe_memory_reply".into(),params:reply_param(),
+            instructions:response_code(2,b"Ok"),
+            terminator:Terminator::Branch{
+                condition:33,if_true:"probe_memory_exists".into(),
+                true_args:vec![2],if_false:"probe_memory_missing".into(),
+                false_args:vec![2]
+            }
+        },
+        Block{
+            id:"probe_memory_missing".into(),params:reply_param(),
+            instructions:response_code(2,b"NotFound"),
+            terminator:Terminator::Branch{
+                condition:33,if_true:"start_uncached".into(),
+                true_args:vec![],if_false:"failed".into(),
+                false_args:vec![]
+            }
+        },
+        Block{
+            id:"start_uncached".into(),params:vec![],
+            instructions:vec![Instruction{id:1,op:lit(b"")}],
+            terminator:Terminator::Jump{
+                target:"maintenance_entry".into(),args:vec![1]
+            }
+        },
+        Block{
+            id:"probe_memory_exists".into(),params:reply_param(),
+            instructions:vec![
+                Instruction{id:10,op:lit(b"payload")},
+                Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+                Instruction{id:12,op:lit(b"bytes")},
+                Instruction{id:13,op:Op::JsonFieldBytes(11,12)},
+                Instruction{id:14,op:lit(b"version")},
+                Instruction{id:15,op:Op::JsonFieldU32(11,14)},
+                Instruction{id:16,op:lit(b"1")},
+                Instruction{id:17,op:Op::EqBytes(13,16)}
+            ],
+            terminator:Terminator::Branch{
+                condition:17,if_true:"cooldown_reset".into(),
+                true_args:vec![15],if_false:"probe_memory_zero".into(),
+                false_args:vec![13]
+            }
+        },
+        Block{
+            id:"probe_memory_zero".into(),
+            params:vec![Param{id:2,ty:Type::Bytes}],
+            instructions:vec![
+                Instruction{id:10,op:lit(b"0")},
+                Instruction{id:11,op:Op::EqBytes(2,10)}
+            ],
+            terminator:Terminator::Branch{
+                condition:11,if_true:"start_uncached".into(),
+                true_args:vec![],if_false:"failed".into(),
+                false_args:vec![]
+            }
+        },
+        Block{
+            id:"cooldown_reset".into(),
+            params:vec![Param{id:1,ty:Type::U32}],
+            instructions:vec![
+                Instruction{id:10,op:lit(S29_DRY_KEY.as_bytes())},
+                Instruction{id:11,op:lit(b"0")}
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Write,args:vec![10,11,1],
+                next:"cooldown_reset_reply".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"cooldown_reset_reply".into(),params:reply_param(),
+            instructions:response_code(2,b"Ok"),
+            terminator:Terminator::Branch{
+                condition:33,if_true:"wait_next".into(),true_args:vec![],
+                if_false:"failed".into(),false_args:vec![]
+            }
+        }
+    ];
+    // Only a completely exhausted real bounded catalog search can mark
+    // negative memory; unrelated gas, invalid input, missing certificate,
+    // corrupt feedback or lost CAS must fail without poisoning the record.
+    let suffix=vec![
+        Block{
+            id:"mark_dry".into(),params:vec![],
+            instructions:vec![Instruction{id:10,op:lit(S29_DRY_META.as_bytes())}],
+            terminator:Terminator::Yield{
+                call:WorldCall::Read,args:vec![10],
+                next:"mark_dry_reply".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"mark_dry_reply".into(),params:reply_param(),
+            instructions:response_code(2,b"Ok"),
+            terminator:Terminator::Branch{
+                condition:33,if_true:"mark_dry_existing".into(),
+                true_args:vec![2],if_false:"mark_dry_missing".into(),
+                false_args:vec![2]
+            }
+        },
+        Block{
+            id:"mark_dry_missing".into(),params:reply_param(),
+            instructions:response_code(2,b"NotFound"),
+            terminator:Terminator::Branch{
+                condition:33,if_true:"mark_dry_create".into(),
+                true_args:vec![],if_false:"failed".into(),
+                false_args:vec![]
+            }
+        },
+        Block{
+            id:"mark_dry_existing".into(),params:reply_param(),
+            instructions:vec![
+                Instruction{id:10,op:lit(b"payload")},
+                Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+                Instruction{id:12,op:lit(b"version")},
+                Instruction{id:13,op:Op::JsonFieldU32(11,12)}
+            ],
+            terminator:Terminator::Jump{
+                target:"mark_dry_write".into(),args:vec![13]
+            }
+        },
+        Block{
+            id:"mark_dry_create".into(),params:vec![],
+            instructions:vec![Instruction{id:1,op:Op::ConstU32(u32::MAX)}],
+            terminator:Terminator::Jump{
+                target:"mark_dry_write".into(),args:vec![1]
+            }
+        },
+        Block{
+            id:"mark_dry_write".into(),
+            params:vec![Param{id:1,ty:Type::U32}],
+            instructions:vec![
+                Instruction{id:10,op:lit(S29_DRY_KEY.as_bytes())},
+                Instruction{id:11,op:lit(b"1")}
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Write,args:vec![10,11,1],
+                next:"mark_dry_write_reply".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"mark_dry_write_reply".into(),params:reply_param(),
+            instructions:response_code(2,b"Ok"),
+            terminator:Terminator::Branch{
+                condition:33,if_true:"wait_next".into(),true_args:vec![],
+                if_false:"failed".into(),false_args:vec![]
+            }
+        },
+        Block{
+            id:"wait_next".into(),params:vec![],instructions:vec![],
+            terminator:Terminator::Yield{
+                call:WorldCall::Observe,args:vec![],
+                next:"after_observe".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"after_observe".into(),params:reply_param(),
+            instructions:vec![],
+            terminator:Terminator::Jump{
+                target:"round_header".into(),args:vec![]
+            }
+        }
+    ];
+    let mut old=std::mem::take(&mut f.blocks);
+    f.blocks=prefix;
+    f.blocks.append(&mut old);
+    f.blocks.extend(suffix);
+    p.validate().expect("bounded three-round fully typed paid feedback root");
+    p
+}
+fn setup_dry_run_world()->(World,Vec<String>,String,String,u64,Vec<String>){
+    let (mut w,old_hash,new_hash,_)=boot_repaired();
+    let mut candidates=vec![old_hash];
+    for tool in extra_unreferenced_tools(){
+        let h=tool.content_hash().unwrap();
+        put(&mut w,version_key(&h),tool.canonical_bytes());
+        candidates.push(h);
+    }
+    let p=dry_run_cooldown_root();
+    let raw=p.canonical_bytes();
+    assert!(candidates.iter().all(|h|
+        !raw.windows(64).any(|window|window==h.as_bytes())));
+    let root=p.content_hash().unwrap();
+    put(&mut w,version_key(&root),raw);
+    let metadata=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(metadata.code,Code::Ok);
+    let v:serde_json::Value=
+        serde_json::from_slice(&metadata.payload).unwrap();
+    alter(&mut w,"/self/active",root.as_bytes().to_vec(),
+        v["version"].as_u64().unwrap());
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+2048;
+    let versions=w.state.objects.iter().filter_map(|(k,obj)|{
+        let h=k.strip_prefix("/self/versions/")?;
+        (h.len()==64 && obj.owner==ORGANISM_ID).then_some(h.to_owned())
+    }).collect::<Vec<_>>();
+    assert!(candidates.iter().all(|h|versions.contains(h)));
+    assert!(versions.len()<=16);
+    assert_eq!(b_gas(&w),20);
+    (w,candidates,root,new_hash,used,versions)
+}
+fn paid_pin_all_dry(w:&mut World,versions:&[String],filler:bool){
+    for (i,hash) in versions.iter().enumerate(){
+        put(w,format!("/self/pins/s29-dry-{i}"),
+            if filler{vec![b'-';64]}else{hash.as_bytes().to_vec()});
+    }
+}
+fn paid_memory_value(w:&World)->(Vec<u8>,u64){
+    let obj=w.state.objects.get(S29_DRY_KEY)
+        .expect("real paid VM must own its negative-feedback memory");
+    assert_eq!(obj.owner,ORGANISM_ID);
+    (obj.bytes.clone(),obj.version)
+}
+fn advance_to_dry_write(w:&mut World,expected:&[u8],max:u64){
+    let mut found=false;
+    for _ in 0..max{
+        let x=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(x.code,Code::Denied|Code::InvalidCode),
+            "bounded VM must execute only legitimate world capabilities");
+        if matches!(&w.audit.last().unwrap().action,
+            Some(Action::Write{key,bytes,..})
+                if key==S29_DRY_KEY && bytes==expected){
+            assert_eq!(x.code,Code::Ok);
+            assert!(x.gas_charged>0);
+            found=true;break;
+        }
+    }
+    assert!(found,"a paid, actual VM CAS must be found");
+}
+fn collect_dry_calls(w:&World,start:u64)
+    ->(Vec<u64>,Vec<(u64,u64)>,Vec<(String,Code,u64)>)
+{
+    let catalogs=w.audit.iter().filter(|e|e.step>=start &&
+        matches!(&e.action,Some(Action::Read{key,..})
+            if key==S29_CATALOG_PAGE0))
+        .map(|e|e.step).collect::<Vec<_>>();
+    let indexes=w.audit.iter().filter(|e|e.step>=start &&
+        matches!(e.action,Some(Action::IndexVersionRefs{..})))
+        .map(|e|(e.step,e.result.gas_charged)).collect::<Vec<_>>();
+    let gc=discovery_gc_audit(w,start);
+    (catalogs,indexes,gc)
+}
+fn test_dry_run_arm(arm:&str){
+    let (mut w,candidates,root,new_hash,used,versions)=setup_dry_run_world();
+    let start=w.state.step;
+    if arm=="PAIRED_INDISTINGUISHABILITY"{
+        let mut alternate=World::from_snapshot(&w.snapshot_json()).unwrap();
+        paid_pin_all_dry(&mut w,&versions,false);
+        paid_pin_all_dry(&mut alternate,&versions,true);
+        assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+            alternate.state.organisms[&ORGANISM_ID].storage_used);
+        assert_eq!(w.state.nodes[&NodeId::A].gas_available,
+            alternate.state.nodes[&NodeId::A].gas_available);
+        for key in [S29_RESOURCE_READ,S29_CATALOG_PAGE0]{
+            let pinned=paid_catalog_read(&mut w,key);
+            let opaque=paid_catalog_read(&mut alternate,key);
+            assert_eq!(pinned.code,Code::Ok);
+            assert_eq!(opaque.code,Code::Ok);
+            assert_eq!(pinned.payload,opaque.payload);
+            assert_eq!(pinned.gas_charged,opaque.gas_charged);
+        }
+        let target=candidates.iter().find(|h|
+            w.state.objects[&version_key(h)].bytes.len()==276)
+            .expect("genuine old small unreferenced version").clone();
+        let idx1=index_refs(&mut w);
+        let idx2=index_refs(&mut alternate);
+        assert_eq!(idx1.code,Code::Ok);
+        assert_eq!(idx2.code,Code::Ok);
+        assert!(idx1.gas_charged>0 && idx2.gas_charged>0);
+        assert_eq!(idx1.gas_charged,idx2.gas_charged,
+            "same physical scan bytes, different source references");
+        assert!(w.state.version_ref_index.as_ref().unwrap()
+            .referenced.contains(&target));
+        assert!(!alternate.state.version_ref_index.as_ref().unwrap()
+            .referenced.contains(&target));
+        let veto=fast_reclaim(&mut w,&target);
+        let release=fast_reclaim(&mut alternate,&target);
+        assert_eq!(veto.code,Code::Conflict);
+        assert_eq!(release.code,Code::Ok);
+        assert_eq!(u64::from_le_bytes(
+            release.payload.as_slice().try_into().unwrap()),276);
+        assert!(w.state.objects.contains_key(&version_key(&target)));
+        assert!(!alternate.state.objects.contains_key(&version_key(&target)));
+        for ww in [&w,&alternate]{
+            assert_eq!(ww.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+            assert_eq!(b_gas(ww),20);
+            assert_eq!(ww.state_hash(),World::from_snapshot(
+                &ww.snapshot_json()).unwrap().state_hash());
+        }
+        println!("S29_DRY PAIRED_INDISTINGUISHABILITY owner_versions={} \
+            same_64B_pin_sizes=true same_paid_sensor_and_catalog=true \
+            same_paid_index_A={} pinned=Conflict opaque=Ok \
+            released=276B B20 snapshots_ok=true",
+            versions.len(),idx1.gas_charged);
+        return;
+    }
+    paid_pin_all_dry(&mut w,&versions,false);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used+64*versions.len() as u64);
+    assert!(w.state.nodes[&NodeId::A].storage_capacity >=
+        w.state.organisms[&ORGANISM_ID].storage_used);
+    let memory_start=w.state.step;
+    let (vm_before,action_before)=spend(&w);
+    advance_to_dry_write(&mut w,b"1",200);
+    assert_eq!(paid_memory_value(&w),(b"1".to_vec(),0));
+    let (vm_after_first,action_after_first)=spend(&w);
+    let (first_cat,first_index,first_gc)=collect_dry_calls(&w,memory_start);
+    assert_eq!(first_cat.len(),1);
+    assert_eq!(first_index.len(),1);
+    assert_eq!(first_gc.len(),8);
+    assert!(first_gc.iter().all(|(_,code,fee)|
+        *code==Code::Conflict && *fee==0));
+    let before_second=w.state.step;
+    if arm=="STALE_MEMORY_CAS"{
+        // Resume through the real Observe and have the VM read the cached
+        // monotonic version; then a researcher wins the intervening CAS.
+        let mut found=false;
+        for _ in 0..25{
+            let res=w.tick_autonomous(ORGANISM_ID);
+            assert!(!matches!(res.code,Code::Denied|Code::InvalidCode));
+            let e=w.audit.last().unwrap();
+            if matches!(&e.action,Some(Action::Read{key,..})
+                if key==S29_DRY_META) && e.result.code==Code::Ok{
+                let payload:serde_json::Value=
+                    serde_json::from_slice(&e.result.payload).unwrap();
+                let inner=payload["payload"].as_array().unwrap()
+                    .iter().map(|n|n.as_u64().unwrap() as u8)
+                    .collect::<Vec<_>>();
+                let obj:serde_json::Value=
+                    serde_json::from_slice(&inner).unwrap();
+                assert_eq!(obj["version"],0);
+                found=true;break;
+            }
+        }
+        assert!(found,"cached version must be seen by live VM");
+        alter(&mut w,S29_DRY_KEY,b"0".to_vec(),0);
+        let replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+        run(&mut w,60);
+        let mut same=replay;
+        run(&mut same,60);
+        assert_eq!(w.snapshot_json(),same.snapshot_json());
+        assert_eq!(w.audit,same.audit);
+        assert_eq!(paid_memory_value(&w),(b"0".to_vec(),1));
+        let writes=w.audit.iter().filter(|e|e.step>=before_second &&
+            matches!(&e.action,Some(Action::Write{key,bytes,..})
+                if key==S29_DRY_KEY && bytes==b"0"))
+            .collect::<Vec<_>>();
+        assert_eq!(writes.len(),2,
+            "researcher paid CAS and stale VM CAS both audited");
+        assert_eq!(writes[0].result.code,Code::Ok);
+        assert_eq!(writes[1].result.code,Code::Conflict);
+        assert_eq!(writes[1].result.gas_charged,0);
+        let (_,indexes,gc)=collect_dry_calls(&w,memory_start);
+        assert_eq!(indexes.len(),1);
+        assert_eq!(gc.len(),8);
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(0)));
+        assert_eq!(b_gas(&w),20);
+        println!("S29_DRY STALE_MEMORY_CAS first_index_A={} \
+            memory_write_first=Ok researcher=Ok \
+            stale_VM=Conflict/0A version=1 \
+            total_index_count=1 gc=8 no_delete=true \
+            B=20 snapshot_replay=true",first_index[0].1);
+        return;
+    }
+    advance_to_dry_write(&mut w,b"0",70);
+    assert_eq!(paid_memory_value(&w),(b"0".to_vec(),1));
+    let (vm_after_second,action_after_second)=spend(&w);
+    let (second_cat,second_index,second_gc)=collect_dry_calls(&w,memory_start);
+    assert_eq!(second_cat.len(),1,"cooldown must skip full catalog");
+    assert_eq!(second_index.len(),1,"cooldown must skip all full scans");
+    assert_eq!(second_gc.len(),8,"cooldown must skip GC itself");
+    let second_vm=vm_after_second-vm_after_first;
+    let second_a=action_after_second-action_after_first;
+    assert!(second_vm+second_a<200,
+        "recorded cooldown must avoid the 2,945 A zero-yield pass");
+    let mut released:Option<String>=None;
+    if arm=="RELEASE_AFTER_COOLDOWN"{
+        let target=candidates.iter().find(|h|
+            w.state.objects[&version_key(h)].bytes.len()==276)
+            .expect("same real old P2 orphan").clone();
+        let index=versions.iter().position(|h|h==&target).unwrap();
+        let pin_key=format!("/self/pins/s29-dry-{index}");
+        assert_eq!(w.state.objects[&pin_key].bytes,target.as_bytes());
+        let removed=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:pin_key,expected_version:Some(0),
+            bytes:vec![b'-';64]
+        }));
+        assert_eq!(removed.code,Code::Ok);
+        assert!(removed.gas_charged>0);
+        assert!(w.state.version_ref_index.is_none(),
+            "ordinary full-hash-length write must invalidate certificate");
+        released=Some(target);
+    }else{
+        assert_eq!(arm,"DRY_REPEAT");
+    }
+    let replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+    run(&mut w,260);
+    let mut same=replay;
+    run(&mut same,260);
+    assert_eq!(w.snapshot_json(),same.snapshot_json());
+    assert_eq!(w.audit,same.audit);
+    let (all_cat,all_index,all_gc)=collect_dry_calls(&w,memory_start);
+    assert_eq!(all_cat.len(),2);
+    assert_eq!(all_index.len(),2);
+    if let Some(target)=released{
+        assert_eq!(paid_memory_value(&w),(b"0".to_vec(),1));
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(1)));
+        assert!(all_gc.iter().any(|(h,code,fee)|
+            h==&target && *code==Code::Ok && *fee>0));
+        assert!(!w.state.objects.contains_key(&version_key(&target)));
+        for candidate in &candidates{
+            if candidate!=&target{
+                assert!(w.state.objects.contains_key(&version_key(candidate)));
+            }
+        }
+        let free=w.audit.iter().filter(|e|e.step>=memory_start &&
+            matches!(&e.action,Some(Action::ReclaimIndexedVersion{..})) &&
+            e.result.code==Code::Ok)
+            .map(|e|u64::from_le_bytes(
+                e.result.payload.as_slice().try_into().unwrap()))
+            .sum::<u64>();
+        assert_eq!(free,276);
+    }else{
+        assert_eq!(paid_memory_value(&w),(b"1".to_vec(),2));
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(0)));
+        assert_eq!(all_gc.len(),16);
+        assert!(all_gc.iter().all(|(_,code,fee)|
+            *code==Code::Conflict && *fee==0));
+        assert!(candidates.iter().all(|h|
+            w.state.objects.contains_key(&version_key(h))));
+    }
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(w.state.objects["/self/active"].bytes,root.as_bytes());
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(count_internal_active_switches(&w,memory_start),0);
+    assert_eq!(w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().unwrap()
+        .loop_counters.get("round_header"),Some(&3));
+    let (vm_final,a_final)=spend(&w);
+    println!("S29_DRY {arm} root={root} rounds=3 \
+        index_count={} catalog_count={} gc_count={} \
+        first_VM_A={} first_Action_A={} \
+        skipped_middle_VM_A={} skipped_middle_Action_A={} \
+        total_VM_A={} total_Action_A={} \
+        memory={:?} recovered={} B=20 snapshots_full_equal=true",
+        all_index.len(),all_cat.len(),all_gc.len(),
+        vm_after_first-vm_before,action_after_first-action_before,
+        second_vm,second_a,vm_final-vm_before,a_final-action_before,
+        paid_memory_value(&w),
+        w.state.organisms[&ORGANISM_ID].last_return==Some(Value::U32(1)));
+}
+#[test]
+#[ignore="paid real-world dry-run memory cooldown with complete source safety"]
+fn s29_dry_run_memory_native(){
+    let arm=std::env::var("OCEE_S29_DRY_ARM")
+        .expect("frozen four-arm native dry-run feedback experiment");
+    match arm.as_str(){
+        "PAIRED_INDISTINGUISHABILITY"|"DRY_REPEAT"|
+        "RELEASE_AFTER_COOLDOWN"|"STALE_MEMORY_CAS"=>
+            test_dry_run_arm(&arm),
+        other=>panic!("unknown dry-run negative-feedback arm {other}")
+    }
+}
