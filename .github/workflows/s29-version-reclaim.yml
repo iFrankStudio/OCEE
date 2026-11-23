@@ -1,5 +1,6 @@
 name: S29 Metered Conservative Program Version Reclaim
-# Rerun after original #45121234194 failed before tests: Rust identifier syntax typo.
+# #45121234194 compile syntax fail; #45121401232 passed 2/4,
+# long arms rejected fixture's stale active CAS0. Rerun using paid actual version.
 on:
   push:
     branches: [main]
