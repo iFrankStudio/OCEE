@@ -142,3 +142,10 @@ Initial compile-only failure [#44991946675](https://github.com/iFrankStudio/OCEE
 先提交[执行前冻结协议](./experiments/E001/DEV-S29-CERTIFIED-SHORT-WRITE-PRESERVATION.md) @443dac77，再实现World::apply_action中现有Write有偿安全保留及四臂原生对照，并仅一次创建路径限定`.github/workflows/s29-certified-short-write.yml`的push触发验证。**[原生Run #45156166086](https://github.com/iFrankStudio/OCEE/actions/runs/45156166086) @da177c8ea2578865057b7a8ecaf64d887f7b8a1d completed/success，4个独立Rust job各1/1通过，未有本轮编译或行为红例。** SHORT_WRITE/FAILED_CAS各只需1次1667A索引、真实回收834B、VM191+Action1697=1888A；LIVE_HASH_PIN真实保留64B活引用且GC两次Conflict；OLD_REF_REMOVED正确保持旧引用超集，直到另一次付费全索引才允许回收。与上轮相同世界轨迹但旧内核AFTER_INDEX合计3888A的开发配对差**节省2000A**。此专项4/4是实现与安全验收，不代表整个Rust workspace已新一轮全绿；完整指标见[研究报告](./experiments/E001/DEV-S29-CERTIFIED-SHORT-WRITE-PRESERVATION.md)。
 
 归档后将专项工作流恢复为**`workflow_dispatch` only**，以后仅在引用追踪或写入预失效语义改变时有针对性复核；保留S29旧失效行为的原生证据，不让旧基线自动触发消耗CI资源。
+
+
+## 2026-11-23 — 已完成S29付费逐来源引用差分原生6/6
+
+从`65bdff70f0c7`现实HEAD读取后，[先冻结研究协议](./experiments/E001/DEV-S29-PAID-SOURCE-DELTA-CERTIFICATE-PROTOCOL.md) @`91b00ed6`，再提交显式`WriteIndexed`世界/VM能力、同收费Index内核可信来源集合、严格CAS/元数据复核收费、六臂定向测试，并仅由`.github/workflows/s29-source-delta.yml`单文件路径限定push触发一次小矩阵。**[Run #45163504990](https://github.com/iFrankStudio/OCEE/actions/runs/45163504990) @`7e15bf9edc8b16706e561bc10151e9c2a8f966c5` completed/success，六个独立Rust jobs全部1/1通过、0个本轮原生红例。** LONG/P2四臂B20正确、同一研究者提供的S29维护root；一个独立真的活动VM调用新世界动作，另有独立真实传输在途引用拒删。等世界起点的研究者Write区间LEGACY两次Index/3353A对DELTA一次Index/1692A，局部节省1661A。具体审计见[报告](./experiments/E001/DEV-S29-PAID-SOURCE-DELTA-CERTIFICATE-PROTOCOL.md)，不可把6/6冒充全Rust workspace回归或E001正式确认实验。
+
+完成档案后，该专项workflow应恢复`workflow_dispatch`手动重放；此前老S29历史检验保持归档而不因本轮共享代码改动自动成群触发。实际内容哈希与新增世界能力均为开发性变更，正式E001能力集及成本必须另行冻结，不可隐含维持“六原语不变”。
