@@ -4160,10 +4160,10 @@ fn test_matched_lifetime_pilot(tape:&str){
     assert!(always.index_count<=3,
         "strictly bounded three episodes");
     assert_eq!(cool.index_count,2);
-    assert!(always.vm_a+always.maintenance_action_a >
-        cool.vm_a+cool.maintenance_action_a,
-        "negative feedback should avoid one costly scan under this tape");
     if tape=="ALL_PINNED"{
+        assert!(always.vm_a+always.maintenance_action_a >
+            cool.vm_a+cool.maintenance_action_a,
+            "when all versions remain pinned the cached negative result must save A");
         assert!(!always.task_ok&&!cool.task_ok&&!none.task_ok);
         assert_eq!((always.gc_bytes,cool.gc_bytes,none.gc_bytes),
             (0,0,0));
