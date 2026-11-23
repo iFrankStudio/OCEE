@@ -1,9 +1,7 @@
 name: S29 Paid Per-Source Reference Delta and Transport Safety
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-source-delta.yml'
+  # Native #45163504990: first six-arm Rust matrix completed/success.
+  # Explicit manual replay only; do not re-run this long P2 fixture on push.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-source-delta-${{ github.ref }}
