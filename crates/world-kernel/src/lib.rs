@@ -915,12 +915,33 @@ impl World {
             Action::ConfirmResponseFor{actor,..} => *actor,
         };
         if !self.valid_actor(actor) { return ActionResult::fail(Code::Denied); }
-        // Fail closed on *attempts* that may introduce references. This
-        // deliberately over-invalidates on rejected attempts instead of
-        // leaving a false-negative shortcut after a mutation.
-        if matches!(&action,Action::Write{..}|Action::PublishTool{..}|
-            Action::Send{..}|Action::Receive{..}|Action::Exec{..}|
-            Action::RestartRoot{..}|Action::RestartRootFor{..}) {
+        // The certified raw-hash scanner examines each object key and body
+        // SEPARATELY in 64-byte windows. A short ordinary own-object Write
+        // cannot introduce any new raw 64-byte program-hash reference.
+        // Keeping the old 'referenced' SUPERSET is safe even if the Write
+        // removes an old reference: false positives remain conservative.
+        // Active, immutable-version and tool-registry mutations never qualify.
+        // Charge the proven-short preservation path one extra A on success.
+        let preserve_certified_short_write=match &action{
+            Action::Write{key,bytes,..}=>self.state.version_ref_index.as_ref()
+                .is_some_and(|index|
+                    index.actor==actor &&
+                    index.active_hash==self.state.organisms[&actor].active_program_hash &&
+                    key.starts_with("/self/") &&
+                    key.len()<64 && bytes.len()<64 &&
+                    key!="/self/active" &&
+                    !key.starts_with("/self/versions/") &&
+                    !key.starts_with("/self/tools/")
+                ),
+            _=>false,
+        };
+        // Other possible reference mutations retain the original conservative
+        // fail-closed *attempt* invalidation, including failed large writes.
+        if (matches!(&action,Action::Write{..}) &&
+                !preserve_certified_short_write) ||
+            matches!(&action,Action::PublishTool{..}|
+                Action::Send{..}|Action::Receive{..}|Action::Exec{..}|
+                Action::RestartRoot{..}|Action::RestartRootFor{..}) {
             self.state.version_ref_index=None;
         }
         match action {
@@ -1044,7 +1065,8 @@ impl World {
                 };
                 let cap = self.state.nodes.get(&NodeId::A).expect("node A").storage_capacity;
                 if next_used > cap { return ActionResult::fail(Code::Quota); }
-                let gas = 2 + (bytes.len() as u64).saturating_add(15) / 16;
+                let base_gas = 2 + (bytes.len() as u64).saturating_add(15) / 16;
+                let gas=base_gas + u64::from(preserve_certified_short_write);
                 if let Err(code) = self.spend_a_gas(gas) { return ActionResult::fail(code); }
                 let version = old_version.map_or(0,|v|v+1);
                 self.state.objects.insert(key,Object{owner:actor,version,bytes});
