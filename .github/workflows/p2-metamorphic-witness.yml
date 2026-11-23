@@ -6,7 +6,7 @@ on:
       - '.github/workflows/p2-metamorphic-witness.yml'
   # First native Run #45099227328: all arms rejected by strict MAX_BLOCKS=128.
   # Retry only after safe same-edge block compaction, never raise VM limits.
-  # Single-arm forensic replay after full Run #45099406062 concluded 3/4.
+  # Forensic #45099701115 proved P1 Write Code::Gas at step27. Full matrix replay.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-metamorphic-${{ github.ref }}
@@ -18,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arm: [COMMON_PLUS_ONE]
+        arm: [VALID, COMMON_DOUBLE, COMMON_PLUS_ONE, INVARIANT_FAULT]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:

@@ -37,3 +37,8 @@ INVARIANT_FAULT 为研究者安装的合法纯VM程序，错误附加项取原�
 [Run #45099406062](https://github.com/iFrankStudio/OCEE/actions/runs/45099406062) @21e1787c3e6ba9d464a42697186a126bd45e7886：**completed/failure**，而非4/4。原生COMMON_DOUBLE、VALID、INVARIANT_FAULT三组确实通过完整任务与额外付费变形执行断言；但COMMON_PLUS_ONE在测试读取预期任务输入 `REMOTE_VALUES` 之前已退出，原测试 `expect("root must actually create its P2 input")` 失败，并没有可供本次分析的完整任务审计。不能把这一组算成真实零见证拒绝。第三个同根程序实际VALID A13918，COMMON_DOUBLE A13880，INVARIANT_FAULT A14303；独立参考1415179467，只供宿主测试，未提供给根。最后一个负对照的确错写1415180882（正确值 + frozen tail字节和1415）且同输入最低位变形仍通过关系，说明已验证的结果仅是有限约束。当前3/4，原生失败永久保留。
 
 针对失败，不重跑三组已经完成的昂贵轨迹，先单独重播COMMON_PLUS_ONE并在读取输入前打印 root last_return、是否finished、world step、最后30条世界真实收费动作和VM continuation。之后若有证据再做最小修复并完整四臂复验；不补A gas、不改协议/样本，也不将开发诊断追认成预注册证据。
+## 2026-11-23 — 单臂付费P1早期Gas原因已证实，拟降低代码装载费用
+
+[单臂原生诊断Run #45099701115](https://github.com/iFrankStudio/OCEE/actions/runs/45099701115) @ defa2b2160ce370fbceb1709a49acf315e1ff56e：**completed/failure（预期诊断红例，非语义成功）**。COMMON_PLUS_ONE 源活动 VM 在实际 step26 Exec held-out input `[4,5,6,7,8]` 返回Ok，紧接 step27 原根有偿写 `/self/results/transform-held-out` 收到真实 `Code::Gas`（VM气费21、世界动作未扣费0）；根之后在下一A额度周期后 step1025以U32(0)结束，`REMOTE_VALUES`从未生成。真实genesis A=10289，最终无未授权重启、Invalid/Denied=0。对照 VALID 的genesis A=10281、DOUBLE=10286、INVARIANT=10478；Gas失败依赖任务时序和预算余额，不是P2工具返回错误。**此前3/4不能报完整成功**。
+
+后置选择对新P2见证附加的13个块及其所有目标引用实行一对一短名映射，生成更小的有效Program并**真实减少首epoch装载A花费**；保留所有可达控制边、世界动作与原S45公共P1算法，仍用12000/epoch、seed2027、14k ticks，绝不免费补回或放大预算。根内容hash变化，须在新根上重新真实四臂验证；这属于基于诊断后验修复，非首次预注册成功。后置新CI尚待结果。

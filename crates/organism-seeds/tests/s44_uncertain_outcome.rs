@@ -2744,6 +2744,52 @@ fn p2_task_metamorphic_root()->Program{
     f.blocks.retain(|x|x.id!="meta_compare");
     // The new root still has the same 128-block hard limit and
     // must have an entirely valid statically typed graph.
+
+    // Native forensic Run #45099701115 established paid P1 Write at
+    // step27 returned Code::Gas with only the initial 12k A budget.
+    // Shorten identifiers of ONLY researcher-added P2 witness blocks
+    // to pay for fewer program bytes during genesis. Every Jump/Branch/
+    // Repeat/Yield edge is changed bijectively with its block ID;
+    // neither actual computation nor task nor VM gas policy changes.
+    // No stored continuation is carried across branches of this test.
+    let short_names=[
+        ("zero_anchor_registry_read","zr"),
+        ("zero_anchor_registry_reply","zq"),
+        ("zero_anchor_status","zs"),
+        ("meta_input_read","mr"),
+        ("meta_input_status","mi"),
+        ("meta_exec_status","me"),
+        ("dual_secondary_key_read","dr"),
+        ("dual_secondary_key_reply","dq"),
+        ("dual_secondary_input_read","di"),
+        ("dual_secondary_input_reply","dj"),
+        ("dual_secondary_exec","de"),
+        ("dual_secondary_reply","df"),
+        ("dual_agreement","dg")
+    ];
+    let compact=|name:&mut String|{
+        for (old,new) in short_names{
+            if name==old{*name=new.into();break;}
+        }
+    };
+    for block in &mut f.blocks{
+        compact(&mut block.id);
+        match &mut block.terminator{
+            Terminator::Return{..}=>(),
+            Terminator::Jump{target,..}=>compact(target),
+            Terminator::Branch{if_true,if_false,..}=>{
+                compact(if_true);
+                compact(if_false);
+            },
+            Terminator::RepeatBounded{body,done,..}|
+            Terminator::RepeatScoped{body,done,..}=>{
+                compact(body);
+                compact(done);
+            },
+            Terminator::Yield{next,..}=>compact(next)
+        }
+    }
+
     println!("P2_METAMORPHIC_GRAPH_BLOCKS total={}",f.blocks.len());
     root.validate().expect("typed bounded active metamorphic root");
     root
