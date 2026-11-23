@@ -2267,3 +2267,298 @@ fn s29_certified_short_write_native(){
         _=>panic!("unrecognized certified short write arm {arm}")
     }
 }
+
+
+/// Native preregistered S29: exact, metered *source* membership differences.
+/// Unlike the older single global 'referenced' set, a source-aware certificate
+/// cannot forget another holder when one owned object stops referencing a hash.
+/// Researcher-issued world actions below are NOT autonomous VM choices.
+fn test_source_delta_arm(arm:&str) {
+    let pin="/self/pins/s29-source-delta";
+    let pin2="/self/pins/s29-source-delta-secondary";
+    if arm=="TRANSPORT_LEASE" {
+        let mut w=World::new(Config{message_delay:32,..Config::default()});
+        let p=wrong_tool();
+        let hash=p.content_hash().unwrap();
+        put(&mut w,version_key(&hash),p.canonical_bytes());
+        put(&mut w,pin.into(),hash.as_bytes().to_vec());
+        let send=w.tick(Some(Action::Send{
+            actor:ORGANISM_ID,destination:NodeId::C,
+            bytes:hash.as_bytes().to_vec()
+        }));
+        assert_eq!(send.code,Code::Ok);
+        assert!(send.gas_charged>0);
+        assert!(w.state.pending_deliveries.iter().any(|m|
+            m.bytes==hash.as_bytes()));
+        let index=index_refs(&mut w);
+        assert_eq!(index.code,Code::Ok);
+        assert!(index.gas_charged>0);
+        let tracked=w.state.version_ref_index.as_ref().unwrap();
+        assert!(tracked.transport_refs.contains(&hash));
+        assert!(tracked.referenced.contains(&hash));
+        let updated=w.tick(Some(Action::WriteIndexed{
+            actor:ORGANISM_ID,key:pin.into(),
+            expected_version:Some(0),bytes:b"x".to_vec()
+        }));
+        assert_eq!(updated.code,Code::Ok);
+        assert!(updated.gas_charged>3);
+        let kept=w.state.version_ref_index.as_ref().unwrap();
+        assert!(kept.referenced.contains(&hash),
+            "pending transport reference must survive source CAS");
+        assert_eq!(fast_reclaim(&mut w,&hash).code,Code::Conflict);
+        assert!(w.state.objects.contains_key(&version_key(&hash)));
+        assert_eq!(w.state_hash(),World::from_snapshot(
+            &w.snapshot_json()).unwrap().state_hash());
+        println!("S29_SOURCE_DELTA TRANSPORT_LEASE index_A={} write_A={} \
+            C_send_id={:?} referenced_after_local_unpin=true \
+            GC=Conflict B=0 no_delete=true",index.gas_charged,
+            updated.gas_charged,send.payload);
+        return;
+    }
+    if arm=="VM_DELTA" {
+        // Unlike setup_versioned_retry_world, no previous maintenance root
+        // containing the target literal is left inactive after the switch.
+        let (mut w,old_hash,new_hash,_)=boot_repaired();
+        put(&mut w,pin.into(),old_hash.as_bytes().to_vec());
+        let root=Program{format_version:1,entry_function:"main".into(),
+            functions:vec![Function{
+                name:"main".into(),args:vec![Type::Bytes],returns:Type::U32,
+                blocks:vec![
+                    Block{id:"entry".into(),
+                        params:vec![Param{id:0,ty:Type::Bytes}],
+                        instructions:vec![
+                            Instruction{id:10,op:lit(pin.as_bytes())},
+                            Instruction{id:11,op:lit(b"x")},
+                            Instruction{id:12,op:Op::ConstU32(0)}
+                        ],
+                        terminator:Terminator::Yield{
+                            call:WorldCall::WriteIndexed,args:vec![10,11,12],
+                            next:"reply".into(),next_args:vec![]
+                        }
+                    },
+                    Block{id:"reply".into(),
+                        params:vec![Param{id:2,ty:Type::Bytes}],
+                        instructions:vec![
+                            Instruction{id:3,op:lit(b"code")},
+                            Instruction{id:4,op:Op::JsonFieldString(2,3)},
+                            Instruction{id:5,op:lit(b"Ok")},
+                            Instruction{id:6,op:Op::EqBytes(4,5)}
+                        ],
+                        terminator:Terminator::Branch{
+                            condition:6,if_true:"good".into(),
+                            true_args:vec![],if_false:"bad".into(),
+                            false_args:vec![]
+                        }
+                    },
+                    Block{id:"good".into(),params:vec![],
+                        instructions:vec![Instruction{id:7,op:Op::ConstU32(1)}],
+                        terminator:Terminator::Return{value:7}
+                    },
+                    Block{id:"bad".into(),params:vec![],
+                        instructions:vec![Instruction{id:7,op:Op::ConstU32(0)}],
+                        terminator:Terminator::Return{value:7}
+                    },
+                ]
+            }]
+        };
+        root.validate().expect("typed VM WriteIndexed graph must validate");
+        let root_hash=root.content_hash().unwrap();
+        put(&mut w,version_key(&root_hash),root.canonical_bytes());
+        let active=w.tick(Some(Action::Read{
+            actor:ORGANISM_ID,key:"/sys/active-version".into()
+        }));
+        assert_eq!(active.code,Code::Ok);
+        let value:serde_json::Value=serde_json::from_slice(&active.payload).unwrap();
+        alter(&mut w,"/self/active",root_hash.as_bytes().to_vec(),
+            value["version"].as_u64().unwrap());
+        let start=w.state.step;
+        let index=index_refs(&mut w);
+        assert_eq!(index.code,Code::Ok);
+        assert!(w.state.version_ref_index.as_ref().unwrap()
+            .referenced.contains(&old_hash));
+        run(&mut w,32);
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(1)));
+        let vm_write=w.audit.iter().filter(|e|e.step>=start &&
+            matches!(&e.action,Some(Action::WriteIndexed{key,..}) if key==pin))
+            .collect::<Vec<_>>();
+        assert_eq!(vm_write.len(),1);
+        assert_eq!(vm_write[0].result.code,Code::Ok);
+        assert!(vm_write[0].result.vm_gas_charged>0);
+        assert!(vm_write[0].result.gas_charged>0);
+        assert!(!w.state.version_ref_index.as_ref().unwrap()
+            .referenced.contains(&old_hash));
+        let collected=fast_reclaim(&mut w,&old_hash);
+        assert_eq!(collected.code,Code::Ok);
+        assert_eq!(u64::from_le_bytes(
+            collected.payload.as_slice().try_into().unwrap()),279);
+        assert!(!w.state.objects.contains_key(&version_key(&old_hash)));
+        assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+        assert_eq!(b_gas(&w),20);
+        assert_eq!(w.state_hash(),World::from_snapshot(
+            &w.snapshot_json()).unwrap().state_hash());
+        println!("S29_SOURCE_DELTA VM_DELTA root={root_hash} \
+            worldcall_actual=true fee={} vm_fee={} \
+            paid_index={} rescued_279B=true B=20",
+            vm_write[0].result.gas_charged,
+            vm_write[0].result.vm_gas_charged,index.gas_charged);
+        return;
+    }
+    let (mut w,targets,root,new_hash,used)=setup_versioned_retry_world();
+    let target=&targets[0];
+    let start=w.state.step;
+    let (vm_start,action_start)=spend(&w);
+    let (old_pin_count,is_legacy)=match arm{
+        "LEGACY_WRITE"|"DELTA_SINGLE"=>(1,true),
+        "DELTA_MULTI"=>(2,true),
+        "DELTA_ADD_AND_STALE"=>(0,false),
+        _=>panic!("unrecognized source delta arm {arm}")
+    };
+    if old_pin_count>0{
+        put(&mut w,pin.into(),target.as_bytes().to_vec());
+    }
+    if old_pin_count>1{
+        put(&mut w,pin2.into(),target.as_bytes().to_vec());
+    }
+    let index=index_refs(&mut w);
+    assert_eq!(index.code,Code::Ok);
+    assert!(index.gas_charged>0);
+    let initial=w.state.version_ref_index.clone().unwrap();
+    assert!(initial.object_refs.is_some());
+    assert_eq!(initial.referenced.contains(target),is_legacy);
+    let metadata_before=serde_json::to_vec(&initial).unwrap().len();
+    let mut fees=Vec::<u64>::new();
+    let direct_write=|w:&mut World,key:&str,bytes:Vec<u8>,
+        version:Option<u64>,indexed:bool| {
+        w.tick(Some(if indexed{
+            Action::WriteIndexed{actor:ORGANISM_ID,
+                key:key.into(),expected_version:version,bytes}
+        }else{
+            Action::Write{actor:ORGANISM_ID,
+                key:key.into(),expected_version:version,bytes}
+        }))
+    };
+    match arm{
+        "LEGACY_WRITE"=>{
+            let result=direct_write(&mut w,pin,b"x".to_vec(),Some(0),false);
+            assert_eq!(result.code,Code::Ok);
+            fees.push(result.gas_charged);
+            let idx=w.state.version_ref_index.as_ref().unwrap();
+            assert!(idx.referenced.contains(target),
+                "legacy short Write must retain conservative old membership");
+            assert_eq!(fast_reclaim(&mut w,target).code,Code::Conflict);
+            let rebuilt=index_refs(&mut w);
+            assert_eq!(rebuilt.code,Code::Ok);
+            assert!(rebuilt.gas_charged>0);
+            assert!(!w.state.version_ref_index.as_ref().unwrap()
+                .referenced.contains(target));
+            let deleted=fast_reclaim(&mut w,target);
+            assert_eq!(deleted.code,Code::Ok);
+            assert_eq!(u64::from_le_bytes(
+                deleted.payload.as_slice().try_into().unwrap()),279);
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+                used+1-279);
+        },
+        "DELTA_SINGLE"=>{
+            let result=direct_write(&mut w,pin,b"x".to_vec(),Some(0),true);
+            assert_eq!(result.code,Code::Ok);
+            assert!(result.gas_charged>3);
+            fees.push(result.gas_charged);
+            let idx=w.state.version_ref_index.as_ref().unwrap();
+            assert_eq!(idx.built_step,initial.built_step,
+                "no second paid full scan");
+            assert!(!idx.referenced.contains(target));
+            let deleted=fast_reclaim(&mut w,target);
+            assert_eq!(deleted.code,Code::Ok);
+            assert_eq!(u64::from_le_bytes(
+                deleted.payload.as_slice().try_into().unwrap()),279);
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+                used+1-279);
+        },
+        "DELTA_MULTI"=>{
+            let one=direct_write(&mut w,pin,b"x".to_vec(),Some(0),true);
+            assert_eq!(one.code,Code::Ok);
+            fees.push(one.gas_charged);
+            assert!(w.state.version_ref_index.as_ref().unwrap()
+                .referenced.contains(target),
+                "second distinct object must keep the reference alive");
+            assert_eq!(fast_reclaim(&mut w,target).code,Code::Conflict);
+            let two=direct_write(&mut w,pin2,b"x".to_vec(),Some(0),true);
+            assert_eq!(two.code,Code::Ok);
+            fees.push(two.gas_charged);
+            assert!(!w.state.version_ref_index.as_ref().unwrap()
+                .referenced.contains(target));
+            assert_eq!(fast_reclaim(&mut w,target).code,Code::Ok);
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+                used+2-279);
+        },
+        "DELTA_ADD_AND_STALE"=>{
+            let added=direct_write(&mut w,pin,target.as_bytes().to_vec(),
+                None,true);
+            assert_eq!(added.code,Code::Ok);
+            fees.push(added.gas_charged);
+            assert!(w.state.version_ref_index.as_ref().unwrap()
+                .referenced.contains(target),
+                "long indexed write must ADD new live hash to certificate");
+            assert_eq!(fast_reclaim(&mut w,target).code,Code::Conflict);
+            let before_obj=w.state.objects[pin].clone();
+            let before_idx=w.state.version_ref_index.clone();
+            let before_storage=w.state.organisms[&ORGANISM_ID].storage_used;
+            let stale=direct_write(&mut w,pin,b"x".to_vec(),None,true);
+            assert_eq!(stale.code,Code::Conflict);
+            assert_eq!(stale.gas_charged,0);
+            assert_eq!(w.state.objects[pin],before_obj);
+            assert_eq!(w.state.version_ref_index,before_idx);
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+                before_storage);
+            fees.push(stale.gas_charged);
+            let removed=direct_write(&mut w,pin,b"x".to_vec(),Some(0),true);
+            assert_eq!(removed.code,Code::Ok);
+            fees.push(removed.gas_charged);
+            assert!(!w.state.version_ref_index.as_ref().unwrap()
+                .referenced.contains(target));
+            assert_eq!(fast_reclaim(&mut w,target).code,Code::Ok);
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+                used+1-279);
+        },
+        _=>unreachable!()
+    }
+    assert!(!w.state.objects.contains_key(&version_key(target)));
+    for h in targets.iter().skip(1){
+        assert!(w.state.objects.contains_key(&version_key(h)));
+    }
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(w.state.objects["/self/active"].bytes,root.as_bytes());
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(count_internal_active_switches(&w,start),0);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    let metadata_after=w.state.version_ref_index.as_ref()
+        .map_or(0,|idx|serde_json::to_vec(idx).unwrap().len());
+    let (vm_end,action_end)=spend(&w);
+    let indices=w.audit.iter().filter(|e|e.step>=start &&
+        matches!(e.action,Some(Action::IndexVersionRefs{..})))
+        .count();
+    assert_eq!(indices,if arm=="LEGACY_WRITE"{2}else{1});
+    println!("S29_SOURCE_DELTA {arm} root={root} indexes={indices} \
+        initial_index_A={} write_A={fees:?} \
+        VM_A={} Action_A={} certificate_bytes_before={} \
+        certificate_bytes_after={} storage_delta={} B={} \
+        final_step={} snapshot_consistent=true",
+        index.gas_charged,vm_end-vm_start,action_end-action_start,
+        metadata_before,metadata_after,
+        (w.state.organisms[&ORGANISM_ID].storage_used as i64)-(used as i64),
+        b_gas(&w),w.state.step);
+}
+#[test]
+#[ignore="paid source-aware indexed CAS and multiple real-reference safety"]
+fn s29_source_delta_native(){
+    let arm=std::env::var("OCEE_S29_DELTA_ARM")
+        .expect("frozen per-source indexed reference delta arm");
+    match arm.as_str(){
+        "LEGACY_WRITE"|"DELTA_SINGLE"|"DELTA_MULTI"|
+        "DELTA_ADD_AND_STALE"|"VM_DELTA"|"TRANSPORT_LEASE"=>
+            test_source_delta_arm(&arm),
+        _=>panic!("unknown source-delta arm {arm}")
+    }
+}
