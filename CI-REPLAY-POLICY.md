@@ -1,6 +1,6 @@
 # OCEE GitHub Actions 运行预算与实验复核制度
 
-**状态：2026-11-20。私有仓库运行器分配失败，S41原生实验未验证。**
+**状态：2026-11-23。仓库改为public后GitHub-hosted runner已恢复；最新S29跨epoch证书失效研究定向原生4/4成功，历史工作流默认手动重放。以下2026-11-20私有仓库阻断记录为历史事实。**
 
 ## 为什么调整
 - OCEE 目前约26个 `*.yml` 工作流。此前S28–S40的定向工作流往往把共享 `crates/world-kernel/src/lib.rs`、`crates/organism-seeds/src/lib.rs`、`crates/organism-vm/src/lib.rs` 列入 push triggers，一次研究小改动在私有仓库可能触发十余个独立Rust job、部分运行超过数十分钟。历史实验需要保留用于复核，但不应在每次main直接提交时同时执行。
@@ -128,3 +128,10 @@ Initial compile-only failure [#44991946675](https://github.com/iFrankStudio/OCEE
 ## 2026-11-22 — Equal-origin full-task A-only vs A+B native 2/2 PASS with negative offload economics
 
 [Successful third run #44995228916](https://github.com/iFrankStudio/OCEE/actions/runs/44995228916) @ `46a47f91f76d738c9cfbc69bcd93d5aa54b84bcc`, both independent native jobs completed/success. Identical preintervention world state_hash `85e36d4f...`, identical root and P1/P2/local installed programs, all genesis charged 9462 A and route Write 3 A, same task/seed2027/global delay8. Researcher routed local or remote only at true final P2 switch. **A-only full task success:** A12236, B0, C sends0, real local VM Exec165, step1027; **A+B full task success:** A47359, B24 once, C sends61, A-to-C bandwidth1726, real causal ACK/RESULT, step3383. Both independent FOLD32 result1415179467, legitimate snapshots, no VM invalid. Offloading used **35123 MORE A gas**, plus B/communication and 2356 extra world steps, for this known 4-U32 development workload. This is full task causal researcher-selected path comparison, NOT endogenous organism policy selection or E001 A/B/C/D. Preserve [first 1/2 red #44994405005](https://github.com/iFrankStudio/OCEE/actions/runs/44994405005) (wrong early P1 handover interception) and [second 0/2 pre-execution red #44994931874](https://github.com/iFrankStudio/OCEE/actions/runs/44994931874) (illegal RepeatBounded limit2048). Complete study and caveats: [report](./experiments/E001/DEV-P2-EQUAL-ORIGIN-LOCAL-REMOTE-PAIR.md). Only the narrow 2-job matrix passed, not general workspace. Workflow restored to `workflow_dispatch` only, documentation commit `[skip ci]`.
+
+
+## 2026-11-23 — S29 写入时序与跨 epoch 研究完成原生4/4
+
+研究者先在[预冻结协议](./experiments/E001/DEV-S29-CROSS-EPOCH-CERTIFICATE-CHURN-PROTOCOL.md)写入QUIET、BEFORE_INDEX、AFTER_INDEX、EPOCH_GAP固定四臂，随后只给`.github/workflows/s29-benign-index-churn.yml`新增一次对相应测试和自身文件路径限定的push触发，未触发所有S29/P2历史工作流。首次[原生Run #45151720848](https://github.com/iFrankStudio/OCEE/actions/runs/45151720848) @`e12f53c91617ade9aac3722552055990b250eef5` **4个真实Rust job均1/1通过，0编译红、0机制红，completed/success**。同根、同P2 B20业务、同三候选834B，正常1B外部Write在Index后诱发额外1667A扫描，维护累计VM+Action A1887→3888；跨epoch snapshot保持真实continuation及全部audit重放等值。账本和限制不在CI政策重复扩写，以研究协议为准。
+
+本次只验收独立四臂研究测试，不追认全工作区Rust通过。后续工作流改回`workflow_dispatch` only；如要复核手动选S29 Paid Benign Certificate Churn and Cross-Epoch Continuation，而不是每次碰共享内核都自动跑四臂。文档变更使用`[skip ci]`，严格禁止为节省开销抹除历史失败或虚报认证结果。
