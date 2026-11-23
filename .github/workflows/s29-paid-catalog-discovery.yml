@@ -1,0 +1,27 @@
+name: S29 Paid Self-Version Catalog and Bounded VM Discovery
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-paid-catalog-discovery.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-paid-version-catalog-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-catalog-discovery:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [CATALOG_CONTRACT, DYNAMIC_RECOVERY, PIN_AND_CONTINUATION, INVALIDATED_CERT]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_CATALOG_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Paid catalog, bounded VM dynamic GC discovery and race safety
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_paid_catalog_discovery_native -- --ignored --show-output
