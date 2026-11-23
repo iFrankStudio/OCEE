@@ -141,13 +141,23 @@ fn maintainer(version:&str)->Program{
         functions:vec![main]};
     p.validate().expect("typed maintenance VM is statically bounded");p
 }
-fn activate_maintenance(w:&mut World,target:&str,prior_version:u64)->String{
+fn activate_maintenance(w:&mut World,target:&str)->String{
     let p=maintainer(target);
     let hash=p.content_hash().unwrap();
     if !w.state.objects.contains_key(&format!("/self/versions/{hash}")){
         put(w,format!("/self/versions/{hash}"),p.canonical_bytes());
     }
-    alter(w,"/self/active",hash.as_bytes().to_vec(),prior_version);
+    // A real S29/P2 root can already have switched /self/active more than
+    // once in the world. Do NOT assume version 0; pay for the existing
+    // world-provided active-version receipt and CAS exactly that version.
+    let read=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(read.code,Code::Ok,"paid active version observation");
+    let reply:serde_json::Value=serde_json::from_slice(&read.payload).unwrap();
+    let current=reply.get("version").and_then(|v|v.as_u64())
+        .expect("kernel-issued monotonic version");
+    alter(w,"/self/active",hash.as_bytes().to_vec(),current);
     hash
 }
 fn reclaim_audit(w:&World,target:&str)->Vec<(Code,u64,Vec<u8>)>{
@@ -168,7 +178,7 @@ fn test_post_repair(){
     let size=w.state.objects[&format!("/self/versions/{old_hash}")]
         .bytes.len() as u64;
     let prev_b=b_gas(&w);
-    let maintenance=activate_maintenance(&mut w,&old_hash,0);
+    let maintenance=activate_maintenance(&mut w,&old_hash);
     assert_ne!(maintenance,root);
     let used=w.state.organisms[&ORGANISM_ID].storage_used;
     run(&mut w,24);
@@ -209,7 +219,7 @@ fn test_registered(){
     let (mut w,old_hash,new_hash,_)=boot_repaired();
     put(&mut w,"/self/tools/second-reference".into(),
         old_hash.as_bytes().to_vec());
-    let _=activate_maintenance(&mut w,&old_hash,0);
+    let _=activate_maintenance(&mut w,&old_hash);
     let stored=w.state.organisms[&ORGANISM_ID].storage_used;
     run(&mut w,24);
     assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
@@ -222,7 +232,7 @@ fn test_registered(){
     // a label is not an oracle: the new tool version already exists.
     alter(&mut w,"/self/tools/second-reference",
         new_hash.as_bytes().to_vec(),0);
-    let _=activate_maintenance(&mut w,&old_hash,1);
+    let _=activate_maintenance(&mut w,&old_hash);
     let before=w.state.organisms[&ORGANISM_ID].storage_used;
     run(&mut w,24);
     assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
@@ -249,7 +259,7 @@ fn test_roots(){
     assert_eq!(direct.code,Code::Conflict);
     assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,before);
     // Original root stays pinned for safe restart after a paid active switch.
-    let maintenance=activate_maintenance(&mut w,&root,0);
+    let maintenance=activate_maintenance(&mut w,&root);
     assert_ne!(maintenance,root);
     let initial=w.state.initial_root_hash.clone();
     assert_eq!(initial,Some(root.clone()));
