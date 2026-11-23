@@ -339,3 +339,294 @@ fn s29_reclaim_version_native(){
         other=>panic!("unexpected arm {other}")
     }
 }
+
+
+/// Fixed finite researcher-authored maintenance program, not an organism-
+/// invented policy. Its four actual VM WorldCalls pay one certificate build
+/// plus three independently metered indexed retirement actions.
+fn indexed_maintenance(targets:&[String])->Program{
+    assert_eq!(targets.len(),3);
+    let mut blocks=Vec::<Block>::new();
+    blocks.push(Block{
+        id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+        instructions:vec![],
+        terminator:Terminator::Yield{
+            call:WorldCall::IndexVersionRefs,args:vec![],
+            next:"certified".into(),next_args:vec![]
+        }
+    });
+    let code_ok=|register:u32|vec![
+        Instruction{id:3,op:lit(b"code")},
+        Instruction{id:4,op:Op::JsonFieldString(register,3)},
+        Instruction{id:5,op:lit(b"Ok")},
+        Instruction{id:6,op:Op::EqBytes(4,5)}
+    ];
+    blocks.push(Block{
+        id:"certified".into(),params:vec![Param{id:2,ty:Type::Bytes}],
+        instructions:code_ok(2),
+        terminator:Terminator::Branch{
+            condition:6,if_true:"delete0".into(),true_args:vec![],
+            if_false:"failed".into(),false_args:vec![]
+        }
+    });
+    for (i,target) in targets.iter().enumerate(){
+        blocks.push(Block{
+            id:format!("delete{i}"),params:vec![],
+            instructions:vec![Instruction{id:1,op:lit(target.as_bytes())}],
+            terminator:Terminator::Yield{
+                call:WorldCall::ReclaimIndexedVersion,args:vec![1],
+                next:format!("reply{i}"),next_args:vec![]
+            }
+        });
+        blocks.push(Block{
+            id:format!("reply{i}"),
+            params:vec![Param{id:2,ty:Type::Bytes}],
+            instructions:code_ok(2),
+            terminator:Terminator::Branch{
+                condition:6,
+                if_true:if i+1==targets.len(){
+                    "done".into()
+                }else{format!("delete{}",i+1)},
+                true_args:vec![],
+                if_false:"failed".into(),false_args:vec![]
+            }
+        });
+    }
+    for (name,value,reg) in [("done",1,7),("failed",0,8)]{
+        blocks.push(Block{
+            id:name.into(),params:vec![],
+            instructions:vec![Instruction{
+                id:reg,op:Op::ConstU32(value)
+            }],
+            terminator:Terminator::Return{value:reg}
+        });
+    }
+    let p=Program{
+        format_version:1,entry_function:"main".into(),
+        functions:vec![Function{
+            name:"main".into(),args:vec![Type::Bytes],
+            returns:Type::U32,blocks
+        }]
+    };
+    p.validate().expect("bounded typed indexed maintenance root");
+    p
+}
+fn version_key(hash:&str)->String{format!("/self/versions/{hash}")}
+fn extra_unreferenced_tools()->Vec<Program>{
+    let mut p0=s29_template();
+    p0.functions[0].blocks[0].instructions[1].op=Op::XorFold(0);
+    let mut p1=s29_template();
+    p1.functions[0].blocks[0].instructions[1].op=Op::ByteAt(0,0);
+    for p in [&p0,&p1]{p.validate().unwrap();}
+    assert_ne!(p0.content_hash().unwrap(),p1.content_hash().unwrap());
+    vec![p0,p1]
+}
+fn test_amortized_indexed_reclaim(){
+    let (mut w,old_hash,new_hash,previous_root)=boot_repaired();
+    let mut targets=vec![old_hash.clone()];
+    for program in extra_unreferenced_tools(){
+        let hash=program.content_hash().unwrap();
+        assert!(!w.state.objects.contains_key(&version_key(&hash)));
+        put(&mut w,version_key(&hash),program.canonical_bytes());
+        targets.push(hash);
+    }
+    assert_eq!(targets.len(),3);
+    assert!(targets.iter().all(|hash|hash!=&previous_root &&
+        hash!=&new_hash));
+    let root=indexed_maintenance(&targets);
+    let root_hash=root.content_hash().unwrap();
+    put(&mut w,version_key(&root_hash),root.canonical_bytes());
+    // Same paid, monotonic active-version discovery and real CAS as the
+    // previous S29 GC study; no stale test-fixture assumption about v0.
+    let read=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(read.code,Code::Ok);
+    let version:serde_json::Value=
+        serde_json::from_slice(&read.payload).unwrap();
+    alter(&mut w,"/self/active",root_hash.as_bytes().to_vec(),
+        version["version"].as_u64().unwrap());
+    let mut legacy=World::from_snapshot(&w.snapshot_json()).unwrap();
+    assert_eq!(legacy.state_hash(),w.state_hash(),
+        "paired GC fee comparison must start from identical world state");
+    let lengths=targets.iter().map(|h|
+        w.state.objects[&version_key(h)].bytes.len() as u64
+    ).collect::<Vec<_>>();
+    let expected_freed=lengths.iter().sum::<u64>();
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    let b_before=b_gas(&w);
+    let after_start=w.state.step;
+    run(&mut w,48);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)));
+    let actions=w.audit.iter().filter(|r|r.step>=after_start &&
+        matches!(&r.action,
+            Some(Action::IndexVersionRefs{..})|
+            Some(Action::ReclaimIndexedVersion{..})))
+        .collect::<Vec<_>>();
+    assert_eq!(actions.len(),4,
+        "real activity must build one certificate then collect 3");
+    assert!(actions.iter().all(|r|r.result.code==Code::Ok));
+    assert!(matches!(&actions[0].action,Some(Action::IndexVersionRefs{..})));
+    let fast_action_a=actions.iter().map(|r|r.result.gas_charged).sum::<u64>();
+    let scan_a=actions[0].result.gas_charged;
+    let indexed_fees=actions[1..].iter().map(|r|r.result.gas_charged)
+        .collect::<Vec<_>>();
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used-expected_freed);
+    assert!(targets.iter().all(|h|
+        !w.state.objects.contains_key(&version_key(h))));
+    assert!(w.state.version_ref_index.is_some(),
+        "removing a target alone cannot create a new reference");
+    assert_eq!(b_gas(&w),b_before);
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+
+    let mut legacy_fees=Vec::new();
+    for hash in &targets{
+        let outcome=legacy.tick(Some(Action::ReclaimVersion{
+            actor:ORGANISM_ID,program_hash:hash.clone()
+        }));
+        assert_eq!(outcome.code,Code::Ok,
+            "matched full-scan baseline must delete same actual versions");
+        legacy_fees.push(outcome.gas_charged);
+    }
+    let baseline_a=legacy_fees.iter().sum::<u64>();
+    assert!(baseline_a>fast_action_a,
+        "no claim of improvement without charged A saving on matched world");
+    assert_eq!(legacy.state.organisms[&ORGANISM_ID].storage_used,
+        w.state.organisms[&ORGANISM_ID].storage_used);
+    assert!(targets.iter().all(|h|
+        !legacy.state.objects.contains_key(&version_key(h))));
+    assert_eq!(b_gas(&legacy),b_before);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    assert_eq!(legacy.state_hash(),World::from_snapshot(
+        &legacy.snapshot_json()).unwrap().state_hash());
+    let (vm_a,action_a)=spend(&w);
+    println!("S29_INDEX AMORTIZED root={root_hash} \
+        old={old_hash} new={new_hash} targets={targets:?} \
+        lengths={lengths:?} freed={expected_freed} \
+        index_scan_bytes={} build_A={scan_a} \
+        fast_gc_A={indexed_fees:?} fast_total_A={fast_action_a} \
+        old_full_gc_A={legacy_fees:?} old_total_A={baseline_a} \
+        saved_A={} B={} run_VM_A={vm_a} run_action_A={action_a} \
+        world_step={}",
+        w.state.version_ref_index.as_ref().unwrap().scanned_bytes,
+        baseline_a-fast_action_a,b_gas(&w),w.state.step);
+}
+fn tiny_unregistered()->(World,String){
+    let tool=s29_template();
+    let hash=tool.content_hash().unwrap();
+    let mut w=World::new(Config::default());
+    put(&mut w,version_key(&hash),tool.canonical_bytes());
+    (w,hash)
+}
+fn index_refs(w:&mut World)->ocee_world_kernel::ActionResult{
+    w.tick(Some(Action::IndexVersionRefs{actor:ORGANISM_ID}))
+}
+fn fast_reclaim(w:&mut World,hash:&str)->ocee_world_kernel::ActionResult{
+    w.tick(Some(Action::ReclaimIndexedVersion{
+        actor:ORGANISM_ID,program_hash:hash.into()
+    }))
+}
+fn test_stale_object_index(){
+    let (mut w,hash)=tiny_unregistered();
+    // A fake self-owned purported "index" cannot become trusted metadata.
+    put(&mut w,"/self/index".into(),b"{\"safe\":true}".to_vec());
+    let cert=index_refs(&mut w);
+    assert_eq!(cert.code,Code::Ok);
+    let before=w.state.organisms[&ORGANISM_ID].storage_used;
+    assert!(w.state.version_ref_index.is_some());
+    put(&mut w,"/self/pins/later".into(),hash.as_bytes().to_vec());
+    assert!(w.state.version_ref_index.is_none(),
+        "real object WRITE must invalidate certificate before fast GC");
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    assert!(used>before);
+    assert_eq!(fast_reclaim(&mut w,&hash).code,Code::Conflict);
+    assert_eq!(reclaim(&mut w,&hash).code,Code::Conflict,
+        "old full scan agrees there is a newly introduced live ref");
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,used);
+    assert!(w.state.objects.contains_key(&version_key(&hash)));
+    let result=index_refs(&mut w);
+    assert_eq!(result.code,Code::Ok);
+    assert!(w.state.version_ref_index.as_ref().unwrap()
+        .referenced.contains(&hash));
+    assert_eq!(fast_reclaim(&mut w,&hash).code,Code::Conflict,
+        "fresh index must also block known live reference");
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    println!("S29_INDEX STALE_WRITE stale=Conflict old_full=Conflict \
+        rebuilding_refs=detected forged_self_index=ignored no_delete=true");
+}
+fn test_stale_message_index(){
+    let (mut w,hash)=tiny_unregistered();
+    assert_eq!(index_refs(&mut w).code,Code::Ok);
+    assert!(w.state.version_ref_index.is_some());
+    let sent=w.tick(Some(Action::Send{
+        actor:ORGANISM_ID,destination:NodeId::C,
+        bytes:format!("future_exec:{hash}").into_bytes()
+    }));
+    assert_eq!(sent.code,Code::Ok);
+    assert!(w.state.version_ref_index.is_none(),
+        "successful SEND must invalidate index");
+    let original_used=w.state.organisms[&ORGANISM_ID].storage_used;
+    assert_eq!(fast_reclaim(&mut w,&hash).code,Code::Conflict);
+    assert_eq!(reclaim(&mut w,&hash).code,Code::Conflict,
+        "pending transport actually protects the raw hash");
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,original_used);
+    assert!(w.state.objects.contains_key(&version_key(&hash)));
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    println!("S29_INDEX STALE_MESSAGE successful_SEND=true \
+        index_invalidated=true fast=Conflict full=Conflict");
+}
+fn test_index_guards(){
+    let (mut w,hash)=tiny_unregistered();
+    put(&mut w,"/self/active".into(),hash.as_bytes().to_vec());
+    assert_eq!(index_refs(&mut w).code,Code::Ok);
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    assert_eq!(fast_reclaim(&mut w,&hash).code,Code::Conflict,
+        "active root protected even if own bytes exempt from indexing");
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,used);
+    assert_eq!(fast_reclaim(&mut w,"not hex").code,Code::InvalidCode);
+    assert_eq!(fast_reclaim(&mut w,&"d".repeat(64)).code,Code::NotFound);
+    // Active root switches invalidate any old root exemption even if
+    // the candidate program remains installed under a valid hash.
+    let mut second=s29_template();
+    second.functions[0].blocks[0].instructions[1].op=Op::Len(0);
+    let other=second.content_hash().unwrap();
+    put(&mut w,version_key(&other),second.canonical_bytes());
+    assert!(w.state.version_ref_index.is_none());
+    alter(&mut w,"/self/active",other.as_bytes().to_vec(),0);
+    assert_eq!(index_refs(&mut w).code,Code::Ok);
+    assert_eq!(fast_reclaim(&mut w,&hash).code,Code::Conflict,
+        "initial recovery root protected after active switch");
+    let mut clean=tiny_unregistered().0;
+    let candidate=s29_template().content_hash().unwrap();
+    assert_eq!(index_refs(&mut clean).code,Code::Ok);
+    clean.state.nodes.get_mut(&NodeId::A).unwrap().gas_available=0;
+    let before=clean.state.organisms[&ORGANISM_ID].storage_used;
+    assert_eq!(fast_reclaim(&mut clean,&candidate).code,Code::Gas);
+    assert!(clean.state.objects.contains_key(&version_key(&candidate)));
+    assert_eq!(before,clean.state.organisms[&ORGANISM_ID].storage_used);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    assert_eq!(clean.state_hash(),World::from_snapshot(
+        &clean.snapshot_json()).unwrap().state_hash());
+    println!("S29_INDEX GUARDS active=Conflict initial=Conflict \
+        stale_on_root_change=true malformed=InvalidCode missing=NotFound \
+        low_Gas=Gas no_partial=true");
+}
+
+#[test]
+#[ignore="charged native paired reference-certificate GC and stale-index controls"]
+fn s29_indexed_gc_native(){
+    let arm=std::env::var("OCEE_S29_INDEX_ARM").expect("scoped CI matrix");
+    match arm.as_str(){
+        "AMORTIZED"=>test_amortized_indexed_reclaim(),
+        "STALE_WRITE"=>test_stale_object_index(),
+        "STALE_MESSAGE"=>test_stale_message_index(),
+        "GUARDS"=>test_index_guards(),
+        x=>panic!("unknown arm {x}")
+    }
+}

@@ -1,0 +1,27 @@
+name: S29 Certified Reference Index and Matched GC Cost
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-certified-index.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-certified-index-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-ref-index:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [AMORTIZED, STALE_WRITE, STALE_MESSAGE, GUARDS]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_INDEX_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native VM paid reference indexing, stale barriers and paired full-scan GC
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_indexed_gc_native -- --ignored --show-output
