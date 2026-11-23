@@ -1,4 +1,5 @@
 name: S29 Inherited Tool Feedback Repair with CAS
+# Rerun once after original Run #45107240682 rejected the static unbounded cycle.
 on:
   push:
     branches: [main]
