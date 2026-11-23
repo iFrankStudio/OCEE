@@ -933,6 +933,36 @@ impl World {
                 ActionResult::ok(view, 1, 0)
             }
             Action::Read {key,..} => {
+                // Development-only, atomic own-object CAS observation:
+                // strictly map canonical suffixes to the requesting actor's
+                // existing /self/ data. No public, system, or cross-actor
+                // capabilities are exposed through this metadata path.
+                if let Some(relative)=key.strip_prefix("/sys/self-object/"){
+                    if relative.is_empty() || relative.split('/').any(|part|
+                        part.is_empty() || part=="." || part==".."){
+                        return ActionResult::fail(Code::BadRequest);
+                    }
+                    let self_key=format!("/self/{relative}");
+                    let Some(object)=self.state.objects.get(&self_key) else{
+                        return ActionResult::fail(Code::NotFound);
+                    };
+                    if object.owner!=actor {
+                        return ActionResult::fail(Code::Denied);
+                    }
+                    if u32::try_from(object.version).is_err(){
+                        return ActionResult::fail(Code::Quota);
+                    }
+                    let version=object.version;
+                    let bytes=object.bytes.clone();
+                    let fee=2+(bytes.len() as u64).saturating_add(63)/64;
+                    if let Err(code)=self.spend_a_gas(fee){
+                        return ActionResult::fail(code);
+                    }
+                    let payload=serde_json::to_vec(&serde_json::json!({
+                        "version":version,"bytes":bytes
+                    })).expect("own-object snapshot serializable");
+                    return ActionResult::ok(payload,fee,0);
+                }
                 // Development-only own-resource sensor, not a hidden task
                 // oracle or a privileged version-list/read capability.
                 // Values are exact real kernel state, constrained to the
