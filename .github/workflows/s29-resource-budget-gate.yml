@@ -1,4 +1,6 @@
 name: S29 Paid Resource-Budget Maintenance Gate
+# Fixture repair: all actual installed-version hashes paid-pinned for the
+# protected-only negative control; no scientific criteria or thresholds changed.
 on:
   push:
     branches: [main]
