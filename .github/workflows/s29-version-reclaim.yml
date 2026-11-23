@@ -1,4 +1,5 @@
 name: S29 Metered Conservative Program Version Reclaim
+# Rerun after original #45121234194 failed before tests: Rust identifier syntax typo.
 on:
   push:
     branches: [main]
