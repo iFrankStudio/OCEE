@@ -1,10 +1,8 @@
 name: S29 Matched Lifetime Task Utility Pilot
 # Replay after preserving adverse-case failure: only ALL_PINNED may require cooldown A dominance.
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-matched-lifetime-pilot.yml'
+  # Verified native #45223821160: both matched pilot tapes passed 2/2.
+  # Two earlier red attempts remain archived; keep expensive P2 manual-only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-lifetime-pilot-${{ github.ref }}
