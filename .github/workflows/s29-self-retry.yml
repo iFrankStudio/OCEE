@@ -1,9 +1,7 @@
 name: S29 Bounded Single-Activation Maintenance Retry
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-self-retry.yml'
+  # Final native run #45141256292 was completed/success 3/3.
+  # Maintain historical experiments as manual-only replay.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-self-retry-${{ github.ref }}
