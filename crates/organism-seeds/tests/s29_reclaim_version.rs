@@ -3834,3 +3834,361 @@ fn s29_dry_run_memory_native(){
         other=>panic!("unknown dry-run negative-feedback arm {other}")
     }
 }
+
+
+// This is the FIRST native pilot of the already-frozen
+// MAINTENANCE-MATCHED-LIFETIME-UTILITY-PROTOCOL, not its full five-tape,
+// three-seed calibration. It uses truly matched exogenous tick schedules.
+fn lifetime_always_retry_root()->Program{
+    let mut p=dry_run_cooldown_root();
+    let block=p.functions[0].blocks.iter_mut()
+        .find(|b|b.id=="probe_memory_exists").unwrap();
+    block.terminator=Terminator::Jump{
+        target:"start_uncached".into(),args:vec![]
+    };
+    p.validate().expect("always retry without cached-negative skipping");
+    p
+}
+fn lifetime_no_maintenance_root()->Program{
+    let p=Program{
+        format_version:1,entry_function:"main".into(),
+        functions:vec![Function{
+            name:"main".into(),args:vec![Type::Bytes],
+            returns:Type::U32,blocks:vec![Block{
+                id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+                instructions:vec![Instruction{id:1,op:Op::ConstU32(0)}],
+                terminator:Terminator::Return{value:1}
+            }]
+        }]
+    };
+    p.validate().unwrap();p
+}
+const S29_LIFE_TASK:&str="/self/outcomes/s29-lifetime-useful-artifact";
+fn lifetime_set_active(w:&mut World,root:&str){
+    let r=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(r.code,Code::Ok);
+    let info:serde_json::Value=
+        serde_json::from_slice(&r.payload).unwrap();
+    alter(w,"/self/active",root.as_bytes().to_vec(),
+        info["version"].as_u64().unwrap());
+}
+fn lifetime_setup()->(World,Vec<String>,String,[String;3],String){
+    let (mut w,old_hash,new_hash,_)=boot_repaired();
+    let mut introduced=vec![old_hash];
+    for p in extra_unreferenced_tools(){
+        let h=p.content_hash().unwrap();
+        put(&mut w,version_key(&h),p.canonical_bytes());
+        introduced.push(h);
+    }
+    let roots=[
+        lifetime_always_retry_root(),
+        dry_run_cooldown_root(),
+        lifetime_no_maintenance_root()
+    ];
+    let mut hashes=Vec::new();
+    for p in roots{
+        let hash=p.content_hash().unwrap();
+        let bytes=p.canonical_bytes();
+        assert!(introduced.iter().all(|h|
+            !bytes.windows(64).any(|window|window==h.as_bytes())),
+            "policy bytecode is forbidden to encode a fixture's target hash");
+        put(&mut w,version_key(&hash),bytes);
+        hashes.push(hash);
+    }
+    let policy_hashes:[String;3]=hashes.try_into().unwrap();
+    let all=w.state.objects.iter().filter_map(|(k,obj)|{
+        let h=k.strip_prefix("/self/versions/")?;
+        (obj.owner==ORGANISM_ID&&h.len()==64).then_some(h.to_owned())
+    }).collect::<Vec<_>>();
+    assert!(introduced.iter().all(|h|all.contains(h)));
+    assert!(policy_hashes.iter().all(|h|all.contains(h)));
+    // The same physical pin objects exist in EVERY policy arm, and include
+    // all three maintenance roots (inactive as well as active). Thus the
+    // roots are not confounded with additional reclaimable code candidates.
+    paid_pin_all_dry(&mut w,&all,false);
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    let target=introduced.iter().find(|h|
+        w.state.objects[&version_key(h)].bytes.len()==276)
+        .expect("matched genuine S29 P2 old 276B program").clone();
+    assert_eq!(b_gas(&w),20);
+    (w,all,target,policy_hashes,new_hash)
+}
+fn lifetime_advance_to_action(
+    w:&mut World,kind:&str,max:u64
+){
+    let mut hit=false;
+    for _ in 0..max{
+        let result=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(result.code,Code::Denied|Code::InvalidCode),
+            "maintenance world calls must remain typed and authorized");
+        let evt=w.audit.last().unwrap();
+        let triggered=match kind{
+            "DRY_MARK"=>matches!(&evt.action,
+                Some(Action::Write{key,bytes,..})
+                    if key==S29_DRY_KEY&&bytes==b"1" &&
+                        evt.result.code==Code::Ok),
+            "COOLDOWN_RESET"=>matches!(&evt.action,
+                Some(Action::Write{key,bytes,..})
+                    if key==S29_DRY_KEY&&bytes==b"0" &&
+                        evt.result.code==Code::Ok),
+            "GC_SUCCESS"=>matches!(&evt.action,
+                Some(Action::ReclaimIndexedVersion{..})
+                    if evt.result.code==Code::Ok),
+            "NO_OP"=>w.state.organisms[&ORGANISM_ID]
+                .vm_continuation.as_ref().is_some_and(|c|c.finished),
+            _=>panic!("unknown frozen advance goal {kind}")
+        };
+        if triggered{hit=true;break;}
+    }
+    assert!(hit,"VM must reach requested paid checkpoint {kind}");
+}
+fn lifetime_pad_to(w:&mut World,due:u64){
+    assert!(w.state.step<=due,"VM missed the frozen exogenous event tick");
+    while w.state.step<due{w.tick(None);}
+    assert_eq!(w.state.step,due);
+}
+fn lifetime_finish(
+    w:&mut World,policy:usize,tape:&str,pin_key:&str,target:&str,
+    release_step:u64,task_step:u64,horizon:u64
+)->(Code,u64){
+    // Single exact external pin-CAS action at release_step, irrespective of
+    // which policy was selected and whether it has discovered the target.
+    lifetime_pad_to(w,release_step);
+    let original=w.state.objects.get(pin_key).unwrap();
+    assert_eq!(original.bytes,target.as_bytes());
+    let version=original.version;
+    let data=if tape=="RELEASE_BEFORE_SECOND"{
+        vec![b'-';64]
+    }else{
+        assert_eq!(tape,"ALL_PINNED");
+        target.as_bytes().to_vec()
+    };
+    let mutation=w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:pin_key.into(),
+        expected_version:Some(version),bytes:data
+    }));
+    assert_eq!(mutation.code,Code::Ok);
+    assert!(mutation.gas_charged>0);
+    // One bounded VM service opportunity after the same exogenous release.
+    if policy==0{
+        if tape=="RELEASE_BEFORE_SECOND"{
+            lifetime_advance_to_action(w,"GC_SUCCESS",75);
+        }else{
+            lifetime_advance_to_action(w,"DRY_MARK",75);
+        }
+    }else if policy==1{
+        lifetime_advance_to_action(w,"COOLDOWN_RESET",75);
+        let (mark,version)=paid_memory_value(w);
+        assert_eq!(mark,b"0".to_vec());
+        assert_eq!(version,1);
+    }
+    lifetime_pad_to(w,task_step);
+    // This is an EXTERNAL, identically timed useful storage artifact
+    // submission (a bounded synthetic proxy), not a self-created task.
+    let task=w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:S29_LIFE_TASK.into(),
+        expected_version:None,bytes:vec![0x55;280]
+    }));
+    assert!(matches!(task.code,Code::Ok|Code::Quota));
+    if task.code==Code::Ok{
+        assert_eq!(w.state.objects[S29_LIFE_TASK].bytes.len(),280);
+    }else{
+        assert!(!w.state.objects.contains_key(S29_LIFE_TASK));
+    }
+    // The cooldown policy may discover the released target in its *third*
+    // episode, but this cannot retroactively make the already failed task
+    // succeed. Record any later GC separately.
+    for _ in 0..95{
+        let done=w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished);
+        if done{break;}
+        let r=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+    }
+    assert!(w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().is_some_and(|c|c.finished));
+    lifetime_pad_to(w,horizon);
+    assert_eq!(b_gas(w),20);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    (task.code,task.gas_charged)
+}
+#[derive(Debug,Clone,PartialEq,Eq)]
+struct LifetimeMeasured{
+    policy:&'static str,
+    vm_a:u64,maintenance_action_a:u64,exogenous_a:u64,
+    task_ok:bool,task_cost_a:u64,
+    gc_attempts:usize,gc_successes:usize,gc_bytes:u64,
+    catalog_count:usize,index_count:usize,
+    used:u64,a_available:u64,
+    policy_bytes:usize,index_serialized_peak:usize,
+}
+fn measure_lifetime(
+    w:&World,start:u64,policy:&'static str,policy_bytes:usize,
+    task_code:Code,task_cost_a:u64
+)->LifetimeMeasured{
+    let mut vm_a=0u64;
+    let mut maintenance_a=0u64;
+    let mut external_a=0u64;
+    let mut gcs=0usize;
+    let mut successes=0usize;
+    let mut reclaimed=0u64;
+    let mut catalog=0usize;
+    let mut indexes=0usize;
+    for e in w.audit.iter().filter(|a|a.step>=start){
+        vm_a+=e.result.vm_gas_charged;
+        let exogenous=match &e.action{
+            Some(Action::Write{key,..})=>
+                key.starts_with("/self/pins/s29-dry-") ||
+                key==S29_LIFE_TASK,
+            _=>false
+        };
+        if exogenous{
+            external_a+=e.result.gas_charged;
+        }else{
+            maintenance_a+=e.result.gas_charged;
+        }
+        if matches!(&e.action,Some(Action::Read{key,..})
+            if key==S29_CATALOG_PAGE0){catalog+=1;}
+        if matches!(&e.action,Some(Action::IndexVersionRefs{..})){
+            indexes+=1;
+        }
+        if matches!(&e.action,Some(Action::ReclaimIndexedVersion{..})){
+            gcs+=1;
+            if e.result.code==Code::Ok{
+                successes+=1;
+                reclaimed+=u64::from_le_bytes(
+                    e.result.payload.as_slice().try_into().unwrap());
+            }
+        }
+    }
+    // This is the trusted certificate's actual snapshot serialization,
+    // NOT charged to the organism's physical storage quota.
+    let index_bytes=w.state.version_ref_index.as_ref()
+        .map(|x|serde_json::to_vec(x).unwrap().len()).unwrap_or(0);
+    LifetimeMeasured{
+        policy,vm_a,maintenance_action_a:maintenance_a,
+        exogenous_a:external_a,task_ok:task_code==Code::Ok,
+        task_cost_a,gc_attempts:gcs,gc_successes:successes,
+        gc_bytes:reclaimed,catalog_count:catalog,index_count:indexes,
+        used:w.state.organisms[&ORGANISM_ID].storage_used,
+        a_available:w.state.nodes[&NodeId::A].gas_available,
+        policy_bytes,index_serialized_peak:index_bytes
+    }
+}
+fn test_matched_lifetime_pilot(tape:&str){
+    use sha2::{Digest,Sha256};
+    let (base,versions,target,roots,new_hash)=lifetime_setup();
+    let initial_hash=base.state_hash();
+    let pin_idx=versions.iter().position(|v|v==&target).unwrap();
+    let pin_key=format!("/self/pins/s29-dry-{pin_idx}");
+    let start_storage=base.state.organisms[&ORGANISM_ID].storage_used;
+    let capacity=base.state.nodes[&NodeId::A].storage_capacity;
+    assert_eq!(capacity-start_storage,195);
+    let start_a=base.state.nodes[&NodeId::A].gas_available;
+    let mut metrics=Vec::<LifetimeMeasured>::new();
+    let policies=["ALWAYS_RETRY","NEGATIVE_COOLDOWN","NO_MAINTENANCE"];
+    let mut common_schedule:Option<(u64,u64,u64)>=None;
+    for (p,policy) in policies.iter().enumerate(){
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        lifetime_set_active(&mut w,&roots[p]);
+        let study_start=w.state.step;
+        let release_step=study_start+90;
+        let task_step=study_start+155;
+        let horizon=study_start+245;
+        assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+            start_storage);
+        assert_eq!(w.state.nodes[&NodeId::A].gas_available,
+            start_a-5,"all active switches are identical paid reads/CAS");
+        if let Some(sched)=common_schedule{
+            assert_eq!(sched,(release_step,task_step,horizon));
+        }else{
+            common_schedule=Some((release_step,task_step,horizon));
+        }
+        if p==0 || p==1{
+            lifetime_advance_to_action(&mut w,"DRY_MARK",80);
+            assert_eq!(paid_memory_value(&w),(b"1".to_vec(),0));
+        }else{
+            lifetime_advance_to_action(&mut w,"NO_OP",10);
+        }
+        let before_release=World::from_snapshot(
+            &w.snapshot_json()).unwrap();
+        let (task,task_a)=lifetime_finish(
+            &mut w,p,tape,&pin_key,&target,
+            release_step,task_step,horizon
+        );
+        let mut replay=before_release;
+        let (replay_task,replay_a)=lifetime_finish(
+            &mut replay,p,tape,&pin_key,&target,
+            release_step,task_step,horizon
+        );
+        assert_eq!((task,task_a),(replay_task,replay_a));
+        assert_eq!(w.snapshot_json(),replay.snapshot_json());
+        assert_eq!(w.audit,replay.audit);
+        assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+        let root_program_len=base.state.objects[&version_key(&roots[p])]
+            .bytes.len();
+        metrics.push(measure_lifetime(
+            &w,study_start,policy,root_program_len,task,task_a
+        ));
+    }
+    let (release_step,task_step,horizon)=common_schedule.unwrap();
+    let tape_bytes=serde_json::to_vec(&serde_json::json!({
+        "seed":129,"protocol":42,"family":"P2",
+        "tape":tape,"release_step":release_step,
+        "task_step":task_step,"horizon":horizon,
+        "released_program":target,"pin_key":pin_key,
+        "task_key":S29_LIFE_TASK,"task_bytes":280
+    })).unwrap();
+    let tape_sha=format!("{:x}",Sha256::digest(&tape_bytes));
+    let always=&metrics[0];
+    let cool=&metrics[1];
+    let none=&metrics[2];
+    assert!(always.vm_a>0&&cool.vm_a>0);
+    assert_eq!(none.index_count,0);
+    assert_eq!(none.gc_attempts,0);
+    assert_eq!(always.index_count,3.min(always.index_count));
+    assert_eq!(cool.index_count,2);
+    assert!(always.vm_a+always.maintenance_action_a >
+        cool.vm_a+cool.maintenance_action_a,
+        "negative feedback should avoid one costly scan under this tape");
+    if tape=="ALL_PINNED"{
+        assert!(!always.task_ok&&!cool.task_ok&&!none.task_ok);
+        assert_eq!((always.gc_bytes,cool.gc_bytes,none.gc_bytes),
+            (0,0,0));
+        assert_eq!(always.index_count,3);
+        assert_eq!(cool.index_count,2);
+    }else{
+        assert_eq!(tape,"RELEASE_BEFORE_SECOND");
+        assert!(always.task_ok);
+        assert!(!cool.task_ok);
+        assert!(!none.task_ok);
+        assert!(always.gc_bytes>=276);
+        assert!(cool.gc_bytes>=276,
+            "late third-episode discovery still does not rescue earlier task");
+        assert_eq!(none.gc_bytes,0);
+    }
+    assert_eq!(b_gas(&base),20);
+    println!("S29_LIFETIME_PILOT tape={tape} seed=129 base_snapshot_SHA={initial_hash} \
+        event_tape_SHA256={tape_sha} \
+        policy_hashes={roots:?} release_step={release_step} \
+        task_step={task_step} horizon={horizon} \
+        shared_installed={} initial_used={start_storage} \
+        initial_capacity={capacity} initial_A={start_a} \
+        metrics={metrics:?} true_P2_B=20 paired_replay=true \
+        all_exogenous_actions_identical=true");
+}
+#[test]
+#[ignore="registered paired P2 lifetime pilot, two tapes, three paid VM policies"]
+fn s29_lifetime_matched_pilot_native(){
+    let tape=std::env::var("OCEE_S29_LIFE_TAPE")
+        .expect("pair-matched frozen exogenous tape");
+    match tape.as_str(){
+        "ALL_PINNED"|"RELEASE_BEFORE_SECOND"=>
+            test_matched_lifetime_pilot(&tape),
+        other=>panic!("unregistered lifetime tape {other}")
+    }
+}
