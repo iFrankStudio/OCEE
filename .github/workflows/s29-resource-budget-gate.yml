@@ -1,0 +1,27 @@
+name: S29 Paid Resource-Budget Maintenance Gate
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-resource-budget-gate.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-resource-gate-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-gated-policy:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [PRESSURE_EXECUTE, SPARE_SKIP, LOW_A_SKIP, RACE_AFTER_SENSOR, PROTECTED_ONLY]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_GATE_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify actual paid P2 resource gate and protected-only counterexample
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_resource_budget_gate_native -- --ignored --show-output
