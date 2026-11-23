@@ -1,6 +1,6 @@
 # OCEE GitHub Actions 运行预算与实验复核制度
 
-**状态：2026-11-23。仓库改为public后GitHub-hosted runner已恢复；最新S29有偿零收益记忆/冷却/恢复专项原生4/4成功，历史工作流默认手动重放。此前S29资源门控首轮4/5测试夹具红例仍可追溯。以下2026-11-20私有仓库阻断记录为历史事实。**
+**状态：2026-11-23。仓库改为public后GitHub-hosted runner已恢复；最新S29三策略配对生命周期效用专项初步2/2原生通过（完整多tape与多seed预注册仍未完成），历史工作流默认手动重放。此前编译/科学断言红运行均保留。以下2026-11-20私有仓库阻断记录为历史事实。**
 
 ## 为什么调整
 - OCEE 目前约26个 `*.yml` 工作流。此前S28–S40的定向工作流往往把共享 `crates/world-kernel/src/lib.rs`、`crates/organism-seeds/src/lib.rs`、`crates/organism-vm/src/lib.rs` 列入 push triggers，一次研究小改动在私有仓库可能触发十余个独立Rust job、部分运行超过数十分钟。历史实验需要保留用于复核，但不应在每次main直接提交时同时执行。
@@ -170,3 +170,11 @@ Initial compile-only failure [#44991946675](https://github.com/iFrankStudio/OCEE
 从main实时HEAD `432fd9fba0111d5f000699d1a0bf786bfbd3338a`起，[先冻结开发协议](./experiments/E001/DEV-S29-PAID-DRY-RUN-MEMORY-COOLDOWN.md) @a6b62cd2，再只在现有S29实验Rust代码中新建无固定候选哈希的3轮单次激活VM（复用现有全部WordCall、付费自身内存、RepeatBounded+RepeatScoped）、4组定向测试；新增专项workflow `.github/workflows/s29-dry-run-feedback-memory.yml`仅首次push自身文件时触发。**[原生Run #45206316515](https://github.com/iFrankStudio/OCEE/actions/runs/45206316515) @`32de261fa5517acaa0e601f659b6ef212caeffd8` 4个独立 Ubuntu Rust jobs `completed/success`、每臂1 passed/0 failed，首轮4/4无红例。** 每个arm都真实执行S29/P2 world129/protocol42和原正确B20，世界/VM内核没有新增特权或隐含元数据神谕，根仅由研究者初次真CAS激活。PAIRED_INDISTINGUISHABILITY的两个相同真实版本目录/used/A世界付费资源Read/目录Read得到完全同样内容，实际1680A Index后同一276B程序因真实自有pin分别被Conflict或Ok回收。DRY_REPEAT 3轮同一VM：全8 Conflict→b1 CAS(v0)→下一轮b0 CAS(v1)并0次目录/Index/GC仅VM77+世界Action8=**85A**→第三轮再全索引、8 Conflict、b1 CAS(v2)，总2个Index、16个GC Conflict、不删。RELEASE_AFTER_COOLDOWN在第二轮后研究者真付费解除pin，第三轮仍能从真实目录/Index回收276B；STALE_MEMORY_CAS真正的版本抢写使VM旧CAS Conflict/0A且停止，避免覆盖。所有验证有完整世界audit/snapshot replay。
 
 仅做4组定向Rust验证，不将“85A与首轮3024A”误当同初始状态严格配对净收益，也不将存储字节与A相减；丢失一个冷却轮次的临时回收机会是明确承认的代价。记录后**恢复新专项workflow为仅`workflow_dispatch`**，不自动重跑昂贵的S29/P2在每次文档push。此轮没有跑完整Rust workspace，科学结论仍仅G0 GO、G1/G2 NO-GO及E001尚未校准/预注册。
+
+## 2026-11-23 — S29三策略匹配生命周期效用试点：两次红运行后原生2/2
+
+基于并行提前提交的[完整五事件tape/≥3seed预冻结协议](./experiments/E001/MAINTENANCE-MATCHED-LIFETIME-UTILITY-PROTOCOL.md) @2479c862，只实现首批两个真正配对时序：持续全pin与第二轮之前外部释放引用。新Rust试验复用S29原VM编程能力与既有代码，没有更改内核GC、P2、资源动作、索引计费。研究者先同一真实world129/protocol42已完成B20世界有偿安装三种策略所有程序/12个已安装版本与真实pin，再从相同基线快照选择三种活动root，实际受费CAS开销一致。不同策略共享同一外部研究者pin-CAS步2165、合成有用任务Write步2230、终止步2320，记录VM/维护Action/外部Action A、真实GC计数和字节、真实任务成功或Quota以及每分支快照/audit全部重放一致。依赖增加测试-only sha2以散列冻结事件带，未触发不相关全workspace。
+
+- **[Run #45222742304](https://github.com/iFrankStudio/OCEE/actions/runs/45222742304)** 首轮两job在诊断println!缺format参数时Rust编译失败，已保留原日志。**[Run #45222915650](https://github.com/iFrankStudio/OCEE/actions/runs/45222915650)** 第二轮ALL_PINNED原生通过，RELEASE逆境因不合理地要求冷却对所有环境都更省A的测试断言失败；该断言与先冻H2逆境损失相悖，随后严格只将节约A判据应用于持续全pin对照；没有变更任何预测任务成功/失败的控制条件和固定事件时序，失败记录已永久写入协议。
+- **[Run #45223821160](https://github.com/iFrankStudio/OCEE/actions/runs/45223821160) @865fc750a9** 第三次完整定向矩阵，2个独立Ubuntu原生Rust jobs全部completed/success、1 passed/0 failed each，**2/2**。连续全pin时ALWAYS维护9611A/3Index/22GC Conflict，COOLDOWN维护6599A/2Index/16Conflict，NONE维护VM2A/无GC；冷却少3012A，但三者均未完成外部280B任务。第二轮前研究者合法释放相同276B目标时，ALWAYS维护6074A且按时提交任务成功；COOLDOWN维护6160A，虽晚些也真实回收276B但**按时的任务因Quota失败**，NONE无回收也失败。前置P2 B20全程不重复。研究者外部写入在存储可用时真实收20A，Quota拒绝0A；这部分与生命体维护A分账。结果与完整局限及两条event-tape SHA见[协议更新](./experiments/E001/MAINTENANCE-MATCHED-LIFETIME-UTILITY-PROTOCOL.md)。
+- 本轮是有用任务的**单种子双时序试点**，严格不能据此宣称完整预冻结五时序×三种子已完成，证书索引只量到最终（未收费）序列化状态0B、没有真实peak；维护root程序字节差异也还未纳入长程摊销。专项CI完成后恢复此workflow为**仅workflow_dispatch**，避免任何S29修改触发无关昂贵完整P2重复回归。**G0 GO / G1,G2 NO-GO、E001尚未正式校准/预注册、无全workspace新回归。**
