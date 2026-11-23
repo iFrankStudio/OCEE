@@ -166,6 +166,7 @@ fn s29_inherited_semantics_repair_native(){
     let genesis=paid_a(&target);
     assert!(target.state.nodes[&ocee_world_kernel::NodeId::A]
         .gas_available<=12_000);
+    let actor_start_step=target.state.step;
     let start_hash=target.state_hash();
     assert_eq!(start_hash,World::from_snapshot(&target.snapshot_json())
         .unwrap().state_hash());
@@ -178,8 +179,10 @@ fn s29_inherited_semantics_repair_native(){
     let imported_calls=imported_root.as_ref()
         .filter(|h|h.as_str()!=learned_hash)
         .map(|h|audit_exec(&target,h)).unwrap_or_default();
+    // Count ONLY active target-program version writes, not the
+    // researcher-paid donor import that happened before autonomy began.
     let w_version=target.audit.iter().filter(|r|
-        r.result.code==Code::Ok &&
+        r.step>actor_start_step && r.result.code==Code::Ok &&
         matches!(&r.action,Some(Action::Write{key,..})
             if key==&format!("/self/versions/{learned_hash}"))).count();
     let cas0=registration(&target,Some(0));
