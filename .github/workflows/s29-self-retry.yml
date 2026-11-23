@@ -1,0 +1,27 @@
+name: S29 Bounded Single-Activation Maintenance Retry
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-self-retry.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-self-retry-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-bounded-retry:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [ONE_ACTIVATION_RELEASE, PIN_STAYS, SNAPSHOT_CONTINUATION]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_SELF_RETRY_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Real charged bounded continuation and no external restart
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_self_retry_native -- --ignored --show-output

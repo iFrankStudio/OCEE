@@ -1265,3 +1265,270 @@ fn s29_feedback_backoff_native(){
         other=>panic!("unknown research arm {other}")
     }
 }
+
+
+/// One researcher-provided fixed graph, one INITIAL paid activation only.
+/// The following three episodes are entries into an already-active VM
+/// continuation, bounded by the existing native RepeatBounded verifier.
+fn self_retry_maintenance_root(targets:&[String])->Program{
+    let mut p=feedback_backoff_root(targets);
+    let f=&mut p.functions[0];
+    let entry=f.blocks.iter_mut().find(|b|b.id=="entry")
+        .expect("program entry");
+    let original_code=std::mem::take(&mut entry.instructions);
+    let original_call=std::mem::replace(&mut entry.terminator,
+        Terminator::Jump{
+            target:"retry_header".into(),args:vec![]
+        });
+    let failed=f.blocks.iter_mut().find(|b|b.id=="failed")
+        .expect("bounded feedback policy return0");
+    failed.instructions.clear();
+    failed.terminator=Terminator::Yield{
+        call:WorldCall::Observe,args:vec![],
+        next:"retry_observed".into(),next_args:vec![]
+    };
+    f.blocks.extend([
+        Block{
+            id:"retry_header".into(),params:vec![],
+            instructions:vec![],
+            terminator:Terminator::RepeatBounded{
+                limit:3,body:"retry_body".into(),body_args:vec![],
+                done:"retry_exhausted".into(),done_args:vec![]
+            }
+        },
+        Block{
+            id:"retry_body".into(),params:vec![],
+            instructions:original_code,
+            terminator:original_call
+        },
+        Block{
+            id:"retry_observed".into(),
+            params:vec![Param{id:2,ty:Type::Bytes}],
+            instructions:vec![],
+            terminator:Terminator::Jump{
+                target:"retry_header".into(),args:vec![]
+            }
+        },
+        Block{
+            id:"retry_exhausted".into(),params:vec![],
+            instructions:vec![Instruction{id:1,op:Op::ConstU32(0)}],
+            terminator:Terminator::Return{value:1}
+        }
+    ]);
+    p.validate().expect("finite cyclic graph verified by RepeatBounded");
+    p
+}
+fn setup_self_retry_world()->(World,Vec<String>,String,String,u64){
+    let (mut w,old_hash,new_hash,_)=boot_repaired();
+    let mut targets=vec![old_hash];
+    for p in extra_unreferenced_tools(){
+        let hash=p.content_hash().unwrap();
+        put(&mut w,version_key(&hash),p.canonical_bytes());
+        targets.push(hash);
+    }
+    let p=self_retry_maintenance_root(&targets);
+    let root=p.content_hash().unwrap();
+    put(&mut w,version_key(&root),p.canonical_bytes());
+    let meta=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(meta.code,Code::Ok);
+    let payload:serde_json::Value=
+        serde_json::from_slice(&meta.payload).unwrap();
+    alter(&mut w,"/self/active",root.as_bytes().to_vec(),
+        payload["version"].as_u64().unwrap());
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap()
+        .storage_capacity=used+2048;
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(targets.iter().map(|h|
+        w.state.objects[&version_key(h)].bytes.len() as u64
+    ).sum::<u64>(),834);
+    (w,targets,root,new_hash,used)
+}
+fn advance_to_true_index(w:&mut World){
+    let mut found=false;
+    for _ in 0..36{
+        let x=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(x.code,Code::Denied|Code::InvalidCode));
+        if matches!(&w.audit.last().unwrap().action,
+            Some(Action::IndexVersionRefs{..})){
+            assert_eq!(x.code,Code::Ok);
+            found=true;break;
+        }
+    }
+    assert!(found,"active VM must construct a genuinely metered index");
+    assert_eq!(w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().unwrap()
+        .loop_counters.get("retry_header"),Some(&1));
+}
+fn true_race_and_risk_one(w:&mut World,targets:&[String]){
+    advance_to_true_index(w);
+    put(w,"/self/pins/s29-self-retry".into(),
+        targets[0].as_bytes().to_vec());
+    assert!(w.state.version_ref_index.is_none());
+    let mut wrote=false;
+    for _ in 0..32{
+        let x=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(x.code,Code::Denied|Code::InvalidCode));
+        if matches!(&w.audit.last().unwrap().action,
+            Some(Action::Write{key,bytes,..})
+                if key==S29_RISK_KEY&&bytes==b"1"){
+            assert_eq!(x.code,Code::Ok);
+            wrote=true;break;
+        }
+    }
+    assert!(wrote,"VM must persist actual Conflict feedback as risk1");
+    verify_memory(w,b"1",0);
+    assert_eq!(w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().unwrap()
+        .loop_counters.get("retry_header"),Some(&1));
+}
+fn advance_to_true_cooldown(w:&mut World){
+    let mut wrote=false;
+    for _ in 0..32{
+        let x=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(x.code,Code::Denied|Code::InvalidCode));
+        if matches!(&w.audit.last().unwrap().action,
+            Some(Action::Write{key,bytes,..})
+                if key==S29_RISK_KEY&&bytes==b"0"){
+            assert_eq!(x.code,Code::Ok);
+            wrote=true;break;
+        }
+    }
+    assert!(wrote,"next cycle must skip GC and write risk0");
+    verify_memory(w,b"0",1);
+    assert_eq!(w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().unwrap()
+        .loop_counters.get("retry_header"),Some(&2));
+}
+fn count_internal_active_switches(w:&World,start:u64)->usize{
+    w.audit.iter().filter(|e|e.step>=start&&
+        matches!(&e.action,Some(Action::Write{key,..})
+            if key=="/self/active")).count()
+}
+fn count_retries_observed(w:&World,start:u64)->usize{
+    w.audit.iter().filter(|e|e.step>=start&&
+        matches!(&e.action,Some(Action::Observe{..}))).count()
+}
+fn assert_self_retry_safety(w:&World,start:u64,targets:&[String],
+    expected_gcs:&[Code],expected_scans:usize){
+    let (scans,retired,history)=gc_actions_since(w,start);
+    assert_eq!(scans,expected_scans);
+    assert_eq!(retired,expected_gcs);
+    assert!(history.iter().all(|(_,code,gas)|*gas>0 ||
+        *code==Code::Conflict));
+    assert_eq!(count_internal_active_switches(w,start),0,
+        "researcher may only have activated the root ONCE");
+    assert!(count_retries_observed(w,start)>=2,
+        "retry requires real charged Observe ticks and persisted loop state");
+    assert_eq!(b_gas(w),20,"P2 B must not be recharged");
+    assert_eq!(w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().unwrap()
+        .loop_counters.get("retry_header"),Some(&3));
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    for h in targets{
+        if expected_gcs.ends_with(&[Code::Ok,Code::Ok,Code::Ok]){
+            assert!(!w.state.objects.contains_key(&version_key(h)));
+        }else{
+            assert!(w.state.objects.contains_key(&version_key(h)));
+        }
+    }
+}
+fn test_single_activation_release(){
+    let (mut w,targets,root,new_hash,used)=setup_self_retry_world();
+    let start=w.state.step;
+    true_race_and_risk_one(&mut w,&targets);
+    advance_to_true_cooldown(&mut w);
+    // The environment, NOT the organism, releases the external pin.
+    alter(&mut w,"/self/pins/s29-self-retry",vec![b'-';64],0);
+    run(&mut w,64);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)));
+    verify_memory(&w,b"0",1);
+    assert_self_retry_safety(&w,start,&targets,
+        &[Code::Conflict,Code::Ok,Code::Ok,Code::Ok],2);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used+64+1-834);
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    let (vm,action)=spend(&w);
+    println!("S29_SELF_RETRY RELEASE root={root} \
+        one_activation=true attempts=3 paid_observe={} \
+        index_count=2 gc=[Conflict,Ok,Ok,Ok] risk=[(1,v0),(0,v1)] \
+        reclaimed=834 initial_storage={used} final_storage={} \
+        b={} vm_A={vm} action_A={action} step={}",
+        count_retries_observed(&w,start),
+        w.state.organisms[&ORGANISM_ID].storage_used,b_gas(&w),w.state.step);
+}
+fn test_single_activation_pin_stays(){
+    let (mut w,targets,root,_,used)=setup_self_retry_world();
+    let start=w.state.step;
+    true_race_and_risk_one(&mut w,&targets);
+    advance_to_true_cooldown(&mut w);
+    // Original pin is never removed, so a new valid index MUST
+    // conservatively report a live reference and refuse retirement.
+    run(&mut w,64);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(0)));
+    assert_self_retry_safety(&w,start,&targets,
+        &[Code::Conflict,Code::Conflict],2);
+    verify_memory(&w,b"0",1);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used+64+1);
+    let writes=gc_actions_since(&w,start).2;
+    assert_eq!(writes.len(),3,
+        "third conflict attempts predefined CAS None and cannot overwrite v1");
+    assert_eq!(writes[2].0,b"1");
+    assert_eq!(writes[2].1,Code::Conflict);
+    assert_eq!(writes[2].2,0);
+    println!("S29_SELF_RETRY PIN_STAYS root={root} \
+        one_activation=true bounded_attempts=3 gc=[Conflict,Conflict] \
+        third_memory_CAS=Conflict no_delete=true \
+        paid_observe={} B={} step={}",
+        count_retries_observed(&w,start),b_gas(&w),w.state.step);
+}
+fn test_single_activation_snapshot_resume(){
+    let (mut w,targets,root,_,used)=setup_self_retry_world();
+    let start=w.state.step;
+    true_race_and_risk_one(&mut w,&targets);
+    let mut copy=World::from_snapshot(&w.snapshot_json()).unwrap();
+    assert_eq!(copy.snapshot_json(),w.snapshot_json());
+    assert_eq!(w.state.organisms[&ORGANISM_ID].active_program_hash,
+        Some(root.clone()));
+    // Both copies persist SAME continuation in a non-finished state.
+    assert!(!w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().unwrap().finished);
+    advance_to_true_cooldown(&mut w);
+    advance_to_true_cooldown(&mut copy);
+    assert_eq!(w.snapshot_json(),copy.snapshot_json());
+    alter(&mut w,"/self/pins/s29-self-retry",vec![b'-';64],0);
+    alter(&mut copy,"/self/pins/s29-self-retry",vec![b'-';64],0);
+    assert_eq!(w.snapshot_json(),copy.snapshot_json());
+    run(&mut w,64);
+    run(&mut copy,64);
+    assert_eq!(w.snapshot_json(),copy.snapshot_json(),
+        "deterministic replay preserves pending feedback and bounded counters");
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)));
+    assert_self_retry_safety(&w,start,&targets,
+        &[Code::Conflict,Code::Ok,Code::Ok,Code::Ok],2);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used+64+1-834);
+    println!("S29_SELF_RETRY SNAPSHOT root={root} \
+        snapshot_continuation_same=true final_world_and_audit_identical=true \
+        loops=3 GC=[Conflict,Ok,Ok,Ok] reclaimed=834 B={} step={}",
+        b_gas(&w),w.state.step);
+}
+#[test]
+#[ignore="real native bounded autonomous tick-continuation self retry without reactivation"]
+fn s29_self_retry_native(){
+    let arm=std::env::var("OCEE_S29_SELF_RETRY_ARM")
+        .expect("dedicated CI matrix arm");
+    match arm.as_str(){
+        "ONE_ACTIVATION_RELEASE"=>test_single_activation_release(),
+        "PIN_STAYS"=>test_single_activation_pin_stays(),
+        "SNAPSHOT_CONTINUATION"=>test_single_activation_snapshot_resume(),
+        other=>panic!("unknown test arm {other}")
+    }
+}
