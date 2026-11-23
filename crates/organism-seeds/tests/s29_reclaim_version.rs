@@ -631,3 +631,263 @@ fn s29_indexed_gc_native(){
         x=>panic!("unknown arm {x}")
     }
 }
+
+
+/// The researcher's *fixed* typed policy graph decides at runtime using
+/// the kernel's actual charged own-resource observation. The researcher
+/// supplied the candidate hashes and thresholds; only this bounded
+/// resource-conditional branch is an endogenous VM action.
+fn pressure_gc_policy(targets:&[String])->Program{
+    let mut root=indexed_maintenance(targets);
+    let f=&mut root.functions[0];
+    let entry=f.blocks.iter_mut().find(|b|b.id=="entry")
+        .expect("existing indexed maintenance entry");
+    entry.instructions=vec![
+        Instruction{id:40,op:lit(b"/sys/resource-status")}
+    ];
+    entry.terminator=Terminator::Yield{
+        call:WorldCall::Read,args:vec![40],
+        next:"policy_sensor_reply".into(),next_args:vec![]
+    };
+    // Existing "certified" and "delete0/1/2" follow real paid
+    // IndexVersionRefs unchanged, with all failure paths returning U32(0).
+    f.blocks.extend([
+        Block{
+            id:"policy_sensor_reply".into(),
+            params:vec![Param{id:2,ty:Type::Bytes}],
+            instructions:vec![
+                Instruction{id:3,op:lit(b"code")},
+                Instruction{id:4,op:Op::JsonFieldString(2,3)},
+                Instruction{id:5,op:lit(b"Ok")},
+                Instruction{id:6,op:Op::EqBytes(4,5)}
+            ],
+            terminator:Terminator::Branch{
+                condition:6,if_true:"policy_resources".into(),
+                true_args:vec![2],if_false:"failed".into(),
+                false_args:vec![]
+            }
+        },
+        Block{
+            id:"policy_resources".into(),
+            params:vec![Param{id:2,ty:Type::Bytes}],
+            instructions:vec![
+                Instruction{id:10,op:lit(b"payload")},
+                Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+                Instruction{id:12,op:lit(b"used")},
+                Instruction{id:13,op:Op::JsonFieldU32(11,12)},
+                Instruction{id:14,op:lit(b"capacity")},
+                Instruction{id:15,op:Op::JsonFieldU32(11,14)},
+                Instruction{id:16,op:lit(b"a_available")},
+                Instruction{id:17,op:Op::JsonFieldU32(11,16)},
+                Instruction{id:18,op:Op::ConstU32(4)},
+                Instruction{id:19,op:Op::Div(15,18)},
+                Instruction{id:20,op:Op::Sub(15,13)},
+                Instruction{id:21,op:Op::Div(20,19)},
+                Instruction{id:22,op:Op::ConstU32(0)},
+                Instruction{id:23,op:Op::EqU32(21,22)}
+            ],
+            terminator:Terminator::Branch{
+                condition:23,if_true:"policy_budget".into(),
+                true_args:vec![17],if_false:"failed".into(),
+                false_args:vec![]
+            }
+        },
+        Block{
+            id:"policy_budget".into(),
+            params:vec![Param{id:17,ty:Type::U32}],
+            instructions:vec![
+                Instruction{id:24,op:Op::ConstU32(2200)},
+                Instruction{id:25,op:Op::Div(17,24)},
+                Instruction{id:26,op:Op::ConstU32(0)},
+                Instruction{id:27,op:Op::EqU32(25,26)}
+            ],
+            terminator:Terminator::Branch{
+                condition:27,if_true:"failed".into(),true_args:vec![],
+                if_false:"policy_begin_index".into(),false_args:vec![]
+            }
+        },
+        Block{
+            id:"policy_begin_index".into(),params:vec![],
+            instructions:vec![],
+            terminator:Terminator::Yield{
+                call:WorldCall::IndexVersionRefs,args:vec![],
+                next:"certified".into(),next_args:vec![]
+            }
+        }
+    ]);
+    root.validate().expect("resource policy must be static, typed, bounded");
+    root
+}
+
+/// Preparation is identical for the four experimental arms until the
+/// researcher-controlled resource environment differs. No hidden task
+/// label is ever passed into the policy VM.
+fn prepare_pressure_policy()->(World,Vec<String>,String,String,u64){
+    let (mut w,old_hash,new_hash,_previous_root)=boot_repaired();
+    let mut targets=vec![old_hash];
+    for p in extra_unreferenced_tools(){
+        let hash=p.content_hash().unwrap();
+        put(&mut w,version_key(&hash),p.canonical_bytes());
+        targets.push(hash);
+    }
+    let root=pressure_gc_policy(&targets);
+    let policy_hash=root.content_hash().unwrap();
+    put(&mut w,version_key(&policy_hash),root.canonical_bytes());
+    let meta=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(meta.code,Code::Ok);
+    let reply:serde_json::Value=
+        serde_json::from_slice(&meta.payload).unwrap();
+    alter(&mut w,"/self/active",policy_hash.as_bytes().to_vec(),
+        reply["version"].as_u64().unwrap());
+    assert!(targets.iter().all(|h|w.state.objects.contains_key(
+        &version_key(h))));
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(b_gas(&w),20);
+    let reclaimable_bytes=targets.iter().map(|h|
+        w.state.objects[&version_key(h)].bytes.len() as u64
+    ).sum::<u64>();
+    assert_eq!(reclaimable_bytes,834);
+    (w,targets,policy_hash,new_hash,reclaimable_bytes)
+}
+fn policy_actions(w:&World,from:u64)->(Vec<&ocee_world_kernel::AuditRecord>,
+    Vec<&ocee_world_kernel::AuditRecord>,
+    Vec<&ocee_world_kernel::AuditRecord>){
+    let mut sensor=Vec::new();let mut index=Vec::new();let mut collect=Vec::new();
+    for r in &w.audit {
+        if r.step<from{continue;}
+        match &r.action{
+            Some(Action::Read{key,..}) if key=="/sys/resource-status"=>
+                sensor.push(r),
+            Some(Action::IndexVersionRefs{..})=>index.push(r),
+            Some(Action::ReclaimIndexedVersion{..})=>collect.push(r),
+            _=>{}
+        }
+    }
+    (sensor,index,collect)
+}
+fn policy_status(r:&ocee_world_kernel::AuditRecord)
+    ->(u64,u64,u64){
+    assert_eq!(r.result.code,Code::Ok);
+    assert_eq!(r.result.gas_charged,2);
+    let v:serde_json::Value=serde_json::from_slice(&r.result.payload).unwrap();
+    (v["used"].as_u64().unwrap(),
+     v["capacity"].as_u64().unwrap(),
+     v["a_available"].as_u64().unwrap())
+}
+fn run_pressure_arm(arm:&str){
+    let (mut w,targets,root,new_hash,bytes)=prepare_pressure_policy();
+    let before_used=w.state.organisms[&ORGANISM_ID].storage_used;
+    let a=&mut w.state.nodes.get_mut(&NodeId::A).unwrap();
+    match arm {
+        "PRESSURE"|"INVALIDATED"|"LOW_GAS"=>{
+            a.storage_capacity=before_used+256;
+        },
+        "RELAXED"=>{a.storage_capacity=before_used*2;},
+        _=>unreachable!()
+    }
+    if arm=="LOW_GAS"{a.gas_available=1500;}
+    let pre_b=b_gas(&w);
+    let start=w.state.step;
+    let first_hash=&targets[0];
+    if arm=="INVALIDATED" {
+        let mut saw_index=false;
+        for _ in 0..24 {
+            let tick=w.tick_autonomous(ORGANISM_ID);
+            assert!(!matches!(tick.code,Code::Denied|Code::InvalidCode));
+            if matches!(&w.audit.last().unwrap().action,
+                Some(Action::IndexVersionRefs{..})){
+                assert_eq!(tick.code,Code::Ok);
+                saw_index=true;break;
+            }
+        }
+        assert!(saw_index,"pressure branch must actually certify index");
+        assert!(w.state.version_ref_index.is_some());
+        put(&mut w,"/self/pins/policy-race".into(),
+            first_hash.as_bytes().to_vec());
+        assert!(w.state.version_ref_index.is_none(),
+            "legitimate competing WRITE must invalidate index before GC");
+    }
+    run(&mut w,64);
+    let (sensor,index,gc)=policy_actions(&w,start);
+    assert_eq!(sensor.len(),1,"one actual metered resource observation");
+    let (used,cap,available)=policy_status(sensor[0]);
+    assert_eq!(used,before_used);
+    assert_eq!(cap,w.state.nodes[&NodeId::A].storage_capacity);
+    let pressure=cap-used<cap/4;
+    let budget=available>=2200;
+    let expected=(arm=="PRESSURE"||arm=="INVALIDATED");
+    assert_eq!(pressure&&budget,expected,
+        "real observed resource fields drive this fixed VM branch");
+    assert_eq!(b_gas(&w),pre_b,
+        "maintenance must not redo P2 B computation");
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    let issued_gc=gc.iter().map(|r|(r.result.code,r.result.gas_charged))
+        .collect::<Vec<_>>();
+    match arm{
+        "PRESSURE"=>{
+            assert_eq!(index.len(),1);
+            assert_eq!(index[0].result.code,Code::Ok);
+            assert_eq!(gc.len(),3);
+            assert!(gc.iter().all(|r|r.result.code==Code::Ok));
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+                Some(Value::U32(1)));
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+                before_used-bytes);
+            assert!(targets.iter().all(|h|!w.state.objects.contains_key(
+                &version_key(h))));
+        },
+        "RELAXED"|"LOW_GAS"=>{
+            assert!(index.is_empty()&&gc.is_empty(),
+                "unnecessary maintenance should never pay the scan");
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+                Some(Value::U32(0)));
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,before_used);
+            assert!(targets.iter().all(|h|w.state.objects.contains_key(
+                &version_key(h))));
+        },
+        "INVALIDATED"=>{
+            assert_eq!(index.len(),1);
+            assert_eq!(index[0].result.code,Code::Ok);
+            assert_eq!(gc.len(),1);
+            assert_eq!(gc[0].result.code,Code::Conflict);
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+                Some(Value::U32(0)));
+            assert!(targets.iter().all(|h|w.state.objects.contains_key(
+                &version_key(h))));
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+                before_used+64,"only researcher-supplied pin adds storage");
+        },
+        _=>unreachable!()
+    }
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    let (vm,action)=spend(&w);
+    let new_exec=w.tick(Some(Action::Exec{
+        actor:ORGANISM_ID,program_hash:new_hash.clone(),
+        input:vec![18,2,7,4]
+    }));
+    assert_eq!(new_exec.code,Code::Ok);
+    assert_eq!(serde_json::from_slice::<Value>(&new_exec.payload).unwrap(),
+        Value::U32(4));
+    println!("S29_POLICY arm={arm} root={root} \
+        observed_used={used} observed_capacity={cap} \
+        observed_A={available} pressure={pressure} budget={budget} \
+        initial_storage={before_used} last_storage={} \
+        reclaimable_bytes={bytes} index_count={} gc={issued_gc:?} \
+        index_A={} B={} VM_A={vm} world_action_A={action} \
+        return={:?} step={}",
+        w.state.organisms[&ORGANISM_ID].storage_used,
+        index.len(),index.iter().map(|x|x.result.gas_charged).sum::<u64>(),
+        b_gas(&w),w.state.organisms[&ORGANISM_ID].last_return,w.state.step);
+}
+#[test]
+#[ignore="charged VM own-resource pressure maintenance policy with real race control"]
+fn s29_resource_policy_native(){
+    let arm=std::env::var("OCEE_S29_POLICY_ARM")
+        .expect("scoped experimental arm");
+    assert!(["PRESSURE","RELAXED","LOW_GAS","INVALIDATED"]
+        .contains(&arm.as_str()));
+    run_pressure_arm(&arm);
+}
