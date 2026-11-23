@@ -1,9 +1,7 @@
 name: S29 Paid Persistent GC Feedback Backoff
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-feedback-backoff.yml'
+  # Native 3/3 #45130306800 completed/success.
+  # Keep this development experiment manually replayable only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-feedback-backoff-${{ github.ref }}

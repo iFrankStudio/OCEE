@@ -164,3 +164,8 @@ ActionResult { request_id, code, payload, vm_gas, action_gas, bytes_charged }
 本研究在已存在的`WorldCall::Read`路径加入`Read("/sys/resource-status")`，只允许合法actor读取其自身真实持久`storage_used`、node A实际`storage_capacity`及真实剩余A gas。该读取**由kernel真实扣2 A后**生成严格范围的JSON数值 `{"used":U32,"capacity":U32,"a_available":U32}`；所有字段先验证可无损转为U32，否则Quota，不可用截断值骗过有限VM策略。该系统位置非普通可写对象，不能向它Write、不能查询其他actor的空间；隔离Exec的Read ACL仍仅允许既有纯权限路径，因此没有不付费隐性资源Oracle。既有六原语声明应保留：它仅是开发可见信息扩展，正式E001前需独立版本化与校准。
 
 [资源感知同根策略与原生4/4](./experiments/E001/DEV-S29-RESOURCE-PRESSURE-GC-POLICY-PROTOCOL.md)使用研究者固定<约25%剩余存储、A≥2200的有限条件分支，真实根据读取值决定是否构建索引/GC。证书可随合法写入失效，导致已付1667 A但无空间释放；本轮不保证策略经济最优、长期收益或开放式自主目标，禁止将这种内核新观察能力静默视为原E001未改变的初始实验世界。
+
+
+## 2026-11-23 — 有偿普通自有记忆控制一次性GC退避（未新增内核能力）
+
+[预冻结协议与native3/3审计](./experiments/E001/DEV-S29-PAID-PERSISTENT-MAINTENANCE-BACKOFF-PROTOCOL.md)仅使用此前已冻结的`Read("/sys/resource-status")`和普通`Read/Write("/self/maintenance/risk-s29")`，以及既有两类受限GC动作。VM依据真正`ReclaimIndexedVersion` Conflict反馈，普通CAS None付费存`1`；下次**研究者付费重激活**时真实Read风险状态`1`，普通CAS0付费清成`0`并跳过一次索引，之后在符合存储与A条件时仍可重新尝试；损坏/未知状态不执行GC。此记忆属于个体自己的可写世界对象，**不可作为安全授权或不可伪造的内核引用证书**；状态版本一旦超出预设CAS阶段只能拒绝继续，不能推断出长期自适应策略。额外功能增加的是**研究者提供的固定有界活动Program策略**，并未新增隐藏GC能力或更改正式E001已冻结的旧六原语基线。
