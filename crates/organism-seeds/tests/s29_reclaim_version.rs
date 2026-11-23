@@ -4024,7 +4024,7 @@ struct LifetimeMeasured{
     gc_attempts:usize,gc_successes:usize,gc_bytes:u64,
     catalog_count:usize,index_count:usize,
     used:u64,a_available:u64,
-    policy_bytes:usize,index_serialized_peak:usize,
+    policy_bytes:usize,index_serialized_final_unbilled:usize,
 }
 fn measure_lifetime(
     w:&World,start:u64,policy:&'static str,policy_bytes:usize,
@@ -4065,8 +4065,9 @@ fn measure_lifetime(
             }
         }
     }
-    // This is the trusted certificate's actual snapshot serialization,
-    // NOT charged to the organism's physical storage quota.
+    // This is the ENDPOINT certificate serialization, not a sampled
+    // lifetime peak: its actual peak still needs dedicated instrumentation
+    // in the full multi-tape study. Not charged to organism physical quota.
     let index_bytes=w.state.version_ref_index.as_ref()
         .map(|x|serde_json::to_vec(x).unwrap().len()).unwrap_or(0);
     LifetimeMeasured{
@@ -4076,7 +4077,7 @@ fn measure_lifetime(
         gc_bytes:reclaimed,catalog_count:catalog,index_count:indexes,
         used:w.state.organisms[&ORGANISM_ID].storage_used,
         a_available:w.state.nodes[&NodeId::A].gas_available,
-        policy_bytes,index_serialized_peak:index_bytes
+        policy_bytes,index_serialized_final_unbilled:index_bytes
     }
 }
 fn test_matched_lifetime_pilot(tape:&str){
