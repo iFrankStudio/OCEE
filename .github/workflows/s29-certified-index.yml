@@ -1,4 +1,6 @@
 name: S29 Certified Reference Index and Matched GC Cost
+# First native run #45123180187: safety 3/3, AMORTIZED fixture InvalidProgram(ByteAt index type).
+# Rerun with corrected typed fixture; unchanged mechanism and frozen thresholds.
 on:
   push:
     branches: [main]
