@@ -2975,3 +2975,324 @@ fn s29_paid_catalog_discovery_native(){
         other=>panic!("unexpected inventory arm {other}")
     }
 }
+
+
+/// DEV S29: A researcher-installed typed resource gate wraps the same
+/// runtime-discovered catalog GC policy. No target program hash appears in
+/// its bytecode; no new world call or privileged environment probe is added.
+/// Both fixed thresholds are preregistered researcher choices, not learning.
+fn resource_budget_catalog_root()->Program{
+    let mut p=catalog_discovery_root();
+    let func=&mut p.functions[0];
+    assert_eq!(func.blocks[0].id,"entry");
+    func.blocks[0].id="catalog_entry".into();
+    let prefix=vec![
+        Block{
+            id:"entry".into(),
+            params:vec![Param{id:0,ty:Type::Bytes}],
+            instructions:vec![
+                Instruction{id:1,op:lit(b"/sys/resource-status")}
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Read,args:vec![1],
+                next:"status_reply".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"status_reply".into(),
+            params:vec![Param{id:2,ty:Type::Bytes}],
+            instructions:vec![
+                Instruction{id:10,op:lit(b"code")},
+                Instruction{id:11,op:Op::JsonFieldString(2,10)},
+                Instruction{id:12,op:lit(b"Ok")},
+                Instruction{id:13,op:Op::EqBytes(11,12)}
+            ],
+            terminator:Terminator::Branch{
+                condition:13,if_true:"parse_resource_status".into(),
+                true_args:vec![2],if_false:"failed".into(),
+                false_args:vec![]
+            }
+        },
+        Block{
+            id:"parse_resource_status".into(),
+            params:vec![Param{id:2,ty:Type::Bytes}],
+            instructions:vec![
+                Instruction{id:10,op:lit(b"payload")},
+                Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+                Instruction{id:12,op:lit(b"used")},
+                Instruction{id:13,op:Op::JsonFieldU32(11,12)},
+                Instruction{id:14,op:lit(b"capacity")},
+                Instruction{id:15,op:Op::JsonFieldU32(11,14)},
+                Instruction{id:16,op:lit(b"a_available")},
+                Instruction{id:17,op:Op::JsonFieldU32(11,16)},
+                Instruction{id:18,op:Op::Sub(15,13)},
+                Instruction{id:19,op:Op::ConstU32(4096)},
+                Instruction{id:20,op:Op::Div(18,19)},
+                Instruction{id:21,op:Op::ConstU32(0)},
+                Instruction{id:22,op:Op::EqU32(20,21)},
+                Instruction{id:23,op:Op::ConstU32(3000)},
+                Instruction{id:24,op:Op::Div(17,23)},
+                Instruction{id:25,op:Op::EqU32(24,21)},
+                Instruction{id:26,op:lit(b"")}
+            ],
+            // Quota/gas starvation is a terminal strategy state, not an
+            // excuse to attempt an expensive index with inadequate A.
+            terminator:Terminator::Branch{
+                condition:25,if_true:"failed".into(),
+                true_args:vec![],if_false:"check_storage_pressure".into(),
+                false_args:vec![22,26]
+            }
+        },
+        Block{
+            id:"check_storage_pressure".into(),
+            params:vec![
+                Param{id:1,ty:Type::Bool},
+                Param{id:2,ty:Type::Bytes}
+            ],
+            instructions:vec![],
+            terminator:Terminator::Branch{
+                condition:1,if_true:"catalog_entry".into(),
+                true_args:vec![2],if_false:"failed".into(),
+                false_args:vec![]
+            }
+        }
+    ];
+    let mut old=std::mem::take(&mut func.blocks);
+    func.blocks=prefix;
+    func.blocks.append(&mut old);
+    p.validate().expect("resource-gated runtime discovery must validate");
+    p
+}
+
+/// Actual P2 repair and charged installation, as in earlier S29 experiments,
+/// but with a SINGLE researcher-supplied generic resource-gated program.
+fn setup_resource_budget_world()->(World,Vec<String>,String,String,u64){
+    let (mut w,old_hash,new_hash,_)=boot_repaired();
+    let mut candidates=vec![old_hash];
+    for tool in extra_unreferenced_tools(){
+        let h=tool.content_hash().unwrap();
+        assert!(!w.state.objects.contains_key(&version_key(&h)));
+        put(&mut w,version_key(&h),tool.canonical_bytes());
+        candidates.push(h);
+    }
+    let p=resource_budget_catalog_root();
+    let serialized=p.canonical_bytes();
+    assert!(candidates.iter().all(|h|
+        !serialized.windows(64).any(|v|v==h.as_bytes())),
+        "candidate identity must not be injected into gated VM code");
+    let root=p.content_hash().unwrap();
+    put(&mut w,version_key(&root),serialized);
+    let meta=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(meta.code,Code::Ok);
+    let value:serde_json::Value=
+        serde_json::from_slice(&meta.payload).unwrap();
+    alter(&mut w,"/self/active",root.as_bytes().to_vec(),
+        value["version"].as_u64().unwrap());
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+2048;
+    assert_eq!(candidates.iter().map(|h|
+        w.state.objects[&version_key(h)].bytes.len() as u64)
+        .sum::<u64>(),834);
+    assert_eq!(b_gas(&w),20);
+    (w,candidates,root,new_hash,used)
+}
+const S29_RESOURCE_READ:&str="/sys/resource-status";
+fn resource_status_receipt(w:&World,start:u64)->(u64,u64,u64,u64){
+    let records=w.audit.iter().filter(|a|a.step>=start &&
+        matches!(&a.action,Some(Action::Read{key,..})
+            if key==S29_RESOURCE_READ))
+        .collect::<Vec<_>>();
+    assert_eq!(records.len(),1,
+        "active VM must consult real own-resource status once");
+    assert_eq!(records[0].result.code,Code::Ok);
+    assert_eq!(records[0].result.gas_charged,2,
+        "resource status is really paid: 2 A");
+    let parsed:serde_json::Value=
+        serde_json::from_slice(&records[0].result.payload).unwrap();
+    let used=parsed["used"].as_u64().unwrap();
+    let capacity=parsed["capacity"].as_u64().unwrap();
+    let a=parsed["a_available"].as_u64().unwrap();
+    assert!(capacity>=used);
+    (used,capacity,a,records[0].step)
+}
+fn advance_to_paid_resource_status(w:&mut World,start:u64){
+    let mut found=false;
+    for _ in 0..12{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        if matches!(&w.audit.last().unwrap().action,
+            Some(Action::Read{key,..}) if key==S29_RESOURCE_READ){
+            assert_eq!(r.code,Code::Ok);
+            found=true;break;
+        }
+    }
+    assert!(found,"true VM must pay for current own-resource status");
+    let _=resource_status_receipt(w,start);
+}
+fn test_resource_budget_gate_arm(arm:&str){
+    let (mut w,candidates,root,new_hash,used)=setup_resource_budget_world();
+    let (should_execute,expected_free)=match arm{
+        "PRESSURE_EXECUTE"|"RACE_AFTER_SENSOR"=>(true,2048u64),
+        "PROTECTED_ONLY"=>(true,2048u64),
+        "SPARE_SKIP"=>(false,8192u64),
+        "LOW_A_SKIP"=>(false,2048u64),
+        _=>panic!("unknown preregistered resource gate arm {arm}")
+    };
+    if arm=="SPARE_SKIP"{
+        // Researcher-controlled world configuration, not an organism action.
+        w.state.nodes.get_mut(&NodeId::A).unwrap()
+            .storage_capacity=used+8192;
+    }
+    if arm=="LOW_A_SKIP"{
+        // A real deterministic scheduled resource event followed by a REAL
+        // epoch grant. Never overwrite the gas balance by test fiat.
+        use ocee_world_kernel::{EventKind,ScheduledEvent};
+        let length=w.state.config.epoch_length;
+        let next=(w.state.step/length+1)*length;
+        w.schedule_event(ScheduledEvent{
+            due_step:next,priority:0,sequence_no:0,
+            kind:EventKind::ResourceChange{
+                node:NodeId::A,gas_per_epoch:2400
+            }
+        });
+        while w.state.step<=next {w.tick(None);}
+        assert_eq!(w.state.nodes[&NodeId::A].gas_per_epoch,2400);
+        assert_eq!(w.state.nodes[&NodeId::A].gas_available,2400);
+        assert_eq!(w.state.last_granted_epoch,Some(next/length));
+    }
+    if arm=="PROTECTED_ONLY"{
+        // All three genuine orphan versions now have distinct PAID pins.
+        // A resource gate cannot know this from storage and gas alone.
+        for (i,h) in candidates.iter().enumerate(){
+            put(&mut w,format!("/self/pins/s29-gate-{i}"),
+                h.as_bytes().to_vec());
+        }
+        assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+            used+192);
+    }
+    let start=w.state.step;
+    let (vm_before,action_before)=spend(&w);
+    let mut pinned:Option<String>=None;
+    if arm=="RACE_AFTER_SENSOR"{
+        advance_to_paid_resource_status(&mut w,start);
+        let target=candidates.iter().min_by_key(|h|
+            (w.state.objects[&version_key(h)].bytes.len(),h.as_str().to_owned()))
+            .unwrap().clone();
+        let r=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:"/self/pins/s29-gate-race".into(),
+            expected_version:None,bytes:target.as_bytes().to_vec()
+        }));
+        assert_eq!(r.code,Code::Ok);
+        assert_eq!(r.gas_charged,6);
+        pinned=Some(target);
+    }
+    let replay_point=World::from_snapshot(&w.snapshot_json()).unwrap();
+    run(&mut w,100);
+    // Same frozen VM bytes, continuation and world state must replay.
+    let mut replay=replay_point;
+    run(&mut replay,100);
+    assert_eq!(w.snapshot_json(),replay.snapshot_json());
+    assert_eq!(w.audit,replay.audit);
+    let (reported_used,cap,a_remaining,observed_step)=
+        resource_status_receipt(&w,start);
+    if arm=="PROTECTED_ONLY"{
+        assert_eq!(reported_used,used+192);
+        assert_eq!(cap-reported_used,2048-192);
+    }else{
+        assert_eq!(reported_used,used);
+        assert_eq!(cap-reported_used,expected_free);
+    }
+    if arm=="LOW_A_SKIP"{
+        assert!(a_remaining<3000);
+    }else{
+        assert!(a_remaining>=3000);
+    }
+    let cat=w.audit.iter().filter(|e|e.step>=start &&
+        matches!(&e.action,Some(Action::Read{key,..})
+            if key==S29_CATALOG_PAGE0))
+        .collect::<Vec<_>>();
+    let index=w.audit.iter().filter(|e|e.step>=start &&
+        matches!(&e.action,Some(Action::IndexVersionRefs{..})))
+        .collect::<Vec<_>>();
+    let gc=discovery_gc_audit(&w,start);
+    if should_execute{
+        assert_eq!(cat.len(),1);
+        assert_eq!(index.len(),1);
+        assert_eq!(cat[0].result.code,Code::Ok);
+        assert_eq!(index[0].result.code,Code::Ok);
+        assert!(cat[0].result.gas_charged>0);
+        assert!(index[0].result.gas_charged>0);
+        let (observed_candidates,_)=catalog_entries(&w,start);
+        assert!(gc.iter().all(|(h,_,_)|
+            observed_candidates.contains(h)),
+            "no program hash may be injected outside paid inventory");
+        assert!(gc.len()<=8);
+        if arm=="PROTECTED_ONLY"{
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+                Some(Value::U32(0)));
+            assert!(!gc.is_empty());
+            assert!(gc.iter().all(|(_,code,_)|*code==Code::Conflict));
+            assert!(candidates.iter().all(|h|
+                w.state.objects.contains_key(&version_key(h))));
+        }else{
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+                Some(Value::U32(1)));
+            assert!(gc.iter().any(|(_,code,fee)|
+                *code==Code::Ok&&*fee>0));
+            if let Some(pin)=pinned.as_ref(){
+                assert!(gc.iter().any(|(h,code,_)|
+                    h==pin&&*code==Code::Conflict),
+                    "true pin introduced after sensor must block later GC");
+                assert!(w.state.objects.contains_key(&version_key(pin)));
+            }
+        }
+    }else{
+        assert!(cat.is_empty(),"spare or low-A policy must not read catalog");
+        assert!(index.is_empty(),"spare or low-A policy must not scan index");
+        assert!(gc.is_empty(),"spare or low-A policy must not attempt GC");
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(0)));
+        assert!(candidates.iter().all(|h|
+            w.state.objects.contains_key(&version_key(h))));
+        assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,used);
+    }
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(w.state.objects["/self/active"].bytes,root.as_bytes());
+    assert_eq!(count_internal_active_switches(&w,start),0);
+    assert_eq!(b_gas(&w),20);
+    let reclaimed=w.audit.iter().filter(|e|e.step>=start &&
+        matches!(&e.action,Some(Action::ReclaimIndexedVersion{..})) &&
+        e.result.code==Code::Ok)
+        .map(|e|u64::from_le_bytes(
+            e.result.payload.as_slice().try_into().unwrap()))
+        .sum::<u64>();
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used + if arm=="PROTECTED_ONLY"{192}else if pinned.is_some(){64}else{0}
+        - reclaimed);
+    let (vm_after,action_after)=spend(&w);
+    println!("S29_RESOURCE_GATE {arm} root={root} \
+        observed_step={observed_step} free={} a_remaining={} \
+        sensor_A=2 catalog_reads={} index_count={} GC={gc:?} \
+        reclaimed_B={} VM_A={} Action_A={} \
+        used={} capacity={} B={} last_return={:?} \
+        replay_snapshot=true",
+        cap-reported_used,a_remaining,cat.len(),index.len(),reclaimed,
+        vm_after-vm_before,action_after-action_before,
+        w.state.organisms[&ORGANISM_ID].storage_used,
+        w.state.nodes[&NodeId::A].storage_capacity,b_gas(&w),
+        w.state.organisms[&ORGANISM_ID].last_return);
+}
+#[test]
+#[ignore="preregistered charged resource and gas policy gate with native P2 controls"]
+fn s29_resource_budget_gate_native(){
+    let arm=std::env::var("OCEE_S29_GATE_ARM")
+        .expect("five-arm genuine own-resource budget gate");
+    match arm.as_str(){
+        "PRESSURE_EXECUTE"|"SPARE_SKIP"|"LOW_A_SKIP"|
+        "RACE_AFTER_SENSOR"|"PROTECTED_ONLY"=>
+            test_resource_budget_gate_arm(&arm),
+        other=>panic!("unknown resource gate arm {other}")
+    }
+}
