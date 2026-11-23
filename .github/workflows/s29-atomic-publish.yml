@@ -1,0 +1,27 @@
+name: S29 Atomic Tool Publish and No Orphan Rollback
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-atomic-publish.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-atomic-publish-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-atomic:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [REPAIR, STALE, FRESH, FAILURES]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OCEE_S29_ATOMIC_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Real charged VM atomic publish and native no-orphan controls
+        run: cargo test -p ocee-organism-seeds --test s29_feedback_repair s29_atomic_publication_native -- --ignored --show-output

@@ -5,7 +5,7 @@ use ocee_organism_seeds::s19_p1_tool::s19_p1_build_and_use_tool;
 use ocee_organism_seeds::s23_p2_transfer::s23_p2_remote_tool_transfer;
 use ocee_organism_seeds::s29_public_transform::{
     s29_evidence_selected_root,s29_feedback_repair_root,
-    s29_second_label_repair_root,
+    s29_second_label_repair_root,s29_atomic_publish_repair_root,
     s29_template,REGISTRY,PREDICTION
 };
 use ocee_organism_vm::{Op,Program,Value};
@@ -497,4 +497,294 @@ fn s29_second_label_mismatch_native(){
     }
     assert_eq!(w.state_hash(),World::from_snapshot(&w.snapshot_json())
         .unwrap().state_hash());
+}
+
+
+fn boot_atomic_repair(seed:u64)->(World,String){
+    let p1=s19_p1_build_and_use_tool();
+    let p2=s23_p2_remote_tool_transfer();
+    let root=s29_atomic_publish_repair_root(
+        &p1.content_hash().unwrap(),&p2.content_hash().unwrap());
+    let hash=root.content_hash().unwrap();
+    let mut w=World::with_protocol(Config{
+        seed,a_gas_per_epoch:12_000,..Config::default()
+    },Family::P2,42);
+    for program in [p1,p2,root]{
+        put(&mut w,format!("/self/versions/{}",
+            program.content_hash().unwrap()),program.canonical_bytes());
+    }
+    put(&mut w,"/self/active".into(),hash.clone().into_bytes());
+    (w,hash)
+}
+fn publish(
+    registry:&str,program:Vec<u8>,version:Option<u64>
+)->Action{
+    Action::PublishTool{
+        actor:ORGANISM_ID,registry_key:registry.into(),
+        program_bytes:program,expected_version:version
+    }
+}
+fn no_unadopted_version(w:&World,hash:&str,registry:&str,used:u64){
+    assert!(!w.state.objects.contains_key(
+        &format!("/self/versions/{hash}")),
+        "failure must NOT leave new program version");
+    assert!(!w.state.objects.contains_key(registry),
+        "failure must NOT create registry");
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,used,
+        "failure must not charge persistent storage");
+}
+fn native_atomic_negative_controls(){
+    let mut program=s29_template();
+    program.functions[0].blocks[0].instructions[1].op=Op::Len(0);
+    program.validate().unwrap();
+    let program_bytes=program.canonical_bytes();
+    let hash=program.content_hash().unwrap();
+    let key="/self/tools/atomic-test";
+    let expected_install=2+(program_bytes.len() as u64).div_ceil(16)+6;
+
+    // Restricted registry ACL: no ability to publish arbitrary external
+    // paths or activate a root by smuggling bytes through this action.
+    let mut denied=World::new(Config::default());
+    let used=denied.state.organisms[&ORGANISM_ID].storage_used;
+    let bad=denied.tick(Some(publish(
+        "/public/E001/transform",program_bytes.clone(),None)));
+    assert_eq!(bad.code,Code::Denied);
+    no_unadopted_version(&denied,&hash,"/public/E001/transform",used);
+
+    // A syntactically valid JSON Program with noncanonical trailing bytes.
+    let mut invalid=World::new(Config::default());
+    let used=invalid.state.organisms[&ORGANISM_ID].storage_used;
+    let mut tampered=program_bytes.clone();
+    tampered.push(b'\n');
+    let result=invalid.tick(Some(publish(key,tampered,None)));
+    assert_eq!(result.code,Code::InvalidCode);
+    no_unadopted_version(&invalid,&hash,key,used);
+
+    // Preflight quota must be computed across BOTH proposed objects;
+    // the old two-write path would have left a version on CAS failure.
+    let mut low_space=World::new(Config{
+        a_storage_bytes:64,..Config::default()
+    });
+    let used=low_space.state.organisms[&ORGANISM_ID].storage_used;
+    let result=low_space.tick(Some(publish(
+        key,program_bytes.clone(),None)));
+    assert_eq!(result.code,Code::Quota);
+    no_unadopted_version(&low_space,&hash,key,used);
+
+    // No partial state even if available A is below the aggregate
+    // program-install + registry CAS charge (cost is not waived).
+    let mut low_gas=World::new(Config{
+        a_gas_per_epoch:1,..Config::default()
+    });
+    let used=low_gas.state.organisms[&ORGANISM_ID].storage_used;
+    let result=low_gas.tick(Some(publish(
+        key,program_bytes.clone(),None)));
+    assert_eq!(result.code,Code::Gas);
+    no_unadopted_version(&low_gas,&hash,key,used);
+    assert!(expected_install>1);
+
+    // CAS mismatch on an existing registry must not install an unrelated
+    // valid new version. Existing self-owned identical version may be
+    // republished at the reduced 6-A registry-only fee.
+    let old=first_collision_second_fault();
+    let old_hash=old.content_hash().unwrap();
+    let mut stale=World::new(Config::default());
+    let initial=stale.tick(Some(publish(
+        key,old.canonical_bytes(),None)));
+    assert_eq!(initial.code,Code::Ok);
+    assert_eq!(stale.state.objects[key].version,0);
+    assert_eq!(stale.state.objects[key].bytes,old_hash.as_bytes());
+    let used=stale.state.organisms[&ORGANISM_ID].storage_used;
+    let result=stale.tick(Some(publish(
+        key,program_bytes.clone(),Some(1))));
+    assert_eq!(result.code,Code::Conflict);
+    assert!(!stale.state.objects.contains_key(
+        &format!("/self/versions/{hash}")));
+    assert_eq!(stale.state.organisms[&ORGANISM_ID].storage_used,used);
+    assert_eq!(stale.state.objects[key].bytes,old_hash.as_bytes());
+    assert_eq!(stale.state.objects[key].version,0);
+    let reuse=stale.tick(Some(publish(
+        key,old.canonical_bytes(),Some(0))));
+    assert_eq!(reuse.code,Code::Ok);
+    assert_eq!(reuse.gas_charged,6);
+    assert_eq!(stale.state.organisms[&ORGANISM_ID].storage_used,used);
+    assert_eq!(stale.state.objects[key].version,1);
+
+    for w in [&denied,&invalid,&low_space,&low_gas,&stale]{
+        assert_eq!(w.state_hash(),World::from_snapshot(
+            &w.snapshot_json()).unwrap().state_hash());
+    }
+    println!(
+        "S29_ATOMIC_FAILURES ACL=Denied canonical=InvalidCode \\
+         storage=Quota gas=Gas stale=Conflict reuse=Ok/6 \\
+         expected_full_fee={expected_install} new_version_on_failure=false"
+    );
+}
+
+/// Native charged organism repair with a tool-registry transaction.
+/// Three active paths share the SAME initial root program hash. Separate
+/// FAILURES arm probes world-action resource/ACL invariants explicitly.
+#[test]
+#[ignore = "atomic S29 tool install and registry CAS, with no orphan failures"]
+fn s29_atomic_publication_native(){
+    let arm=std::env::var("OCEE_S29_ATOMIC_ARM").expect("scoped matrix");
+    assert!(["REPAIR","STALE","FRESH","FAILURES"].contains(&arm.as_str()));
+    if arm=="FAILURES"{
+        native_atomic_negative_controls();
+        return;
+    }
+    let (mut w,root_hash)=boot_atomic_repair(129);
+    let repaired_hash=repaired_len_hash();
+    let mut original_hash=None;
+    if arm!="FRESH"{
+        let wrong=first_collision_second_fault();
+        let wrong_hash=wrong.content_hash().unwrap();
+        assert_ne!(wrong_hash,repaired_hash);
+        put(&mut w,format!("/self/versions/{wrong_hash}"),
+            wrong.canonical_bytes());
+        put(&mut w,REGISTRY.into(),wrong_hash.as_bytes().to_vec());
+        original_hash=Some(wrong_hash);
+        assert_eq!(w.state.objects[REGISTRY].version,0);
+        if arm=="STALE"{
+            let bumped=w.tick(Some(Action::Write{
+                actor:ORGANISM_ID,key:REGISTRY.into(),
+                bytes:original_hash.as_ref().unwrap().as_bytes().to_vec(),
+                expected_version:Some(0)
+            }));
+            assert_eq!(bumped.code,Code::Ok);
+            assert_eq!(w.state.objects[REGISTRY].version,1);
+        }
+    }
+    let before_autonomy=w.state.step;
+    let before_hash=w.state_hash();
+    let before_used=w.state.organisms[&ORGANISM_ID].storage_used;
+    let (genesis_vm,genesis_action)=paid_a(&w);
+    assert_eq!(genesis_vm,0);
+    assert_eq!(before_hash,World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    run(&mut w);
+    let last=w.state.organisms[&ORGANISM_ID].last_return.clone();
+    let old_exec=original_hash.as_ref()
+        .map(|hash|audit_exec(&w,hash)).unwrap_or_default();
+    let repaired_exec=audit_exec(&w,&repaired_hash);
+    let atomic_actions=w.audit.iter().filter_map(|r|{
+        let Some(Action::PublishTool{
+            registry_key,expected_version,program_bytes,..})=&r.action
+            else{return None};
+        if registry_key!=REGISTRY || r.step<before_autonomy {
+            return None;
+        }
+        assert_eq!(program_bytes, &{
+            let mut p=s29_template();
+            p.functions[0].blocks[0].instructions[1].op=Op::Len(0);
+            p.canonical_bytes()
+        },"active VM must author the actual new canonical program");
+        Some((*expected_version,r.result.code,r.result.gas_charged))
+    }).collect::<Vec<_>>();
+    let legacy_writes=w.audit.iter().filter(|r|
+        r.step>=before_autonomy && matches!(&r.action,
+            Some(Action::Write{key,..})
+            if key==REGISTRY||key==&format!(
+                "/self/versions/{repaired_hash}"))).count();
+    let stored_registry=w.state.objects.get(REGISTRY)
+        .map(|o|(String::from_utf8(o.bytes.clone()).unwrap(),o.version));
+    let new_installed=w.state.objects.contains_key(
+        &format!("/self/versions/{repaired_hash}"));
+    let after_used=w.state.organisms[&ORGANISM_ID].storage_used;
+    let public_reads=w.audit.iter().filter(|r|
+        matches!(&r.action,Some(Action::Read{key,..})
+            if key=="/public/E001/transform")).count();
+    let task:TransformTask=serde_json::from_slice(
+        &w.state.objects["/public/E001/transform"].bytes).unwrap();
+    let expectation=hidden_transform(129,&task.held_out_input);
+    let heldout=w.state.objects.get(PREDICTION)
+        .map(|o|serde_json::from_slice::<u32>(&o.bytes).unwrap());
+    let remote=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|o|u32::from_le_bytes(o.bytes.as_slice().try_into().unwrap()));
+    let work:WorkItem=serde_json::from_slice(
+        &w.state.objects["/public/E001/job0"].bytes).unwrap();
+    let remote_truth=work.values.iter().enumerate().fold(0u32,|acc,(i,x)|
+        acc.wrapping_add(x.rotate_left((i%32) as u32)));
+    let b=bgas(&w);
+    let (vm_a,action_a)=paid_a(&w);
+    let invalid=w.audit.iter().filter(|r|
+        matches!(r.result.code,Code::Denied|Code::InvalidCode)).count();
+    println!(
+        "S29_ATOMIC arm={arm} root={root_hash} initial={before_hash} \\
+         old={original_hash:?} new={repaired_hash} \\
+         genesis_VM={genesis_vm} genesis_action={genesis_action} \\
+         publish={atomic_actions:?} legacy_writes={legacy_writes} \\
+         old_exec={old_exec:?} repaired_exec={repaired_exec:?} \\
+         registry={stored_registry:?} installed={new_installed} \\
+         self_used_before={before_used} self_used_after={after_used} \\
+         reads_public={public_reads} heldout={heldout:?} \\
+         heldout_truth={expectation} B={b} remote={remote:?} \\
+         remote_truth={remote_truth} vm_A={vm_a} action_A={action_a} \\
+         total_A={} invalid={invalid} return={last:?} step={}",
+        vm_a+action_a,w.state.step
+    );
+    assert_eq!(legacy_writes,0,
+        "active root must use ONLY atomic tool adoption");
+    assert_eq!(invalid,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    if arm!="FRESH"{
+        assert_eq!(old_exec.len(),2);
+        assert_eq!(old_exec[0].1,3);
+        assert_eq!(old_exec[1].1,2);
+        assert_eq!(public_reads,2,
+            "first public label collision must force paid second Read");
+    }else{assert!(old_exec.is_empty());}
+    match arm.as_str(){
+        "REPAIR"=>{
+            assert_eq!(atomic_actions.len(),1);
+            assert_eq!(atomic_actions[0].0,Some(0));
+            assert_eq!(atomic_actions[0].1,Code::Ok);
+            assert!(atomic_actions[0].2>6);
+            assert_eq!(stored_registry,Some((repaired_hash.clone(),1)));
+        },
+        "FRESH"=>{
+            assert_eq!(atomic_actions.len(),2);
+            assert_eq!(atomic_actions[0].0,Some(0));
+            assert_eq!(atomic_actions[0].1,Code::Conflict);
+            assert_eq!(atomic_actions[1].0,None);
+            assert_eq!(atomic_actions[1].1,Code::Ok);
+            assert!(atomic_actions[1].2>6);
+            assert_eq!(stored_registry,Some((repaired_hash.clone(),0)));
+        },
+        "STALE"=>{
+            assert_eq!(atomic_actions.len(),2);
+            assert_eq!(atomic_actions[0].0,Some(0));
+            assert_eq!(atomic_actions[0].1,Code::Conflict);
+            assert_eq!(atomic_actions[1].0,None);
+            assert_eq!(atomic_actions[1].1,Code::Conflict);
+            assert_eq!(atomic_actions[0].2,0);
+            assert_eq!(atomic_actions[1].2,0);
+            assert!(!new_installed,
+                "stale registry MUST NOT leave an unadopted program version");
+            assert_eq!(before_used,after_used,
+                "stale atomic transaction must not retain new storage");
+            assert_eq!(stored_registry,
+                Some((original_hash.as_ref().unwrap().clone(),1)));
+            assert!(repaired_exec.is_empty());
+            assert_eq!(heldout,None);
+            assert_eq!(remote,None);
+            assert_eq!(b,0);
+            assert_eq!(last,Some(Value::U32(0)));
+        },
+        _=>unreachable!()
+    }
+    if arm!="STALE"{
+        assert!(new_installed);
+        assert_eq!(repaired_exec.len(),3);
+        assert_eq!((repaired_exec[0].1,repaired_exec[1].1,
+            repaired_exec[2].1),(3,4,expectation));
+        assert!(repaired_exec.iter().all(|r|r.2>0));
+        assert_eq!(repaired_exec[2].0,task.held_out_input);
+        assert_eq!(heldout,Some(expectation));
+        assert_eq!(remote,Some(remote_truth));
+        assert_eq!(b,20,"legitimate native B computation must succeed");
+        assert_eq!(last,Some(Value::U32(1)));
+    }
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
 }
