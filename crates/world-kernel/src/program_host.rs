@@ -176,6 +176,16 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
                 expected_version:if version==u32::MAX{None}else{Some(u64::from(version))},
             }
         },
+        WorldCall::PublishTool if args.len()==3=>{
+            let version=as_num(&args[2])?;
+            Action::PublishTool{
+                actor,registry_key:utf8(&args[0])?,
+                program_bytes:as_bytes(&args[1])?.to_vec(),
+                expected_version:if version==u32::MAX{
+                    None
+                }else{Some(u64::from(version))},
+            }
+        },
         WorldCall::Send if args.len()==1 => Action::Send{
             actor,destination:NodeId::C,bytes:as_bytes(&args[0])?.to_vec()
         },
@@ -292,4 +302,90 @@ impl World {
             }
         }
     }
+}
+
+
+/// Single world action that commits BOTH an immutable content-addressed
+/// program and its owned tool-registry CAS. All checks and the aggregate
+/// A fee happen before either object or storage_used is modified.
+/// No extra filesystem/host capability is exposed to the organism.
+pub(crate) fn atomic_publish_tool(
+    world:&mut World,actor:u64,registry_key:String,
+    program_bytes:Vec<u8>,expected_version:Option<u64>
+)->ActionResult {
+    if !registry_key.starts_with("/self/tools/") {
+        return ActionResult::fail(Code::Denied);
+    }
+    let old_registry=world.state.objects.get(&registry_key);
+    if old_registry.is_some_and(|o|o.owner!=actor) {
+        return ActionResult::fail(Code::Denied);
+    }
+    let previous_version=old_registry.map(|o|o.version);
+    if previous_version!=expected_version {
+        return ActionResult::fail(Code::Conflict);
+    }
+    let new_registry_version=match previous_version {
+        None=>0,
+        Some(v)=>match v.checked_add(1) {
+            Some(n)=>n,
+            None=>return ActionResult::fail(Code::BadRequest),
+        },
+    };
+    let program:Program=match serde_json::from_slice(&program_bytes) {
+        Ok(p)=>p,
+        Err(_)=>return ActionResult::fail(Code::InvalidCode),
+    };
+    if program.canonical_bytes()!=program_bytes {
+        return ActionResult::fail(Code::InvalidCode);
+    }
+    let hash=match program.content_hash() {
+        Ok(h)=>h,
+        Err(_)=>return ActionResult::fail(Code::InvalidCode),
+    };
+    // Already content-addressed and domain-separated by Program::content_hash.
+    let version_key=format!("/self/versions/{hash}");
+    let existing=world.state.objects.get(&version_key);
+    if existing.is_some_and(|o|o.owner!=actor) {
+        return ActionResult::fail(Code::Denied);
+    }
+    if existing.is_some_and(|o|o.bytes!=program_bytes) {
+        return ActionResult::fail(Code::InvalidCode);
+    }
+    let old_registry_len=old_registry.map_or(0,|o|o.bytes.len() as u64);
+    let needs_version=existing.is_none();
+    let install_bytes=if needs_version{program_bytes.len() as u64}else{0};
+    let used=world.state.organisms.get(&actor)
+        .expect("valid actor has home storage").storage_used;
+    let next_used=used.checked_sub(old_registry_len)
+        .and_then(|n|n.checked_add(64))
+        .and_then(|n|n.checked_add(install_bytes));
+    let Some(next_used)=next_used else{
+        return ActionResult::fail(Code::Quota);
+    };
+    let cap=world.state.nodes[&NodeId::A].storage_capacity;
+    if next_used>cap{return ActionResult::fail(Code::Quota);}
+    // Exactly the cost of the previous pair of real writes, with no
+    // redundant immutable-program write when that hash already exists.
+    let registry_fee=2+64u64.div_ceil(16);
+    let install_fee=if needs_version {
+        2+(program_bytes.len() as u64).div_ceil(16)
+    }else{0};
+    let fee=registry_fee+install_fee;
+    if let Err(code)=world.spend_a_gas(fee) {
+        return ActionResult::fail(code);
+    }
+    // No fallible action after debit. One deterministic tick atomically
+    // changes the two objects, registry version and charged storage.
+    if needs_version {
+        world.state.objects.insert(version_key,Object{
+            owner:actor,version:0,bytes:program_bytes
+        });
+    }
+    world.state.objects.insert(registry_key,Object{
+        owner:actor,version:new_registry_version,
+        bytes:hash.as_bytes().to_vec()
+    });
+    world.state.organisms.get_mut(&actor)
+        .expect("valid actor").storage_used=next_used;
+    ActionResult::ok(hash.into_bytes(),fee,0)
 }

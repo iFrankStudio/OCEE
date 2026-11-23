@@ -292,6 +292,12 @@ pub enum Action {
     Observe { actor: u64 },
     Read { actor: u64, key: String },
     Write { actor: u64, key: String, expected_version: Option<u64>, bytes: Vec<u8> },
+    /// Atomically install one canonical immutable program and CAS-update
+    /// one owned /self/tools registry. No version orphan on failure.
+    PublishTool {
+        actor: u64, registry_key: String, program_bytes: Vec<u8>,
+        expected_version: Option<u64>,
+    },
     Send { actor: u64, destination: NodeId, bytes: Vec<u8> },
     Receive { actor: u64, max_count: usize },
     // P2 only: deliberately not implemented as a fake success in P1.
@@ -858,7 +864,8 @@ impl World {
         };
         let actor = match &action {
             Action::Observe {actor} | Action::Read {actor,..} |
-            Action::Write {actor,..} | Action::Send {actor,..} |
+            Action::Write {actor,..} | Action::PublishTool{actor,..} |
+            Action::Send {actor,..} |
             Action::Receive {actor,..} | Action::Exec {actor,..} |
             Action::Probe {actor,..} | Action::VerifyProbe{actor,..} |
             Action::RenewProbe{actor,..} | Action::ArmTaskFence{actor,..} |
@@ -944,6 +951,11 @@ impl World {
                 self.state.organisms.get_mut(&actor).expect("actor").storage_used = next_used;
                 program_host::after_write(&mut self.state,actor,active_switch);
                 ActionResult::ok(version.to_le_bytes().to_vec(),gas,0)
+            }
+            Action::PublishTool{registry_key,program_bytes,expected_version,..}=>{
+                program_host::atomic_publish_tool(
+                    self,actor,registry_key,program_bytes,expected_version
+                )
             }
             Action::Send {destination,bytes,..} => {
                 if destination != NodeId::C { return ActionResult::fail(Code::Denied); }
