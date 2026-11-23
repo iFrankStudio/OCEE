@@ -1539,14 +1539,15 @@ const S29_OWN_META:&str="/sys/self-object/maintenance/risk-s29";
 /// A fixed, verifier-bounded single-activation policy. Unlike the old
 /// hard-coded None/0 CAS, every existing-object write uses the actual
 /// version from a charged atomic, actor-owned kernel observation.
+fn versioned_block<'a>(f:&'a mut Function,name:&str)->&'a mut Block{
+    f.blocks.iter_mut().find(|b|b.id==name)
+        .expect("preexisting resource feedback block")
+}
 fn versioned_self_retry_root(targets:&[String])->Program{
     let mut root=self_retry_maintenance_root(targets);
     let f=&mut root.functions[0];
-    let block=|f:&mut Function,name:&str|
-        f.blocks.iter_mut().find(|b|b.id==name)
-            .expect("preexisting resource feedback block");
     {
-        let b=block(f,"retry_body");
+        let b=versioned_block(f,"retry_body");
         b.instructions=vec![Instruction{
             id:50,op:lit(S29_OWN_META.as_bytes())
         }];
@@ -1554,7 +1555,7 @@ fn versioned_self_retry_root(targets:&[String])->Program{
             call:WorldCall::Read,..}));
     }
     {
-        let b=block(f,"risk_parse");
+        let b=versioned_block(f,"risk_parse");
         b.instructions=vec![
             Instruction{id:10,op:lit(b"payload")},
             Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
@@ -1572,7 +1573,7 @@ fn versioned_self_retry_root(targets:&[String])->Program{
         };
     }
     {
-        let b=block(f,"risk_cooldown");
+        let b=versioned_block(f,"risk_cooldown");
         b.params=vec![Param{id:30,ty:Type::U32}];
         b.instructions=vec![
             Instruction{id:10,op:lit(S29_RISK_KEY.as_bytes())},
@@ -1584,7 +1585,7 @@ fn versioned_self_retry_root(targets:&[String])->Program{
         };
     }
     {
-        let b=block(f,"risk_written_cooldown");
+        let b=versioned_block(f,"risk_written_cooldown");
         b.instructions=vec![
             Instruction{id:3,op:lit(b"code")},
             Instruction{id:4,op:Op::JsonFieldString(2,3)},
@@ -1597,7 +1598,7 @@ fn versioned_self_retry_root(targets:&[String])->Program{
         };
     }
     {
-        let b=block(f,"risk_set");
+        let b=versioned_block(f,"risk_set");
         b.instructions=vec![Instruction{
             id:40,op:lit(S29_OWN_META.as_bytes())
         }];
@@ -1607,7 +1608,7 @@ fn versioned_self_retry_root(targets:&[String])->Program{
         };
     }
     {
-        let b=block(f,"risk_written_failure");
+        let b=versioned_block(f,"risk_written_failure");
         b.instructions=vec![
             Instruction{id:3,op:lit(b"code")},
             Instruction{id:4,op:Op::JsonFieldString(2,3)},
