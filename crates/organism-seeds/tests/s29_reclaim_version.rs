@@ -416,7 +416,8 @@ fn extra_unreferenced_tools()->Vec<Program>{
     let mut p0=s29_template();
     p0.functions[0].blocks[0].instructions[1].op=Op::XorFold(0);
     let mut p1=s29_template();
-    p1.functions[0].blocks[0].instructions[1].op=Op::ByteAt(0,0);
+    // ByteAt requires U32 index register 1; instruction 1 is ConstU32(0).
+    p1.functions[0].blocks[0].instructions[1].op=Op::ByteAt(0,1);
     for p in [&p0,&p1]{p.validate().unwrap();}
     assert_ne!(p0.content_hash().unwrap(),p1.content_hash().unwrap());
     vec![p0,p1]
