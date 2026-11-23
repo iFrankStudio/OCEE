@@ -143,3 +143,10 @@ ActionResult { request_id, code, payload, vm_gas, action_gas, bytes_charged }
 原文“六原语”为E001 v0.2草案的冻结候选能力集合。**OCEE开发研究S29现新增第七类受限`PublishTool`，不能静默认为旧六原语已经包含它，也不能在正式样本中擅自混用两版能力。**其[先冻结设计和真实原生4/4账本](./experiments/E001/DEV-S29-ATOMIC-TOOL-PUBLISH-PROTOCOL.md)与传统`WRITE`严格区别：活动VM发送`PublishTool(registry_key:Bytes,canonical_program_bytes:Bytes,expected_version:U32)`，`u32::MAX`表示不存在，kernel只允许`/self/tools/`；完整验证规范Program/内容hash/单actor版本与注册CAS/总存储/gas后，一次动作提交规范不可变`/self/versions/<hash>`及Registry指针，不允许切换active root或修改公共对象。若版本已经存在且属于同actor/字节相同，引用时不重写旧版本，也不再次收费安装；只收CAS的6 A。否则新安装费是`2+ceil(program_bytes.len/16)`加registry6 A；失败不部分提交对象/存储。VM解释器和原有`WRITE`并未因此获得任何其他特权。
 
 当用于研究S29时，这一机制的成功被定义为**研究者给予新工具发布原语后，在既有有限算法搜索和反馈选择条件下消除版本孤儿**；不是个体发现世界新权限，亦非资源套利的自动证明。未来进入正式E001前必须版本化`kernel/vm/initial capabilities/action cost table`，重新校准并明确含/不含原子PublishTool的机制对照。不存在通用Delete或多对象任意事务，旧的合法程序版本不会因原子工具切换而自动回收。
+
+
+## 2026-11-23 — 开发扩展：受费保守`ReclaimVersion`，不属于原六原语
+
+继原子`PublishTool`之后，OCEE原生世界又加入一个**仅限本actor拥有的程序版本的回收动作** `WorldCall::ReclaimVersion(hash_bytes)`。它精确检查64字节规范程序内容hash、持有权、root/continuation/初始恢复根及所有可见的原始ASCII字符串哈希引用，包括其他对象key和正文及未完成消息；若保守证明有已知活引用，返回Conflict，不删版本。调用根**自己的活动Program字节码不做原始字符串扫描**（否则其请求参数本身就阻止回收），故此机制并非对所有未来代码路径与任意转码引用的安全证明。只有全部检查通过、A已付完整`1+ceil(scanned_bytes/64)+2+ceil(old_program_bytes/64)`后，原子删除目标不可变对象并退还同等实际Program字节的存储占用。已有`Read/Write/Exec/PublishTool`等语义未改变。
+
+[DEV协议与首轮红例、最终原生4/4以及收费记录](./experiments/E001/DEV-S29-METERED-VERSION-RECLAIM-PROTOCOL.md)表明279B程序在完整S29世界回收收费1646 A，有界回收不必然产生资源净收益。第8类开发扩展及成本表需在正式E001校准预注册前独立冻结，旧六原语正式基线和开发原语需明确标注。
