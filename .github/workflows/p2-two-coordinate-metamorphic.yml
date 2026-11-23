@@ -1,9 +1,6 @@
 name: P2 Two-Coordinate Metamorphic Witness Controls
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/p2-two-coordinate-metamorphic.yml'
+  # Native 4/4 Run #45102384014 complete; explicit manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-two-coordinate-${{ github.ref }}
