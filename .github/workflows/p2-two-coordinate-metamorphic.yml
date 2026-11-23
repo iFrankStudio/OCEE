@@ -1,0 +1,27 @@
+name: P2 Two-Coordinate Metamorphic Witness Controls
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2-two-coordinate-metamorphic.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-two-coordinate-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-two-coordinate:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [VALID, INVARIANT_FAULT, RESIDUAL_FAULT, COMMON_DOUBLE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_COORD_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native charged second coordinate witness and residual shared-fault counterexample
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_two_coordinate_native -- --ignored --show-output

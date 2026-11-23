@@ -3053,3 +3053,354 @@ fn p2_task_metamorphic_native(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+
+/// After genuine dual-tool agreement, zero witness, and byte0 relation,
+/// make a second paid EXEC at *the original* byte1 xor 1 task input.
+/// This is task-linked metamorphic evidence, not a privileged truth API.
+fn p2_two_coordinate_root()->Program{
+    use ocee_organism_vm::{Block,Instruction,Op,Param,Terminator,Type,WorldCall};
+    fn lit(v:&[u8])->Op{
+        Op::ConstBytes{hex:v.iter().map(|x|format!("{x:02x}")).collect()}
+    }
+    fn bi(id:u32)->Param{Param{id,ty:Type::Bytes}}
+    fn ui(id:u32)->Param{Param{id,ty:Type::U32}}
+    fn ins(id:u32,op:Op)->Instruction{Instruction{id,op}}
+    let mut root=p2_task_metamorphic_root();
+    let f=&mut root.functions[0];
+    let input=f.blocks.iter_mut().find(|b|b.id=="mi")
+        .expect("previous typed byte0 input block");
+    let Terminator::Yield{call:_,args:_,next:_,next_args}=
+        &mut input.terminator else{panic!("byte0 really Execs")};
+    assert_eq!(next_args.as_slice(),&[19620,19716]);
+    // Carry exactly the bytes we already paid to Read and candidate hash.
+    // No host selection, no extra free or unmetered world Read.
+    *next_args=vec![19620,19621,19704,19716];
+    let reply=f.blocks.iter_mut().find(|b|b.id=="me")
+        .expect("byte0 real Exec response");
+    reply.params=vec![
+        bi(19800),bi(20200),bi(20201),ui(19801),bi(19802)
+    ];
+    reply.terminator=Terminator::Branch{
+        condition:19817,
+        if_true:"x1".into(),true_args:vec![19800,20200,20201],
+        if_false:"failed".into(),false_args:vec![]
+    };
+    // Strict VM program cap was 126 blocks; add ONLY these two blocks.
+    // Flip byte1 low bit => word0 changes exactly +/-256 modulo 2^32.
+    let mut instructions=vec![
+        ins(20103,Op::ConstU32(1)),
+        ins(20104,Op::ByteAt(20102,20103)),
+        ins(20105,Op::Xor(20104,20103)),
+        ins(20106,Op::ReplaceByte(20102,20103,20105)),
+        ins(20107,Op::And(20104,20103)),
+        ins(20108,Op::Add(20107,20107)),
+        ins(20109,Op::Sub(20103,20108))
+    ];
+    let mut shifted=20109;
+    for id in 20110..=20117{
+        instructions.push(ins(id,Op::Add(shifted,shifted)));
+        shifted=id;
+    }
+    assert_eq!(shifted,20117);
+    instructions.extend([
+        ins(20118,lit(b"payload")),
+        ins(20119,Op::JsonFieldBytes(20100,20118)),
+        ins(20120,lit(b"U32")),
+        ins(20121,Op::JsonFieldU32(20119,20120)),
+        ins(20122,Op::Add(20121,shifted))
+    ]);
+    f.blocks.push(Block{
+        id:"x1".into(),
+        params:vec![bi(20100),bi(20101),bi(20102)],
+        instructions,
+        terminator:Terminator::Yield{
+            call:WorldCall::Exec,args:vec![20101,20106],
+            next:"x2".into(),next_args:vec![20100,20122]
+        }
+    });
+    f.blocks.push(Block{
+        id:"x2".into(),
+        params:vec![bi(20210),ui(20211),bi(20212)],
+        instructions:vec![
+            ins(20213,lit(b"payload")),
+            ins(20214,Op::JsonFieldBytes(20212,20213)),
+            ins(20215,lit(b"U32")),
+            ins(20216,Op::JsonFieldU32(20214,20215)),
+            ins(20217,Op::EqU32(20216,20211))
+        ],
+        terminator:Terminator::Branch{
+            condition:20217,
+            if_true:"equal_local_pack".into(),true_args:vec![20210],
+            if_false:"failed".into(),false_args:vec![]
+        }
+    });
+    assert_eq!(f.blocks.len(),128,"two real Exec check blocks within VM cap");
+    root.validate().expect("strictly typed paid 2-coordinate root");
+    root
+}
+
+/// Two distinct candidate implementations can share an error invariant
+/// under BOTH byte0 and byte1 xor 1: add sum(input[2..15]) after FOLD32.
+fn invariant_tail_from_byte2(p:Program)->Program{
+    use ocee_organism_vm::{Instruction,Op,Terminator};
+    let mut p=invariant_byte_tail_fault(p);
+    let block=&mut p.functions[0].blocks[0];
+    let ret=match block.terminator{
+        Terminator::Return{value}=>value,
+        _=>panic!("expected pure VM return")
+    };
+    let id=block.instructions.iter().map(|i|i.id).max().unwrap()+1;
+    block.instructions.push(Instruction{id,op:Op::ConstU32(1)});
+    block.instructions.push(Instruction{
+        id:id+1,op:Op::ByteAt(0,id)
+    });
+    block.instructions.push(Instruction{
+        id:id+2,op:Op::Sub(ret,id+1)
+    });
+    block.terminator=Terminator::Return{value:id+2};
+    p.validate().expect("two-coordinate-invariant adversarial tool");
+    p
+}
+
+/// Prespecified native four-arm evidence on the unchanged full paid S45
+/// P1/P2 task. The separate host oracle is NEVER visible to active VM.
+#[test]
+#[ignore = "paid active organism two-coordinate metamorphic gate"]
+fn p2_two_coordinate_native(){
+    let arm=std::env::var("OCEE_P2_COORD_ARM").expect("matrix arm");
+    assert!(["VALID","INVARIANT_FAULT","RESIDUAL_FAULT","COMMON_DOUBLE"]
+        .contains(&arm.as_str()));
+    let a_correct=local_fold4_vm_program();
+    let b_correct=alternate_fold4_vm_program();
+    let a_invariant=invariant_byte_tail_fault(local_fold4_vm_program());
+    let b_invariant=invariant_byte_tail_fault(alternate_fold4_vm_program());
+    let a_residual=invariant_tail_from_byte2(local_fold4_vm_program());
+    let b_residual=invariant_tail_from_byte2(alternate_fold4_vm_program());
+    let a_double=doubled_fold4(local_fold4_vm_program());
+    let b_double=doubled_fold4(alternate_fold4_vm_program());
+    let (primary,secondary)=match arm.as_str(){
+        "VALID"=>(&a_correct,&b_correct),
+        "INVARIANT_FAULT"=>(&a_invariant,&b_invariant),
+        "RESIDUAL_FAULT"=>(&a_residual,&b_residual),
+        "COMMON_DOUBLE"=>(&a_double,&b_double),
+        _=>unreachable!()
+    };
+    let first_hash=primary.content_hash().unwrap();
+    let second_hash=secondary.content_hash().unwrap();
+    assert_ne!(first_hash,second_hash);
+    let root=p2_two_coordinate_root();
+    let root_hash=root.content_hash().unwrap();
+    let mut world=boot_with_protocol_seed_budget(
+        8,2027,12_000,s45_p2_scoped_result_wait(),root
+    );
+    for candidate in [primary,secondary]{
+        let hash=candidate.content_hash().unwrap();
+        let installed=world.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:format!("/self/versions/{hash}"),
+            bytes:candidate.canonical_bytes(),expected_version:None
+        }));
+        assert_eq!(installed.code,Code::Ok,"candidate installation is paid");
+    }
+    for (path,hash) in [
+        ("/self/work/local-fold-candidate",&first_hash),
+        ("/self/work/local-fold-verifier",&second_hash)
+    ]{
+        let stored=world.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:path.into(),
+            bytes:hash.as_bytes().to_vec(),expected_version:None
+        }));
+        assert_eq!(stored.code,Code::Ok,"content hash registration is paid");
+    }
+    let genesis=world.audit.iter()
+        .map(|x|x.result.gas_charged+x.result.vm_gas_charged).sum::<u64>();
+    assert_eq!(genesis+world.state.nodes[&NodeId::A].gas_available,12_000);
+    let before=world.state_hash();
+    assert_eq!(before,
+        World::from_snapshot(&world.snapshot_json()).unwrap().state_hash());
+    let mut refused=0usize;
+    let mut invalid=0usize;
+    for _ in 0..14_000{
+        let result=world.tick_autonomous(ORGANISM_ID);
+        if result.code==Code::Gas{refused+=1;}
+        if matches!(result.code,Code::Denied|Code::InvalidCode){invalid+=1;}
+        if world.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let organism=&world.state.organisms[&ORGANISM_ID];
+    let finished=organism.vm_continuation.as_ref()
+        .is_some_and(|c|c.finished);
+    let returned=organism.last_return.clone();
+    let claimed=finished&&returned==Some(Value::U32(1));
+    if !world.state.objects.contains_key(REMOTE_VALUES){
+        println!(
+            "P2_COORD_EARLY arm={arm} finished={finished} ret={returned:?} \\
+             step={} genesis={genesis} refusal={refused} invalid={invalid}",
+            world.state.step
+        );
+        for x in world.audit.iter().rev().filter(|a|a.action.is_some()).take(8){
+            println!(
+                "P2_COORD_EARLY_AUDIT step={} code={:?} vm={} action_gas={} \\
+                 action={:?}",
+                x.step,x.result.code,x.result.vm_gas_charged,
+                x.result.gas_charged,x.action.as_ref().map(|a|std::mem::discriminant(a))
+            );
+        }
+        panic!("full P1->P2 task must generate the true work object");
+    }
+    let raw=&world.state.objects[REMOTE_VALUES].bytes;
+    assert_eq!(raw.len(),16);
+    let mut first_mutated=raw.clone();
+    first_mutated[0]^=1;
+    let mut second_mutated=raw.clone();
+    second_mutated[1]^=1;
+    assert_ne!(first_mutated,second_mutated);
+    let input=raw.chunks_exact(4).map(|x|
+        u32::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>();
+    let true_value=fold32(&input).unwrap();
+    let mut changed0=input.clone();
+    changed0[0]^=1;
+    let mut changed1=input.clone();
+    changed1[0]^=256;
+    let true0=fold32(&changed0).unwrap();
+    let true1=fold32(&changed1).unwrap();
+    let delta0=if raw[0]&1==0{1_u32}else{u32::MAX};
+    let delta1=if raw[1]&1==0{256_u32}else{0xffff_ff00_u32};
+    assert_eq!(true0,true_value.wrapping_add(delta0));
+    assert_eq!(true1,true_value.wrapping_add(delta1));
+    let bias1=raw.iter().skip(1).map(|v|u32::from(*v)).sum::<u32>();
+    let bias2=raw.iter().skip(2).map(|v|u32::from(*v)).sum::<u32>();
+    assert!(bias1>bias2&&bias2>0,"frozen shared error needs nonzero terms");
+    let stored=world.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|o|{
+            assert_eq!(o.bytes.len(),4);
+            u32::from_le_bytes(o.bytes[..4].try_into().unwrap())
+        });
+    let mut first=Vec::<u32>::new();
+    let mut second=Vec::<u32>::new();
+    let mut zero=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut mutation0=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut mutation1=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut c_send=0usize;
+    for record in &world.audit{
+        match &record.action{
+            Some(Action::Exec{program_hash,input,..})
+                if program_hash==&first_hash||program_hash==&second_hash=>{
+                let output=if record.result.code==Code::Ok{
+                    let Value::U32(n)=serde_json::from_slice::<Value>(
+                        &record.result.payload).unwrap() else{
+                        panic!("typed FOLD32 tool output only")
+                    };
+                    Some(n)
+                }else{None};
+                if input.as_slice()==raw.as_slice(){
+                    if program_hash==&first_hash{
+                        if let Some(n)=output{first.push(n)}
+                    }else if let Some(n)=output{second.push(n)}
+                }else if input.as_slice()==[0u8;16]{
+                    assert_eq!(program_hash,&first_hash);
+                    zero.push((record.result.code,output,record.result.gas_charged));
+                }else if input.as_slice()==first_mutated.as_slice(){
+                    assert_eq!(program_hash,&first_hash);
+                    mutation0.push((record.result.code,output,record.result.gas_charged));
+                }else if input.as_slice()==second_mutated.as_slice(){
+                    assert_eq!(program_hash,&first_hash);
+                    mutation1.push((record.result.code,output,record.result.gas_charged));
+                }else{
+                    panic!("all targeted Exec inputs must be genuine or active-VM mutated");
+                }
+            },
+            Some(Action::Send{destination:NodeId::C,..})
+                if record.result.code==Code::Ok=>c_send+=1,
+            _=>()
+        }
+    }
+    let actual_expected=match arm.as_str(){
+        "VALID"=>true_value,
+        "INVARIANT_FAULT"=>true_value.wrapping_add(bias1),
+        "RESIDUAL_FAULT"=>true_value.wrapping_add(bias2),
+        "COMMON_DOUBLE"=>true_value.wrapping_mul(2),
+        _=>unreachable!()
+    };
+    let first_mut_expected=match arm.as_str(){
+        "VALID"=>true0,
+        "INVARIANT_FAULT"=>true0.wrapping_add(bias1),
+        "RESIDUAL_FAULT"=>true0.wrapping_add(bias2),
+        "COMMON_DOUBLE"=>true0.wrapping_mul(2),
+        _=>unreachable!()
+    };
+    let second_mut_expected=match arm.as_str(){
+        "VALID"=>true1,
+        "INVARIANT_FAULT"=>true1.wrapping_add(
+            bias1.wrapping_add(if raw[1]&1==0{1}else{u32::MAX})),
+        "RESIDUAL_FAULT"=>true1.wrapping_add(bias2),
+        "COMMON_DOUBLE"=>true1.wrapping_mul(2),
+        _=>unreachable!()
+    };
+    let vm_a=world.audit.iter().map(|x|x.result.vm_gas_charged).sum::<u64>();
+    let actions_a=world.audit.iter().map(|x|x.result.gas_charged).sum::<u64>();
+    let b=b_total(&world);
+    println!(
+        "P2_TWO_COORD arm={arm} root={root_hash} primary={first_hash} \\
+         secondary={second_hash} prehash={before} init_A={genesis} \\
+         vm_A={vm_a} actions_A={actions_a} total_A={} B={b} C={c_send} \\
+         task_first={first:?} task_second={second:?} zero={zero:?} \\
+         changed_byte0={mutation0:?} changed_byte1={mutation1:?} \\
+         real_original={true_value} delta0={delta0} delta1={delta1} \\
+         bias1={bias1} bias2={bias2} return={returned:?} \\
+         finished={finished} claimed={claimed} stored={stored:?} \\
+         gas_refused={refused} invalid={invalid} step={}",
+        vm_a+actions_a,world.state.step
+    );
+    assert!(finished);
+    assert_eq!(invalid,0);
+    assert_eq!(b,0);
+    assert_eq!(c_send,0);
+    assert!(world.state.guarded_restarts.is_empty());
+    assert_eq!(first,vec![actual_expected]);
+    assert_eq!(second,vec![actual_expected]);
+    assert_eq!(zero.len(),1);
+    assert_eq!(zero[0].0,Code::Ok);
+    assert_eq!(zero[0].1,Some(0));
+    assert!(zero[0].2>0);
+    assert_eq!(mutation0.len(),1);
+    assert_eq!(mutation0[0].0,Code::Ok);
+    assert_eq!(mutation0[0].1,Some(first_mut_expected));
+    assert!(mutation0[0].2>0);
+    if arm=="COMMON_DOUBLE"{
+        assert!(mutation1.is_empty(),
+            "byte0 violation must prevent additional charged checks");
+        assert!(!claimed);
+        assert_eq!(returned,Some(Value::U32(0)));
+        assert_eq!(stored,None);
+    }else{
+        assert_eq!(mutation1.len(),1,"new coordinate must actually Exec");
+        assert_eq!(mutation1[0].0,Code::Ok);
+        assert_eq!(mutation1[0].1,Some(second_mut_expected));
+        assert!(mutation1[0].2>0);
+        match arm.as_str(){
+            "VALID"=>{
+                assert!(claimed);
+                assert_eq!(stored,Some(true_value));
+            },
+            "INVARIANT_FAULT"=>{
+                assert_ne!(second_mut_expected,
+                    actual_expected.wrapping_add(delta1));
+                assert!(!claimed);
+                assert_eq!(returned,Some(Value::U32(0)));
+                assert_eq!(stored,None);
+            },
+            "RESIDUAL_FAULT"=>{
+                assert_eq!(second_mut_expected,
+                    actual_expected.wrapping_add(delta1));
+                assert!(claimed,
+                    "frozen adversarial residual false success MUST be observable");
+                assert_eq!(stored,Some(actual_expected));
+                assert_ne!(stored,Some(true_value));
+            },
+            _=>unreachable!()
+        }
+    }
+    assert_eq!(world.state_hash(),
+        World::from_snapshot(&world.snapshot_json()).unwrap().state_hash());
+}
