@@ -1,9 +1,6 @@
 name: S29 Second Label Mismatch Feedback Repair
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-second-label-repair.yml'
+  # Native 4/4 Run #45115636978 completed/success; replay manually only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-second-repair-${{ github.ref }}
