@@ -1,6 +1,6 @@
 # DEV — 活动根可信校验器哈希锚与注册表替换（执行前冻结）
 
-状态：**运行前冻结，尚无原生结果**。基线 main `4c79f08d12b41f5ea0376ea2c8bd0a93735895a1`、[完整结果付费校验报告](./DEV-P2-PAID-EXACT-CHECKER-PROTOCOL.md)及其 [首次原生CI #45103750605](https://github.com/iFrankStudio/OCEE/actions/runs/45103750605)。该Run的VALID仍执行中；上一Run不是4/4，此新实验不替代上一Run结果或自动预言其成功。
+状态：**运行前冻结的协议已完成原生验收，下文追加真实四臂结果；冻结判据不变**。基线 main `4c79f08d12b41f5ea0376ea2c8bd0a93735895a1`、[完整结果付费校验报告](./DEV-P2-PAID-EXACT-CHECKER-PROTOCOL.md)及其 [首次原生CI #45103750605](https://github.com/iFrankStudio/OCEE/actions/runs/45103750605)。该Run的VALID仍执行中；上一Run不是4/4，此新实验不替代上一Run结果或自动预言其成功。
 
 ## 冻结假设
 
@@ -30,3 +30,37 @@ GitHub实际 world kernel `/self/versions/<hash>` 的 Write preflight 同时要�
 ## 科学边界
 
 这是**可信引导与内容寻址完整性**机制的负对照，而非使任何工具语义自动可信的程序。根内容若也可被不受约束的攻击者修改，或者最初信任锚本来就绑定恶意程序，则该机制无效。哈希锚应如何由个体自主选择、如何更新、验证旧锚信任、何时值得花费额外A进行完整重算尚未解决。正式E001未预注册/校准；G0 GO、G1/G2 NO-GO。本study定向CI一次性触发、完成后仅手动。
+
+## 2026-11-23 — 原生四臂最终4/4，内容哈希锚与注册表攻击实际账本
+
+[GitHub Actions #45105207973](https://github.com/iFrankStudio/OCEE/actions/runs/45105207973) @ `9d65a04134cb690c371d17ed9c1fae52bb24f051`：**completed/success，四个独立Rust jobs全部1 passed、0 failed**。四组采用完全相同活动VM根的真实内容哈希 `adf01a69992dcb09628d50ff8c7999adbe345f85ae667b17e38a7d4d1b55c368`；根由研究者根据公开参考checker计算初始 pin `333b612826ee95417a647184dae6d3bc243b5da34d2ed1758f05361c05ef7590`，而恶意 checker 是不同哈希 `72d04114a84a65b53e0e6e9335b101b8bb2ae71bcab360ec4bade63f55ec2e32`。相同world seed55 / P2 development seed2027 / delay8 / A12000每epoch / 最多14k自主ticks / S45真实P1学习 / 四U32真实任务，不改VM128块或额度；相同 root 只是安装的真实候选、校验器和注册表不同，不能称“等起点成本对照”。
+
+**可信pin的实际计算链**：在本次根的 `ck_key_reply` 块里，由真实 `WorldCall::Read` 的JSON反馈提取 `payload`，执行标准 VM `EqBytes` 与研究者预置64字节可信hash比较；不相等立即跳 `failed`。在该 World 内核中，非Ok的Read反馈不可能得到等于可信hash的有效payload，因此与hash相等也蕴含真实可见的Read Ok。本次没有新VM指令、没有宿主跳过计费、没有把真值传给根。若相等才调用正常 `Read` 原16B，将原任务候选真实Exec返回的U32编码为4B，付费向指定内容哈希的纯VM校验器 `Exec(16B || 4B)`，仅真实 `Code::Ok` 和 `U32(1)` 后写入真实成功工件；非法/不符/NotFound一律不写。活动根本身虽固定hash，但不是不可变超越世界的可信真值来源。
+
+| 原生观察 | VALID_PIN | WRONG_PIN | REGISTRY_SWAP | MISSING_PIN |
+|---|---:|---:|---:|---:|
+| 候选主工具真实Exec | Ok=1415179467 | Ok=1415180657 | Ok=1415180657 | Ok=1415180657 |
+| Registry Read | 真Ok/可信hash | 真Ok/可信hash | **真Ok/恶意hash** | 真Ok/可信hash |
+| 可信 checker Exec | **Ok,U32(1)** | **Ok,U32(0)** | **无，身份闸门先拒绝** | **NotFound** |
+| 恶意checker Exec | 0次 | 0次 | **0次** | 0次 |
+| 有偿可信checker Exec A gas | 334 | 334 | 不执行 | NotFound动作收费0 |
+| 研究者伪造版本写尝试 | 无 | 无 | **Code::InvalidCode** | 无 |
+| 根实际返回 | U32(1) | U32(0) | U32(0) | U32(0) |
+| 成功工件 | **正确1415179467** | 无 | 无 | 无 |
+| 真实初始化A gas | 10277 | 10381 | 10399 | 9662 |
+| VM实际A gas | 2533 | 2488 | 2374 | 2468 |
+| 动作实际A gas（包含安装） | 11018 | 11169 | 10851 | 10116 |
+| **A总gas** | **13551** | **13657** | **13225** | **12584** |
+| Gas拒绝次数 | 996 | 1000 | 998 | 983 |
+| 世界结束step | 1047 | 1050 | 1048 | 1032 |
+| B gas / C成功Send | 0/0 | 0/0 | 0/0 | 0/0 |
+| 自主根 Invalid/Denied | 0 | 0 | 0 | 0 |
+| 无非法重启、快照完整恢复 | 是 | 是 | 是 | 是 |
+
+REGISTRY_SWAP先**真实**尝试 `Action::Write("/self/versions/<trusted_hash>", malicious_program.canonical_bytes())`，世界内核在可信版本尚未安装前因哈希与规范字节不匹配返回 `InvalidCode`，且不会创建欺诈版本对象；随后合法安装真实可信版本与独立恶意版本、支付所有费用、注册表指向恶意hash。注意这个 `InvalidCode` 是研究者故意试探的违法安装反馈，**不是活动根的VM无效动作**，上表的自主根 invalid=0。实际运行中根从注册表读到恶意哈希时，`EqBytes` 不匹配，**没有调用任一校验器**，不将主工具错误 `1415180657` 落盘。这才是身份拒绝的直接证据，不可混称校验器重算发现错误。
+
+MISSING_PIN真实注册表指向正确hash却未有偿安装对应程序；活动根已通过hash比较且真实提交校验器Exec，在内容寻址版本库里查询得到真实 `NotFound`，安全拒绝且无错误写盘。与REGISTRY_SWAP两种早退不同。WRONG_PIN同一可信参考checker实际返回 U32(0)，原错误偏差1190被完整计算识别；VALID_PIN真实校验器返回U32(1)、结果正确保存。四臂候选工具执行都按 `WorldCall::Exec` 审计，完整状态快照一致。
+
+**限制**：这证实受限确定性VM内的**静态可信锚+注册表完整性闸门+内核内容寻址校验**的研究者编排能力。它不能证明由初始研究者提供的参考checker一定符合公开规格（虽然我们单独测试了若干边界输入），不能阻止攻击者篡改运行的root或最初锚本身，不保证未来自主升级/授权锚轮换；也不意味着廉价证书、没有信任根的数学正确性、个体自主发现验证器或开放式演化。该研究仍是已见seed2027开发集，E001未校准或正式预注册。G0 GO、G1/G2 NO-GO。定向CI在归档提交里恢复仅workflow_dispatch手动。
+
+**前项未结原生job说明**：此前[完整结果校验首次Run #45103750605](https://github.com/iFrankStudio/OCEE/actions/runs/45103750605) 使用不同的未锁定根，前三臂已真实完成并归档，原 `VALID` job截至本次验收时仍未完成。不能用此次新的VALID_PIN成功将旧Run追认成4/4；旧Run应保持其独立真实最终状态。

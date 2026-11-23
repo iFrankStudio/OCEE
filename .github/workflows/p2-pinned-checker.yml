@@ -1,9 +1,6 @@
 name: P2 Pinned Checker Identity and Registry Attack
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/p2-pinned-checker.yml'
+  # 2026-11-23: native 4/4 Run #45105207973; manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-pinned-checker-${{ github.ref }}
