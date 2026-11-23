@@ -765,3 +765,10 @@
 - STA​LE_WRITE真正Write新原始hash pin→旧证书失效、fast/legacy均Conflict，付费重建证书也识别活引用；STALE_MESSAGE真正SEND在途引用→失效、两者Conflict；GUARDS活动/初始root、坏hash、缺失、Gas不足都安全拒绝无删；三组原生均通过。
 - [首次#45123180187](https://github.com/iFrankStudio/OCEE/actions/runs/45123180187) 3/4（AMORTIZED研究者夹具`ByteAt(0,0)`将Bytes当U32，VM`InvalidProgram`），仅纠正合法`ByteAt(0,1)`索引寄存器（索引值仍0），机制/阈值/seed未改，最终4/4。专用CI恢复workflow_dispatch-only。
 - 这是研究者新增两项受限世界能力并定义有界维护程序，仍不意味着生命体自主GC、开放式演化；索引只跟踪当前已安装程序的**原始ASCII完整hash**，未知编码和外部异步保留引用不在安全证明中。后续关注整个维护VM净成本、证书失效频率及正式六原语能力边界。G0 GO，G1/G2 NO-GO，E001未校准/预注册。
+
+
+### 2026-11-23 — 原生资源感知的活动VM决定是否GC：最终4/4，证明有限条件自我维护
+- 先冻结[资源压力维护决策协议](./experiments/E001/DEV-S29-RESOURCE-PRESSURE-GC-POLICY-PROTOCOL.md) @`7bbfb45e`，发现旧Observe没有自身storage_used，因此新增仅限自身读、收费2 A的`Read("/sys/resource-status")`，精确返回`{used,capacity,a_available}`，U32溢出拒绝，既有世界操作能力不加任意信息Oracle。研究者向真实S29/P2运行完后世界有偿安装3个已有候选、切换到一个固定的有界维护根，**四组同一根 hash `29db9593562403a3d48f42ffc11f4e44861f4d8a223f982184a6672bed5ea8d1`**，VM用真实付费Read后评估空闲<约25%且剩余A≥2200则尝试一次Index+最多三次安全GC，否则返回U32(0)完全不索引；失败也不盲试后续。
+- [原生#45127009918](https://github.com/iFrankStudio/OCEE/actions/runs/45127009918) @26b1675bb2f **completed/success，独立Rust4/4**。PRESSURE实际容量108805/已占108549、可用A11259，同根自主决定回收三旧程序`[279,276,279]`B，真实Index1667 A、GC8+8+8 A、退还**834B**、最后U32(1)、先前B20未重复；RELAXED容量217098/已占108549、A11259，同根不执行索引/GC、不删、返回U32(0)；LOW_GAS容量108805/已占108549、观察A1494，同根因预算不足也不扫描不删、U32(0)；INVALIDATED同高压力A、付费Index1667后有真实合法Write新增首hash pin64B使证书失效，下次GC真实Conflict且不删、停止两项后续，U32(0)，**浪费1667 A的负例**。四组真实S29修复P2/heldout正确、B20、新Len仍可Exec正确、快照一致。
+- 首次[#45126843831](https://github.com/iFrankStudio/OCEE/actions/runs/45126843831) 4组均Rust E0502编译红（测试审计借用跨可变Exec），后仅移动额外Exec核验至审计引用使用完毕，无资源策略/研究协议改动；最终4/4。专项CI恢复仅workflow_dispatch。
+- **重要研究边界**：研究者仍选择进入维护阶段、提供3候选及固定资源阈值，所以这是一种**基于真实环境状态的有限自我维护行为选择**，非形成内生目标、环境自行规划维护、完整算法自主演化；新元状态可见面也需正式E001版本化。索引遇环境写入真实有1667 A沉没成本，下一步应验证写频与证书存活概率/GC触发收益函数，而不是假设每次高压力索引都值得做。G0 GO/G1/G2 NO-GO，E001未预注册/校准。

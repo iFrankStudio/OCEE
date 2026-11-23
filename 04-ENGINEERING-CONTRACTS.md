@@ -157,3 +157,10 @@ ActionResult { request_id, code, payload, vm_gas, action_gas, bytes_charged }
 继`ReclaimVersion`开发研究之后新增两类**额外**研究动作：`IndexVersionRefs()` 付费读取内核已存在的Program版本路径、其余对象key/raw bytes及pending/mailbox消息中完整ASCII 64位hash，建立内核私有、可信快照可重放的`VersionRefIndex`；`ReclaimIndexedVersion(hash)`只有当前actor/活动根与签发时一致、索引仍存在、目标确为已安装未被识别引用的本actor规范版本并经过活动root/initial root/continuation实时保护复核才收费并删除。证书不会被私有`/self/index`伪造；世界Write、PublishTool、Send、Receive、Exec见证、服务消息转移、定时公共对象发布和根切换会失效，而删除自身不会新增引用，允许保守复用。旧`ReclaimVersion`不变。额外两种研究动作及其成本须单独版本化，**不属于原正式E001仅六原语基线**。
 
 [运行前协议与原生同快照配对4/4](./experiments/E001/DEV-S29-CERTIFIED-REF-INDEX-PROTOCOL.md)显示：3个版本合计834B，传统世界GC动作收费4954 A，新方案核付费扫描+3次快速GC收费1691 A，节省3263 A；其对照未覆盖旧版同等维护VM路径开销。只跟踪当前安装版本完整64字节ASCII hash，活动调用根字节码有意豁免，历史audit不视为活动引用；未知编码、外部任务、多actor寄存器持有者及伪造原始snapshot仍不在本次证明内。正式使用前应冻结kernel/vm/能力manifest/成本表并单独校准。
+
+
+## 2026-11-23 — 开发扩展：有偿只读自身资源状态
+
+本研究在已存在的`WorldCall::Read`路径加入`Read("/sys/resource-status")`，只允许合法actor读取其自身真实持久`storage_used`、node A实际`storage_capacity`及真实剩余A gas。该读取**由kernel真实扣2 A后**生成严格范围的JSON数值 `{"used":U32,"capacity":U32,"a_available":U32}`；所有字段先验证可无损转为U32，否则Quota，不可用截断值骗过有限VM策略。该系统位置非普通可写对象，不能向它Write、不能查询其他actor的空间；隔离Exec的Read ACL仍仅允许既有纯权限路径，因此没有不付费隐性资源Oracle。既有六原语声明应保留：它仅是开发可见信息扩展，正式E001前需独立版本化与校准。
+
+[资源感知同根策略与原生4/4](./experiments/E001/DEV-S29-RESOURCE-PRESSURE-GC-POLICY-PROTOCOL.md)使用研究者固定<约25%剩余存储、A≥2200的有限条件分支，真实根据读取值决定是否构建索引/GC。证书可随合法写入失效，导致已付1667 A但无空间释放；本轮不保证策略经济最优、长期收益或开放式自主目标，禁止将这种内核新观察能力静默视为原E001未改变的初始实验世界。

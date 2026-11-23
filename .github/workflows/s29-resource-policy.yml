@@ -2,10 +2,7 @@ name: S29 Paid Own-Resource Maintenance Decision
 # Native #45126843831 failed Rust E0502 at test audit/Exec borrow; this is
 # a one-shot rerun with only the borrow lifetime corrected.
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-resource-policy.yml'
+  # Scoped 4/4 native #45127009918 completed/success. Manual replays only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-resource-policy-${{ github.ref }}
