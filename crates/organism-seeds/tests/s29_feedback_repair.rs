@@ -5,6 +5,7 @@ use ocee_organism_seeds::s19_p1_tool::s19_p1_build_and_use_tool;
 use ocee_organism_seeds::s23_p2_transfer::s23_p2_remote_tool_transfer;
 use ocee_organism_seeds::s29_public_transform::{
     s29_evidence_selected_root,s29_feedback_repair_root,
+    s29_second_label_repair_root,
     s29_template,REGISTRY,PREDICTION
 };
 use ocee_organism_vm::{Op,Program,Value};
@@ -292,4 +293,208 @@ fn s29_inherited_semantics_repair_native(){
     }
     assert_eq!(target.state_hash(),
         World::from_snapshot(&target.snapshot_json()).unwrap().state_hash());
+}
+
+
+fn boot_second_repair(seed:u64)->(World,String){
+    let p1=s19_p1_build_and_use_tool();
+    let p2=s23_p2_remote_tool_transfer();
+    let root=s29_second_label_repair_root(
+        &p1.content_hash().unwrap(),&p2.content_hash().unwrap());
+    let hash=root.content_hash().unwrap();
+    let mut world=World::with_protocol(Config{
+        seed,a_gas_per_epoch:12_000,..Config::default()
+    },Family::P2,42);
+    for p in [p1,p2,root]{
+        put(&mut world,
+            format!("/self/versions/{}",p.content_hash().unwrap()),
+            p.canonical_bytes());
+    }
+    put(&mut world,"/self/active".into(),hash.clone().into_bytes());
+    (world,hash)
+}
+
+/// Intentionally a *researcher-installed adversary*, NOT a tool that the
+/// previous P1 donor organism learned. ByteAt(Bytes, index1) happens
+/// to return 3 for the first target example [32,3,8] (Len==3), but
+/// returns 2 for the second example [18,2,7,4] (Len==4).
+/// The target active VM never receives the intended answer or this label.
+fn first_collision_second_fault()->Program{
+    let mut p=s29_template();
+    let block=&mut p.functions[0].blocks[0];
+    block.instructions[0].op=Op::ConstU32(1);
+    block.instructions[1].op=Op::ByteAt(0,1);
+    p.validate().expect("ordinary typed adversarial VM tool");
+    p
+}
+
+/// Test four distinct *real charged* paths of the same bounded active root:
+/// reuse actual donor, first-label donor mismatch, second-only mismatch,
+/// and second-only mismatch with a stale CAS-protected version.
+#[test]
+#[ignore = "charged second public example collision and feedback repair"]
+fn s29_second_label_mismatch_native(){
+    let arm=std::env::var("OCEE_S29_SECOND_ARM").expect("scoped native arm");
+    assert!(["MATCHED","FIRST_MISMATCH","SECOND_MISMATCH","SECOND_STALE"]
+        .contains(&arm.as_str()));
+    let donor=match arm.as_str(){
+        "MATCHED"=>Some(actual_donor(42)),
+        "FIRST_MISMATCH"=>Some(actual_donor(43)),
+        _=>None
+    };
+    let adversary=first_collision_second_fault();
+    let adversarial_hash=adversary.content_hash().unwrap();
+    let new_hash=repaired_len_hash();
+    assert_ne!(adversarial_hash,new_hash);
+    let (mut w,root_hash)=boot_second_repair(129);
+    let inherited_hash=if let Some((hash,program,_,_))=&donor{
+        put(&mut w,
+            format!("/self/versions/{hash}"),program.canonical_bytes());
+        hash.clone()
+    }else{
+        put(&mut w,format!("/self/versions/{adversarial_hash}"),
+            adversary.canonical_bytes());
+        adversarial_hash.clone()
+    };
+    assert_ne!(inherited_hash,
+        s29_template().content_hash().unwrap());
+    put(&mut w,REGISTRY.into(),inherited_hash.as_bytes().to_vec());
+    assert_eq!(w.state.objects[REGISTRY].version,0);
+    if arm=="SECOND_STALE"{
+        let ret=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:REGISTRY.into(),
+            expected_version:Some(0),
+            bytes:inherited_hash.as_bytes().to_vec()
+        }));
+        assert_eq!(ret.code,Code::Ok);
+        assert_eq!(w.state.objects[REGISTRY].version,1);
+    }
+    let start_step=w.state.step;
+    let prehash=w.state_hash();
+    assert_eq!(prehash,World::from_snapshot(&w.snapshot_json())
+        .unwrap().state_hash());
+    let (init_vm,init_action)=paid_a(&w);
+    assert_eq!(init_vm,0);
+    run(&mut w);
+    let last=w.state.organisms[&ORGANISM_ID].last_return.clone();
+    let registry=w.state.objects.get(REGISTRY)
+        .map(|o|(String::from_utf8(o.bytes.clone()).unwrap(),o.version));
+    let old_exec=if inherited_hash==new_hash{
+        Vec::new()
+    }else{audit_exec(&w,&inherited_hash)};
+    let new_exec=audit_exec(&w,&new_hash);
+    let targeted_version=format!("/self/versions/{new_hash}");
+    let new_version_writes=w.audit.iter().filter(|r|
+        r.step>start_step&&r.result.code==Code::Ok &&
+        matches!(&r.action,Some(Action::Write{key,..})
+            if key==&targeted_version)).count();
+    let actual_registry_cas0=registration(&w,Some(0));
+    let actual_registry_create=registration(&w,None);
+    let transform_reads=w.audit.iter().filter(|a|
+        a.result.code==Code::Ok &&
+        matches!(&a.action,Some(Action::Read{key,..})
+            if key=="/public/E001/transform")).count();
+    let transform:TransformTask=serde_json::from_slice(
+        &w.state.objects["/public/E001/transform"].bytes).unwrap();
+    let samples=transform.examples.iter()
+        .map(|x|(x.input.clone(),x.output)).collect::<Vec<_>>();
+    assert_eq!(samples.len(),2);
+    assert_eq!(samples[0],(vec![32,3,8],3));
+    assert_eq!(samples[1],(vec![18,2,7,4],4));
+    let heldout=w.state.objects.get(PREDICTION)
+        .map(|o|serde_json::from_slice::<u32>(&o.bytes).unwrap());
+    let heldout_truth=hidden_transform(129,&transform.held_out_input);
+    let remote=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|o|u32::from_le_bytes(o.bytes.as_slice().try_into().unwrap()));
+    let work:WorkItem=serde_json::from_slice(
+        &w.state.objects["/public/E001/job0"].bytes).unwrap();
+    let remote_truth=work.values.iter().enumerate().fold(0u32,|acc,(i,x)|
+        acc.wrapping_add(x.rotate_left((i%32) as u32)));
+    let (vm_a,action_a)=paid_a(&w);
+    let b=bgas(&w);
+    let invalid=w.audit.iter().filter(|r|
+        matches!(r.result.code,Code::InvalidCode|Code::Denied)).count();
+    println!(
+        "S29_SECOND arm={arm} root={root_hash} initial={prehash} \\
+         old={inherited_hash} new={new_hash} \\
+         initial_A={} initial_vm={} old_exec={old_exec:?} \\
+         new_exec={new_exec:?} new_version_writes={new_version_writes} \\
+         cas0={actual_registry_cas0:?} create={actual_registry_create:?} \\
+         reads_public_transform={transform_reads} registry={registry:?} \\
+         heldout={heldout:?} truth_heldout={heldout_truth} \\
+         B={b} remote={remote:?} remote_truth={remote_truth} \\
+         vm_A={vm_a} action_A={action_a} total_A={} \\
+         invalid={invalid} result={last:?} world_step={}",
+        init_vm+init_action,init_vm,vm_a+action_a,w.state.step
+    );
+    assert_eq!(invalid,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    let second_only=arm=="SECOND_MISMATCH"||arm=="SECOND_STALE";
+    assert_eq!(transform_reads,if second_only{2}else{1},
+        "second mismatch must actually pay a new public task Read");
+    if second_only{
+        assert_eq!(old_exec.len(),2,"both old Exec replies must be genuine");
+        assert_eq!(old_exec[0].0,samples[0].0);
+        assert_eq!(old_exec[0].1,samples[0].1,
+            "first-example collision is required");
+        assert_eq!(old_exec[1].0,samples[1].0);
+        assert_eq!(old_exec[1].1,2,"second example must contradict label 4");
+        assert_ne!(old_exec[1].1,samples[1].1);
+    }
+    match arm.as_str(){
+        "MATCHED"=>{
+            assert!(old_exec.is_empty());
+            assert_eq!(new_exec.len(),3);
+            assert_eq!(new_version_writes,0,
+                "paid donor import is not target program generation");
+            assert!(actual_registry_cas0.is_empty());
+            assert_eq!(actual_registry_create,vec![Code::Ok]);
+            assert_eq!(registry,Some((new_hash.clone(),0)));
+        },
+        "FIRST_MISMATCH"=>{
+            assert_eq!(old_exec.len(),1);
+            assert_eq!(old_exec[0].1,43);
+            assert_eq!(new_exec.len(),3);
+            assert_eq!(new_version_writes,1);
+            assert_eq!(actual_registry_cas0,vec![Code::Ok]);
+            assert_eq!(registry,Some((new_hash.clone(),1)));
+        },
+        "SECOND_MISMATCH"=>{
+            assert_eq!(new_exec.len(),3);
+            assert_eq!(new_version_writes,1);
+            assert_eq!(actual_registry_cas0,vec![Code::Ok]);
+            assert_eq!(registry,Some((new_hash.clone(),1)));
+        },
+        "SECOND_STALE"=>{
+            assert!(new_exec.is_empty(),
+                "the CAS rejected adoption before repaired Exec");
+            assert_eq!(new_version_writes,1,
+                "orphan candidate is paid, not a rolled back transaction");
+            assert_eq!(actual_registry_cas0,
+                vec![Code::Ok,Code::Conflict],
+                "first Ok was researcher version bump, second active CAS0");
+            assert_eq!(actual_registry_create,
+                vec![Code::Ok,Code::Conflict]);
+            assert_eq!(registry,Some((inherited_hash.clone(),1)));
+            assert_eq!(heldout,None);
+            assert_eq!(remote,None);
+            assert_eq!(b,0);
+            assert_eq!(last,Some(Value::U32(0)));
+        },
+        _=>unreachable!()
+    }
+    if arm!="SECOND_STALE"{
+        for (i,(input,out,gas)) in new_exec.iter().take(2).enumerate(){
+            assert_eq!(*input,samples[i].0);
+            assert_eq!(*out,samples[i].1);
+            assert!(*gas>0);
+        }
+        assert_eq!(new_exec[2].0,transform.held_out_input);
+        assert_eq!(heldout,Some(heldout_truth));
+        assert_eq!(b,20,"real P2 B task must complete after repair");
+        assert_eq!(remote,Some(remote_truth));
+        assert_eq!(last,Some(Value::U32(1)));
+    }
+    assert_eq!(w.state_hash(),World::from_snapshot(&w.snapshot_json())
+        .unwrap().state_hash());
 }

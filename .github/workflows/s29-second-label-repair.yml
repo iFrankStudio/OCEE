@@ -1,0 +1,27 @@
+name: S29 Second Label Mismatch Feedback Repair
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-second-label-repair.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-second-repair-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-second-label:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [MATCHED, FIRST_MISMATCH, SECOND_MISMATCH, SECOND_STALE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OCEE_S29_SECOND_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Real two-labelled Exec feedback and bounded CAS repair
+        run: cargo test -p ocee-organism-seeds --test s29_feedback_repair s29_second_label_mismatch_native -- --ignored --show-output
