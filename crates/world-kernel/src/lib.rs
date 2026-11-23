@@ -151,6 +151,14 @@ pub struct VersionRefIndex {
     pub referenced:BTreeSet<String>,
     pub scanned_bytes:u64,
     pub built_step:u64,
+    /// Paid full-scan, kernel-owned per-object source memberships.
+    /// None denotes an older certificate that cannot authorize delta writes.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub object_refs:Option<BTreeMap<String,BTreeSet<String>>>,
+    /// All transport refs are retained until another full scan; any SEND,
+    /// RECEIVE, service mutation or message delivery invalidates the index.
+    #[serde(default,skip_serializing_if="BTreeSet::is_empty")]
+    pub transport_refs:BTreeSet<String>,
 }
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 pub struct TaskFenceDrop {
@@ -305,6 +313,9 @@ pub enum Action {
     Observe { actor: u64 },
     Read { actor: u64, key: String },
     Write { actor: u64, key: String, expected_version: Option<u64>, bytes: Vec<u8> },
+    /// New explicitly metered, source-aware atomic CAS for normal owned data.
+    /// Legacy Write semantics and past cost ledgers remain unchanged.
+    WriteIndexed { actor: u64, key: String, expected_version: Option<u64>, bytes: Vec<u8> },
     /// Atomically install one canonical immutable program and CAS-update
     /// one owned /self/tools registry. No version orphan on failure.
     PublishTool {
@@ -901,7 +912,8 @@ impl World {
         };
         let actor = match &action {
             Action::Observe {actor} | Action::Read {actor,..} |
-            Action::Write {actor,..} | Action::PublishTool{actor,..} |
+            Action::Write {actor,..} | Action::WriteIndexed{actor,..} |
+            Action::PublishTool{actor,..} |
             Action::ReclaimVersion{actor,..} |
             Action::IndexVersionRefs{actor} |
             Action::ReclaimIndexedVersion{actor,..} | Action::Send {actor,..} |
@@ -1073,6 +1085,11 @@ impl World {
                 self.state.organisms.get_mut(&actor).expect("actor").storage_used = next_used;
                 program_host::after_write(&mut self.state,actor,active_switch);
                 ActionResult::ok(version.to_le_bytes().to_vec(),gas,0)
+            }
+            Action::WriteIndexed{key,bytes,expected_version,..}=>{
+                program_host::write_certified_object(
+                    self,actor,key,bytes,expected_version
+                )
             }
             Action::PublishTool{registry_key,program_bytes,expected_version,..}=>{
                 program_host::atomic_publish_tool(
