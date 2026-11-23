@@ -1,6 +1,6 @@
 # OCEE — 开放式演化赛博生态世界
 
-**规范基线：v0.2.0（后续开发世界能力需独立版本化） · 2026-11-23 最新S29有偿自身版本目录与VM受限发现原生4/4通过 · G0 GO、G1/G2 NO-GO · E001尚未校准/预注册**
+**规范基线：v0.2.0（后续开发世界能力需独立版本化） · 2026-11-23 最新S29自有资源门控维护原生5/5通过（首轮4/5夹具红例保留） · G0 GO、G1/G2 NO-GO · E001尚未校准/预注册**
 
 OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是探索一种能够适应未知数字环境、学习使用现有软硬件与网络服务、创造新工具并持续改进自身的赛博生命培养机制。
 
@@ -8,7 +8,9 @@ OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是�
 
 **前轮进展（2026-11-23）**：[原生六臂 6/6](https://github.com/iFrankStudio/OCEE/actions/runs/45163504990)证实新的显式`Action/WorldCall::WriteIndexed`能在同一真实付费CAS内更新**逐对象原始64字节hash来源**，对比相同真实S29/P2世界里旧普通Write移除一条过期引用后必须重扫，单个279B旧版回收的研究者世界动作从 **3353A降至1692A**（少1661A，约49.5%），安全拒绝多持有者尚未全部解除、过期CAS和在途消息引用。单独真实活动VM也已经使用新`WorldCall::WriteIndexed`发出有偿写入；但研究者仍提供固定目标和根，不是个体自发发现GC。详见[研究协议与账本](./experiments/E001/DEV-S29-PAID-SOURCE-DELTA-CERTIFICATE-PROTOCOL.md)及[工程检查点](./07-ENGINEERING-CHECKPOINT.md)，这是新增的**开发内核/VM能力**，不能冒充正式v0.2/E001原始六原语不变性或开放式演化。
 
-**最新研究事实（2026-11-23）**：[原生4/4有偿目录驱动发现](https://github.com/iFrankStudio/OCEE/actions/runs/45180137615)终于让固定受限VM**不携带目标程序hash**：新增旧Read的开发元数据路径`/sys/self-version-catalog/<page>`按物理大小列出个体真实拥有的程序版本（仅哈希/字节数，无“可删”特权标签），真实收费27A/首目录；同一个活动VM动态解析真实目录，用`RepeatBounded(8)`逐项有偿尝试GC、根据实际Conflict/Ok选择，正常arm**成功回收276B**（维护VM700A + Action1702A = **2402A**，并不是净资源效率提升），真pin目标保护与真实Index后失效保护负例均通过，snapshots确定性重放。实验和全部成本见[有偿目录发现预冻结协议/结果](./experiments/E001/DEV-S29-PAID-OWN-INVENTORY-BOUNDED-DISCOVERY-PROTOCOL.md)。**研究者仍预装搜索算法、旧工具与启动根**；它验证有限候选身份发现，不验证自主维护意图、自创策略或开放演化。
+**前轮研究事实（2026-11-23）**：[原生4/4有偿目录驱动发现](https://github.com/iFrankStudio/OCEE/actions/runs/45180137615)终于让固定受限VM**不携带目标程序hash**：新增旧Read的开发元数据路径`/sys/self-version-catalog/<page>`按物理大小列出个体真实拥有的程序版本（仅哈希/字节数，无“可删”特权标签），真实收费27A/首目录；同一个活动VM动态解析真实目录，用`RepeatBounded(8)`逐项有偿尝试GC、根据实际Conflict/Ok选择，正常arm**成功回收276B**（维护VM700A + Action1702A = **2402A**，并不是净资源效率提升），真pin目标保护与真实Index后失效保护负例均通过，snapshots确定性重放。实验和全部成本见[有偿目录发现预冻结协议/结果](./experiments/E001/DEV-S29-PAID-OWN-INVENTORY-BOUNDED-DISCOVERY-PROTOCOL.md)。**研究者仍预装搜索算法、旧工具与启动根**；它验证有限候选身份发现，不验证自主维护意图、自创策略或开放演化。
+
+**最新实测（2026-11-23）**：[资源门控原生5/5](https://github.com/iFrankStudio/OCEE/actions/runs/45203295504)证明研究者给定的相同类型化VM首先付费`Read("/sys/resource-status")`，在**空间余量<4KiB、当前A至少3000**时才执行上一轮动态目录/付费引用索引/有界GC。在同根、同真实P2世界10条已装程序的控制下，空闲2KiB时真实维护**VM780+Action1704=2484A**，安全回收276B；空闲8KiB时真实**VM82+Action2=84A**，**0目录/0Index/0GC**，避开**2400A**维护开销但也不清理旧版本；低算力2400A/epoch时同样主动跳过。**关键负例**：10个已装版本全有有偿活引用时，空间只剩1408B，VM仍花**2945A**扫描/尝试，回收**0B**，说明压力阈值不是收益预言。首轮[4/5失败的夹具缺陷](https://github.com/iFrankStudio/OCEE/actions/runs/45202464053)已公开保留并通过全版本有偿pin纠正，之后完整5/5通过；详细见[先冻实验与费用](./experiments/E001/DEV-S29-RESOURCE-BUDGET-TRIGGER-PROTOCOL.md)。所有阈值、目标、活动根依旧由研究者提供，尚未形成个体自己的维护动机、净资源估值或演化机制。
 
 首个原型 **OCEE-0** 不宣称创造出生命，也不将一般编程智能体得分等同于开放式演化。它先检验一个可证伪命题：
 
