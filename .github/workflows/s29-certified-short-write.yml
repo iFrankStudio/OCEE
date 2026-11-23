@@ -1,0 +1,27 @@
+name: S29 Metered Certified Short Write Preservation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-certified-short-write.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-certified-short-write-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-short-write:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [SHORT_WRITE, LIVE_HASH_PIN, FAILED_CAS, OLD_REF_REMOVED]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_SHORT_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify paid certified short write, live-hash veto and conservative old-ref safety
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_certified_short_write_native -- --ignored --show-output
