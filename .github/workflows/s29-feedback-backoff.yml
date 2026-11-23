@@ -1,0 +1,27 @@
+name: S29 Paid Persistent GC Feedback Backoff
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-feedback-backoff.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-feedback-backoff-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-memory:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [RACE_BACKOFF_RECOVER, PAIRED_REATTEMPT, CORRUPT_MEMORY]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_BACKOFF_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native paid persistent GC feedback and bounded backoff
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_feedback_backoff_native -- --ignored --show-output

@@ -1126,3 +1126,142 @@ fn run_first_real_conflict(w:&mut World,targets:&[String]){
     assert!(targets.iter().all(|h|w.state.objects.contains_key(
         &version_key(h))));
 }
+
+
+fn test_backoff_recovery(){
+    let (mut w,targets,root,_,new_hash,used)=setup_backoff_world(false);
+    let total_target=targets.iter().map(|h|
+        w.state.objects[&version_key(h)].bytes.len() as u64
+    ).sum::<u64>();
+    assert_eq!(total_target,834);
+    run_first_real_conflict(&mut w,&targets);
+    // The actually paid ordinary /self/ memory survives a world snapshot.
+    w=World::from_snapshot(&w.snapshot_json()).unwrap();
+    verify_memory(&w,b"1",0);
+    let step2=w.state.step;
+    reactivate_program(&mut w,&root);
+    run(&mut w,64);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(0)));
+    verify_memory(&w,b"0",1);
+    let (scan2,gc2,mem2)=gc_actions_since(&w,step2);
+    assert_eq!(scan2,0);
+    assert!(gc2.is_empty());
+    assert_eq!(mem2.len(),1);
+    assert_eq!(mem2[0].0,b"0");
+    assert_eq!(mem2[0].1,Code::Ok);
+    assert!(mem2[0].2>0);
+    // The environment later releases its real pin with paid CAS;
+    // the organism has no hidden ability to change that external fact.
+    let original=w.state.organisms[&ORGANISM_ID].storage_used;
+    alter(&mut w,"/self/pins/s29-backoff",vec![b'-';64],0);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,original);
+    let start3=w.state.step;
+    reactivate_program(&mut w,&root);
+    run(&mut w,64);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)));
+    verify_memory(&w,b"0",1);
+    let (scan3,gc3,mem3)=gc_actions_since(&w,start3);
+    assert_eq!(scan3,1);
+    assert_eq!(gc3,vec![Code::Ok,Code::Ok,Code::Ok]);
+    assert!(mem3.is_empty());
+    assert!(targets.iter().all(|h|!w.state.objects.contains_key(
+        &version_key(h))));
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used+64+1-total_target);
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    let (vm,action)=spend(&w);
+    println!("S29_BACKOFF RECOVER root={root} \
+        targets={targets:?} episodes=[Conflict,Skipped,Recovered] \
+        index_count=[1,0,1] memory=[(1,v0),(0,v1),(0,v1)] \
+        freed={total_target} initial_storage={used} \
+        final_storage={} B={} paid_VM_A={vm} paid_Action_A={action} \
+        step={}",w.state.organisms[&ORGANISM_ID].storage_used,
+        b_gas(&w),w.state.step);
+}
+fn test_paired_reattempt(){
+    let (mut w,targets,root,baseline,new_hash,_used)=
+        setup_backoff_world(true);
+    let baseline=baseline.expect("preinstalled fixed control root");
+    run_first_real_conflict(&mut w,&targets);
+    let mut control=World::from_snapshot(&w.snapshot_json()).unwrap();
+    assert_eq!(w.state_hash(),control.state_hash());
+    let start=w.state.step;
+    reactivate_program(&mut w,&root);
+    run(&mut w,64);
+    let (scan_skip,gc_skip,mem)=gc_actions_since(&w,start);
+    assert_eq!(scan_skip,0);
+    assert!(gc_skip.is_empty());
+    assert_eq!(mem.len(),1);
+    assert_eq!(mem[0].0,b"0");
+    verify_memory(&w,b"0",1);
+    let start_control=control.state.step;
+    reactivate_program(&mut control,&baseline);
+    run(&mut control,64);
+    let (scan_fixed,gc_fixed,_) =
+        gc_actions_since(&control,start_control);
+    assert_eq!(scan_fixed,1,
+        "fixed threshold must pay for an unnecessary rescan");
+    assert_eq!(gc_fixed,vec![Code::Conflict]);
+    let skip_fee=w.audit.iter().filter(|e|e.step>=start &&
+        matches!(&e.action,Some(Action::IndexVersionRefs{..})))
+        .map(|e|e.result.gas_charged).sum::<u64>();
+    let fixed_fee=control.audit.iter().filter(|e|
+        e.step>=start_control && matches!(&e.action,
+            Some(Action::IndexVersionRefs{..})))
+        .map(|e|e.result.gas_charged).sum::<u64>();
+    assert_eq!(skip_fee,0);
+    assert!(fixed_fee>=1600);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        control.state.organisms[&ORGANISM_ID].storage_used);
+    assert!(targets.iter().all(|h|
+        w.state.objects.contains_key(&version_key(h)) &&
+        control.state.objects.contains_key(&version_key(h))));
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(b_gas(&control),20);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    assert_eq!(control.state_hash(),World::from_snapshot(
+        &control.snapshot_json()).unwrap().state_hash());
+    println!("S29_BACKOFF PAIRED same_snapshot_before=true \
+        remembered_skip_scan_A={skip_fee} fixed_scan_A={fixed_fee} \
+        fixed_gc={gc_fixed:?} both_freed=0 VM_roots_not_equivalent=true");
+}
+fn test_corrupt_memory(){
+    let (mut w,targets,root,_,_new,used)=setup_backoff_world(false);
+    put(&mut w,S29_RISK_KEY.into(),vec![2u8]);
+    let start=w.state.step;
+    run(&mut w,64);
+    let (scans,gc,memory)=gc_actions_since(&w,start);
+    assert_eq!(scans,0);
+    assert!(gc.is_empty()&&memory.is_empty());
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(0)));
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used+1);
+    assert!(targets.iter().all(|h|w.state.objects.contains_key(
+        &version_key(h))));
+    verify_memory(&w,&[2],0);
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    println!("S29_BACKOFF CORRUPT same_root={root} \
+        opaque_self_memory_fail_closed=true index=0 gc=0");
+}
+#[test]
+#[ignore="native paid backoff memory across independently activated VM episodes"]
+fn s29_feedback_backoff_native(){
+    let arm=std::env::var("OCEE_S29_BACKOFF_ARM")
+        .expect("scoped research arm");
+    match arm.as_str(){
+        "RACE_BACKOFF_RECOVER"=>test_backoff_recovery(),
+        "PAIRED_REATTEMPT"=>test_paired_reattempt(),
+        "CORRUPT_MEMORY"=>test_corrupt_memory(),
+        other=>panic!("unknown research arm {other}")
+    }
+}
