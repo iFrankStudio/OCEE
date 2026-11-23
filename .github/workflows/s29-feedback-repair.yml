@@ -1,5 +1,7 @@
 name: S29 Inherited Tool Feedback Repair with CAS
-# Rerun once after original Run #45107240682 rejected the static unbounded cycle.
+# Initial #45107240682: static VM cycle rejection.
+# Second #45107371940: 3/4 real semantic successes, MATCHED test audit counted donor import.
+# One scoped full matrix rerun after correcting active-only version-write audit.
 on:
   push:
     branches: [main]
