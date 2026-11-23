@@ -1,8 +1,10 @@
 # OCEE — 开放式演化赛博生态世界
 
-**规范基线：v0.2.0 · 工程：P1/P2/P3 + S0–S40原生定向验收、S41开发候选待验；S40真实丢弃后自发恢复并B只结算一次（4/4）；S41改为受费早期状态检查与分区生命周期清理，GitHub-hosted runner尚未启动 · G0 GO、G1/G2 NO-GO · E001未预注册**
+**规范基线：v0.2.0（后续开发世界能力需独立版本化） · 2026-11-23 最新S29付费证书失效/跨epoch续行定向4/4通过 · G0 GO、G1/G2 NO-GO · E001尚未校准/预注册**
 
 OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是探索一种能够适应未知数字环境、学习使用现有软硬件与网络服务、创造新工具并持续改进自身的赛博生命培养机制。
+
+**最新验证的工程事实（2026-11-23）**：S29仍是开发性有界维护，不是开放式演化。[最新原生CI四臂4/4](https://github.com/iFrankStudio/OCEE/actions/runs/45151720848)显示**同一1B无害写入**放在付费引用索引后，而不是索引前，会使保守证书真实失效、后续VM额外扫描，并让同834B回收的维护期间A开销从**1887升到3888**；同一VM的有偿CAS风险记忆经宿主推进真实epoch后仍可确定性恢复。详细冻结协议/审计见[证书失效与跨epoch研究](./experiments/E001/DEV-S29-CROSS-EPOCH-CERTIFICATE-CHURN-PROTOCOL.md)，全部原生工程进度以[07工程检查点](./07-ENGINEERING-CHECKPOINT.md)最新条目为准；历史S41运行器阻断描述只是当时状态，并非当前运行器状态。
 
 首个原型 **OCEE-0** 不宣称创造出生命，也不将一般编程智能体得分等同于开放式演化。它先检验一个可证伪命题：
 
@@ -214,9 +216,9 @@ S38 已能在任务v1→v2变化后重新付费学习，却没有保护“验证
 **限制**：这是可信单内核、一次恢复、一个远程工作项、已知v1→v2、封闭程序词汇和预设P2协议专家的开发实验；没有一般 exactly-once、真正互联网服务重试或开放式生长。**G0 GO；G1/G2 NO-GO，E001未预注册。**
 
 
-## S41 开发候选：早期受费故障检测与可验证的生命周期清理（原生未验）
+## S41 历史开发记录：当时的运行器阻断（后已恢复）
 [S41完整机制、四项预设验收与GitHub runner阻断证据](./experiments/E001/DEV-S41-EARLY-DROP-LIFETIME.md)。已实现P2专家在收到真实空接收反馈后提前询问 `FenceStatus`（不论有无丢弃都真实收费1 A），真正存在S39 TaskFenceDrop才主动请求S40的一次受控重启；没有丢弃则继续原128轮受限等待。`RestartRoot`不再硬编码五个临时结果名称，而按**研究者预先限定的三个命名空间前缀**释放当前个体所有本回合输出：`/self/results/`、`/self/work/`、`/self/discoveries/`，保留真实查询历史、工具注册、不可变代码以及其他私有记忆。对照测试加入未预列出的派生路径，要求真实C/B故障恢复比S40至少快40 ticks，旧消息B0、新消息B24仅一次、CAS及存储计量完整。
-**未获得原生实验结果**：对应[S41 GitHub Actions #44748358687](https://github.com/iFrankStudio/OCEE/actions/runs/44748358687) 两次attempt均在runner分配前约2秒失败，无steps/无Rust日志；同提交的S40和workspace也如此。工程代码已push，静态复核不等于Rust验证。需先恢复私有仓库GitHub-hosted runners后进行定向原生验收。研究闸门继续**G0 GO；G1/G2 NO-GO；E001未预注册**。
+**以下仅记录当时的失败尝试，不代表现在未验证**：对应[S41 GitHub Actions #44748358687](https://github.com/iFrankStudio/OCEE/actions/runs/44748358687) 两次attempt均在runner分配前约2秒失败，无steps/无Rust日志；同提交的S40和workspace也如此。工程代码已push，静态复核不等于Rust验证。此后仓库已转 public、GitHub-hosted runners恢复并获得S41/S42B后续原生成功记录（见[CI政策](./CI-REPLAY-POLICY.md)及[工程检查点](./07-ENGINEERING-CHECKPOINT.md)）。研究闸门继续**G0 GO；G1/G2 NO-GO；E001未预注册**。
 
 ### CI 运行预算与旧实验复核
-私有仓库多个历史工作流同时运行会消耗大量GitHub Actions时长。现行规则详见 [CI-REPLAY-POLICY.md](./CI-REPLAY-POLICY.md)：**S41当前定向研究保留push自动检查；S22–S40等历史验证保留手动`workflow_dispatch`；完整workspace保留PR自动检查和main手动全量复核。** 2026-11-20 的托管runner未分配问题尚未排除，S41尚无原生通过证据。
+历史工作流多次重复运行会消耗大量GitHub Actions时长。最新规则详见 [CI-REPLAY-POLICY.md](./CI-REPLAY-POLICY.md)：专项实验只在明确的一次受控验证时临时开启路径限定push，**取得成功后恢复`workflow_dispatch` only**；旧证据需要时手动重放。此前2026-11-20私有仓库Runner无法分配的问题在仓库转public后已恢复，不能把旧错误当作当前障碍。
