@@ -1,4 +1,5 @@
 name: S29 Matched Lifetime Task Utility Pilot
+# Replay after fixing report-only Rust format string; original failed run archived.
 on:
   push:
     branches: [main]
