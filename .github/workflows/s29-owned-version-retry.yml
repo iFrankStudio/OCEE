@@ -1,0 +1,27 @@
+name: S29 Paid Own-Object CAS Version and Repeated Risk
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-owned-version-retry.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-owned-version-retry-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-versioned-risk:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [REPEAT_CONFLICT, STALE_CAS, RELEASE_AND_REPLAY, METADATA_GUARDS]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_VERSIONED_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Paid own-object snapshot versions and bounded repeated GC conflicts
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_versioned_memory_native -- --ignored --show-output

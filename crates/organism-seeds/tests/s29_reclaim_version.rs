@@ -1747,3 +1747,222 @@ fn setup_versioned_retry_world()->(World,Vec<String>,String,String,u64){
     ).sum::<u64>(),834);
     (w,targets,root,new_hash,used)
 }
+
+
+fn versioned_meta_reads(w:&World,start:u64)->Vec<(Code,Option<(u64,Vec<u8>)>,u64)>{
+    w.audit.iter().filter(|e|e.step>=start &&
+        matches!(&e.action,Some(Action::Read{key,..})
+            if key==S29_OWN_META))
+    .map(|e|{
+        let value=if e.result.code==Code::Ok{
+            let v:serde_json::Value=
+                serde_json::from_slice(&e.result.payload).unwrap();
+            let version=v["version"].as_u64().unwrap();
+            let bytes=v["bytes"].as_array().unwrap().iter()
+                .map(|n|n.as_u64().unwrap() as u8)
+                .collect::<Vec<_>>();
+            Some((version,bytes))
+        }else{None};
+        (e.result.code,value,e.result.gas_charged)
+    }).collect()
+}
+fn test_versioned_repeat_conflict(){
+    let (mut w,targets,root,new_hash,used)=setup_versioned_retry_world();
+    let start=w.state.step;
+    true_race_and_risk_one(&mut w,&targets);
+    advance_to_true_cooldown(&mut w);
+    run(&mut w,80);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(0)));
+    verify_memory(&w,b"1",2);
+    let (indexes,gc,writes)=gc_actions_since(&w,start);
+    assert_eq!(indexes,2);
+    assert_eq!(gc,vec![Code::Conflict,Code::Conflict]);
+    assert_eq!(writes.len(),3);
+    assert_eq!(writes.iter().map(|x|x.0.clone()).collect::<Vec<_>>(),
+        vec![b"1".to_vec(),b"0".to_vec(),b"1".to_vec()]);
+    assert!(writes.iter().all(|x|x.1==Code::Ok&&x.2>0));
+    let observed=versioned_meta_reads(&w,start);
+    assert!(observed.iter().filter(|x|
+        x.1.as_ref().is_some_and(|y|
+            y.0==1&&y.1==b"0")).count()>=2);
+    assert!(observed.iter().filter(|x|
+        x.1.as_ref().is_some_and(|y|
+            y.0==0&&y.1==b"1")).count()>=1);
+    assert!(observed.iter().filter(|x|x.0==Code::Ok)
+        .all(|x|x.2>=3));
+    assert_eq!(count_internal_active_switches(&w,start),0);
+    assert_eq!(w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().unwrap()
+        .loop_counters.get("retry_header"),Some(&3));
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used+64+1);
+    assert!(targets.iter().all(|x|w.state.objects.contains_key(
+        &version_key(x))));
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    let (vm,action)=spend(&w);
+    println!("S29_VERSIONED REPEAT_CONFLICT root={root} \
+        indexes={indexes} gc={gc:?} memory_writes={writes:?} \
+        meta_reads={observed:?} risk=1v2 no_delete=true \
+        storage={} B={} VM_A={vm} Action_A={action} step={}",
+        w.state.organisms[&ORGANISM_ID].storage_used,b_gas(&w),
+        w.state.step);
+}
+fn test_versioned_stale_cas(){
+    let (mut w,targets,root,new_hash,_)=setup_versioned_retry_world();
+    let start=w.state.step;
+    true_race_and_risk_one(&mut w,&targets);
+    advance_to_true_cooldown(&mut w);
+    let mut third_meta=false;
+    for _ in 0..64{
+        let tick=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(tick.code,Code::Denied|Code::InvalidCode));
+        let e=w.audit.last().unwrap();
+        if matches!(&e.action,Some(Action::Read{key,..})
+            if key==S29_OWN_META) && e.result.code==Code::Ok {
+            let v:serde_json::Value=
+                serde_json::from_slice(&e.result.payload).unwrap();
+            if v["version"].as_u64()==Some(1) &&
+                gc_actions_since(&w,start).1.len()==2{
+                assert_eq!(v["bytes"],serde_json::json!([48]));
+                third_meta=true;break;
+            }
+        }
+    }
+    assert!(third_meta,
+        "must pause immediately after VM reads current v1 on third failure");
+    verify_memory(&w,b"0",1);
+    // This is a real, paid concurrent actor CAS between the VM's
+    // atomic own-object observation and the next VM write.
+    alter(&mut w,S29_RISK_KEY,b"1".to_vec(),1);
+    verify_memory(&w,b"1",2);
+    let attempted=w.tick_autonomous(ORGANISM_ID);
+    assert_eq!(attempted.code,Code::Conflict,
+        "kernel must reject VM's now-stale expected version=1");
+    let last=w.audit.last().unwrap();
+    assert!(matches!(&last.action,Some(Action::Write{
+        key,bytes,expected_version:Some(1),..
+    }) if key==S29_RISK_KEY&&bytes==b"1"));
+    run(&mut w,24);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(0)));
+    verify_memory(&w,b"1",2);
+    assert_eq!(count_internal_active_switches(&w,start),0);
+    let (indexes,gc,writes)=gc_actions_since(&w,start);
+    assert_eq!(indexes,2);
+    assert_eq!(gc,vec![Code::Conflict,Code::Conflict]);
+    assert_eq!(writes.len(),4,
+        "three VM risk writes plus one competing real actor write");
+    assert_eq!(writes.last().unwrap().1,Code::Conflict);
+    assert_eq!(writes.last().unwrap().2,0);
+    assert!(targets.iter().all(|x|w.state.objects.contains_key(
+        &version_key(x))));
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    println!("S29_VERSIONED STALE_CAS root={root} \
+        observed_v1_then_external_real_CAS_v2=true \
+        rejected_VM_expected_v1=true no_false_memory_success=true \
+        gc={gc:?} no_delete=true risk1v2=true B={} step={}",
+        b_gas(&w),w.state.step);
+}
+fn test_versioned_release_replay(){
+    let (mut w,targets,root,new_hash,used)=setup_versioned_retry_world();
+    let start=w.state.step;
+    true_race_and_risk_one(&mut w,&targets);
+    let mut copy=World::from_snapshot(&w.snapshot_json()).unwrap();
+    assert_eq!(w.snapshot_json(),copy.snapshot_json());
+    advance_to_true_cooldown(&mut w);
+    advance_to_true_cooldown(&mut copy);
+    assert_eq!(w.snapshot_json(),copy.snapshot_json());
+    alter(&mut w,"/self/pins/s29-self-retry",vec![b'-';64],0);
+    alter(&mut copy,"/self/pins/s29-self-retry",vec![b'-';64],0);
+    assert_eq!(w.snapshot_json(),copy.snapshot_json());
+    run(&mut w,64);
+    run(&mut copy,64);
+    assert_eq!(w.snapshot_json(),copy.snapshot_json(),
+        "snapshotted pending feedback+CAS version must replay exactly");
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(1)));
+    verify_memory(&w,b"0",1);
+    let (indexes,gc,writes)=gc_actions_since(&w,start);
+    assert_eq!(indexes,2);
+    assert_eq!(gc,vec![Code::Conflict,Code::Ok,Code::Ok,Code::Ok]);
+    assert_eq!(writes.len(),2);
+    assert!(writes.iter().all(|x|x.1==Code::Ok&&x.2>0));
+    assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+        used+64+1-834);
+    assert!(targets.iter().all(|x|!w.state.objects.contains_key(
+        &version_key(x))));
+    assert_eq!(count_internal_active_switches(&w,start),0);
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(b_gas(&w),20);
+    let (vm,action)=spend(&w);
+    println!("S29_VERSIONED RELEASE_REPLAY root={root} \
+        index_count={indexes} gc={gc:?} freed=834 \
+        same_continuation_snapshot_and_audit=true no_reactivation=true \
+        final_storage={} B={} VM_A={vm} Action_A={action} step={}",
+        w.state.organisms[&ORGANISM_ID].storage_used,
+        b_gas(&w),w.state.step);
+}
+fn test_versioned_metadata_guards(){
+    let mut w=World::new(Config::default());
+    put(&mut w,S29_RISK_KEY.into(),b"1".to_vec());
+    let lookup=|w:&mut World,key:&str|w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:key.into()
+    }));
+    let result=lookup(&mut w,S29_OWN_META);
+    assert_eq!(result.code,Code::Ok);
+    assert_eq!(result.gas_charged,3);
+    let obj:serde_json::Value=
+        serde_json::from_slice(&result.payload).unwrap();
+    assert_eq!(obj["bytes"],serde_json::json!([49]));
+    assert_eq!(obj["version"],serde_json::json!(0));
+    let raw=lookup(&mut w,S29_RISK_KEY);
+    assert_eq!(raw.code,Code::Ok);
+    assert_eq!(raw.payload,b"1");
+    for bad in [
+        "/sys/self-object/","/sys/self-object/../public/C/hello",
+        "/sys/self-object/maintenance//risk-s29",
+        "/sys/self-object/maintenance/./risk-s29"
+    ]{
+        assert_eq!(lookup(&mut w,bad).code,Code::BadRequest);
+    }
+    assert_eq!(lookup(&mut w,
+        "/sys/self-object/maintenance/absent").code,Code::NotFound);
+    // Trusted research fixtures only: the actor did not synthesize these
+    // malicious ownership/overflow records via ordinary paid actions.
+    w.state.objects.get_mut(S29_RISK_KEY).unwrap().owner=999;
+    assert_eq!(lookup(&mut w,S29_OWN_META).code,Code::Denied);
+    {
+        let o=w.state.objects.get_mut(S29_RISK_KEY).unwrap();
+        o.owner=ORGANISM_ID;
+        o.version=(u32::MAX as u64)+1;
+    }
+    assert_eq!(lookup(&mut w,S29_OWN_META).code,Code::Quota);
+    w.state.objects.get_mut(S29_RISK_KEY).unwrap().version=0;
+    assert_eq!(lookup(&mut w,S29_OWN_META).code,Code::Ok);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    println!("S29_VERSIONED METADATA_GUARDS paid_3A=true \
+        raw_read_unchanged=true malformed_path_denied=true \
+        foreign_owner_denied=true version_overflow_quota=true \
+        no_kernel_privilege_bypass=true");
+}
+#[test]
+#[ignore="paid owned-object CAS metadata and repeated memory transitions"]
+fn s29_versioned_memory_native(){
+    let arm=std::env::var("OCEE_S29_VERSIONED_ARM")
+        .expect("scoped frozen native experiment");
+    match arm.as_str(){
+        "REPEAT_CONFLICT"=>test_versioned_repeat_conflict(),
+        "STALE_CAS"=>test_versioned_stale_cas(),
+        "RELEASE_AND_REPLAY"=>test_versioned_release_replay(),
+        "METADATA_GUARDS"=>test_versioned_metadata_guards(),
+        other=>panic!("unknown versioned metadata arm {other}")
+    }
+}
