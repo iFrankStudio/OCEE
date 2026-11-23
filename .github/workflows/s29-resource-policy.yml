@@ -1,4 +1,6 @@
 name: S29 Paid Own-Resource Maintenance Decision
+# Native #45126843831 failed Rust E0502 at test audit/Exec borrow; this is
+# a one-shot rerun with only the borrow lifetime corrected.
 on:
   push:
     branches: [main]
