@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use ocee_protocol_sim::{Family, ParseError, Service, ServiceOutput};
 
 mod program_host;
@@ -101,6 +101,10 @@ pub struct WorldState {
     pub nodes: BTreeMap<NodeId, NodeState>,
     pub organisms: BTreeMap<u64, OrganismHostState>,
     pub objects: BTreeMap<String, Object>,
+    /// Kernel-certified, paid reference summary. Invalidated on any
+    /// real-world object/transport/root mutation; never organism-writable.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub version_ref_index:Option<VersionRefIndex>,
     pub mailboxes: BTreeMap<NodeId, Vec<Message>>,
     pub pending_deliveries: Vec<Message>,
     pub events: Vec<ScheduledEvent>,
@@ -138,6 +142,15 @@ pub struct WorldState {
     pub initial_root_hash:Option<String>,
     #[serde(default,skip_serializing_if="BTreeMap::is_empty")]
     pub guarded_restarts:BTreeMap<u64,u32>,
+}
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct VersionRefIndex {
+    pub actor:u64,
+    pub active_hash:Option<String>,
+    pub installed:BTreeSet<String>,
+    pub referenced:BTreeSet<String>,
+    pub scanned_bytes:u64,
+    pub built_step:u64,
 }
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 pub struct TaskFenceDrop {
@@ -298,6 +311,12 @@ pub enum Action {
         actor: u64, registry_key: String, program_bytes: Vec<u8>,
         expected_version: Option<u64>,
     },
+    /// A real charged scan creates a kernel-owned, snapshot-persisted
+    /// reference certificate (not supplied or edited by the organism).
+    IndexVersionRefs { actor:u64 },
+    /// Conservatively reuse the still-valid certified summary for
+    /// bounded retirement; a stale or missing index fails closed.
+    ReclaimIndexedVersion { actor:u64, program_hash:String },
     /// Charged, conservative removal of one unreferenced owned immutable
     /// version. Existing live roots/registries/pending raw-hash refs block.
     ReclaimVersion {actor:u64, program_hash:String},
@@ -421,6 +440,7 @@ impl World {
                 task_fences:BTreeMap::new(),guarded_sends:BTreeMap::new(),
                 fence_drops:vec![],last_guarded_send:BTreeMap::new(),
                 initial_root_hash:None,guarded_restarts:BTreeMap::new(),
+                version_ref_index:None,
             },
             audit: vec![],
         }
@@ -465,6 +485,9 @@ impl World {
             } else {
                 self.state.events.push(ev);
             }
+        }
+        if self.state.pending_deliveries.iter().any(|m|m.deliver_step<=k){
+            self.state.version_ref_index=None;
         }
         let mut pending = std::mem::take(&mut self.state.pending_deliveries);
         pending.sort_by_key(|m| (m.deliver_step, m.sequence_no));
@@ -516,6 +539,7 @@ impl World {
                 .filter(|obj|obj.owner==actor)
                 .and_then(|obj|String::from_utf8(obj.bytes.clone()).ok())
         };
+        self.state.version_ref_index=None;
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&evidence)
                 .expect("witness must serialize"),
@@ -550,6 +574,7 @@ impl World {
                 .filter(|obj|obj.owner==actor)
                 .and_then(|obj|String::from_utf8(obj.bytes.clone()).ok()),
         };
+        self.state.version_ref_index=None;
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&evidence)
                 .expect("semantic witness must serialize"),
@@ -580,6 +605,7 @@ impl World {
                 .filter(|obj|obj.owner==actor)
                 .and_then(|obj|String::from_utf8(obj.bytes.clone()).ok())
         };
+        self.state.version_ref_index=None;
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&evidence)
                 .expect("secondary audit must serialize"),
@@ -600,6 +626,7 @@ impl World {
                 TransformExample{input:b.clone(),output:hidden_compose(seed,&b)},
             ],held_out_input:held_out,
         };
+        self.state.version_ref_index=None;
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&task).expect("task"),
         });
@@ -619,6 +646,7 @@ impl World {
                 TransformExample{input:x2.clone(),output:hidden_transform(seed,&x2)},
             ],held_out_input:held_out,
         };
+        self.state.version_ref_index=None;
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&task).expect("task"),
         });
@@ -641,6 +669,7 @@ impl World {
             job_id:1,operation:"FOLD32".into(),count:3,
             values,values_le,answer_schema:"u32le".into(),
         };
+        self.state.version_ref_index=None;
         self.state.objects.insert(PATH.into(),Object{
             owner:0,version:0,bytes:serde_json::to_vec(&work).expect("work item"),
         });
@@ -651,6 +680,7 @@ impl World {
         let Some(service)=self.state.protocol_service.as_ref() else {return;};
         let (request,response)=service.public_hello_sample(self.state.step);
         let sample=HelloSample{published_step:self.state.step,request,response};
+        self.state.version_ref_index=None;
         self.state.objects.insert("/public/C/hello".into(),Object{
             owner:0,version:self.state.step / 256,
             bytes:serde_json::to_vec(&sample).expect("sample"),
@@ -659,6 +689,10 @@ impl World {
 
     fn process_service_inbox(&mut self) {
         if self.state.protocol_service.is_none() {return;}
+        if self.state.mailboxes.get(&NodeId::C)
+            .is_some_and(|m|!m.is_empty()){
+            self.state.version_ref_index=None;
+        }
         let mut queue:VecDeque<Message>=self.state.mailboxes.remove(&NodeId::C)
             .unwrap_or_default().into();
         let mut deferred=Vec::<Message>::new();
@@ -868,7 +902,9 @@ impl World {
         let actor = match &action {
             Action::Observe {actor} | Action::Read {actor,..} |
             Action::Write {actor,..} | Action::PublishTool{actor,..} |
-            Action::ReclaimVersion{actor,..} | Action::Send {actor,..} |
+            Action::ReclaimVersion{actor,..} |
+            Action::IndexVersionRefs{actor} |
+            Action::ReclaimIndexedVersion{actor,..} | Action::Send {actor,..} |
             Action::Receive {actor,..} | Action::Exec {actor,..} |
             Action::Probe {actor,..} | Action::VerifyProbe{actor,..} |
             Action::RenewProbe{actor,..} | Action::ArmTaskFence{actor,..} |
@@ -879,6 +915,14 @@ impl World {
             Action::ConfirmResponseFor{actor,..} => *actor,
         };
         if !self.valid_actor(actor) { return ActionResult::fail(Code::Denied); }
+        // Fail closed on *attempts* that may introduce references. This
+        // deliberately over-invalidates on rejected attempts instead of
+        // leaving a false-negative shortcut after a mutation.
+        if matches!(&action,Action::Write{..}|Action::PublishTool{..}|
+            Action::Send{..}|Action::Receive{..}|Action::Exec{..}|
+            Action::RestartRoot{..}|Action::RestartRootFor{..}) {
+            self.state.version_ref_index=None;
+        }
         match action {
             Action::Observe {..} => {
                 if let Err(code) = self.spend_a_gas(1) { return ActionResult::fail(code); }
@@ -962,6 +1006,12 @@ impl World {
             }
             Action::ReclaimVersion{program_hash,..}=>{
                 program_host::reclaim_owned_version(self,actor,&program_hash)
+            }
+            Action::IndexVersionRefs{..}=>{
+                program_host::certify_version_references(self,actor)
+            }
+            Action::ReclaimIndexedVersion{program_hash,..}=>{
+                program_host::reclaim_certified_version(self,actor,&program_hash)
             }
             Action::Send {destination,bytes,..} => {
                 if destination != NodeId::C { return ActionResult::fail(Code::Denied); }

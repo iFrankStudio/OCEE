@@ -189,6 +189,14 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
         WorldCall::ReclaimVersion if args.len()==1=>{
             Action::ReclaimVersion{actor,program_hash:utf8(&args[0])?}
         },
+        WorldCall::IndexVersionRefs if args.is_empty()=>{
+            Action::IndexVersionRefs{actor}
+        },
+        WorldCall::ReclaimIndexedVersion if args.len()==1=>{
+            Action::ReclaimIndexedVersion{
+                actor,program_hash:utf8(&args[0])?
+            }
+        },
         WorldCall::Send if args.len()==1 => Action::Send{
             actor,destination:NodeId::C,bytes:as_bytes(&args[0])?.to_vec()
         },
@@ -474,4 +482,121 @@ pub(crate) fn reclaim_owned_version(
     world.state.organisms.get_mut(&actor)
         .expect("validated actor").storage_used=next_used;
     ActionResult::ok(target_len.to_le_bytes().to_vec(),fee,0)
+}
+
+
+/// Native kernel-owned reference certificate, built by a *paid* deterministic
+/// full scan. This is a finite, installed-version-scoped raw ASCII hash index:
+/// unknown encoded pointers are beyond the same conservative contract as
+/// the previous full-scan ReclaimVersion action.
+pub(crate) fn certify_version_references(
+    world:&mut World,actor:u64
+)->ActionResult {
+    use std::collections::BTreeSet;
+    use crate::VersionRefIndex;
+    let installed=world.state.objects.keys().filter_map(|key|{
+        let hash=key.strip_prefix("/self/versions/")?;
+        if ascii_hash(hash.as_bytes()).is_ok(){
+            Some(hash.to_owned())
+        }else{None}
+    }).collect::<BTreeSet<_>>();
+    // Kernel-side bounded metadata; installed versions already consume
+    // world storage, but cap index work independently as defense-in-depth.
+    if installed.len()>1024{return ActionResult::fail(Code::Quota);}
+    let active_hash=world.state.organisms[&actor].active_program_hash.clone();
+    let active_key=active_hash.as_ref()
+        .map(|h|format!("/self/versions/{h}"));
+    let mut seen=BTreeSet::<String>::new();
+    let mut scanned=0u64;
+    let mut scan=|raw:&[u8],except:Option<&str>|{
+        for window in raw.windows(64) {
+            let Ok(candidate)=std::str::from_utf8(window) else{continue};
+            if except==Some(candidate) {continue;}
+            if installed.contains(candidate){seen.insert(candidate.to_owned());}
+        }
+    };
+    for (key,obj) in &world.state.objects{
+        // Calling root itself must be able to name the retired program;
+        // this exemption matches old ReclaimVersion and stays bound to
+        // active_hash. Any root switch invalidates the entire certificate.
+        if active_key.as_deref()==Some(key.as_str()){continue;}
+        scanned=match scanned.checked_add(key.len() as u64)
+            .and_then(|n|n.checked_add(obj.bytes.len() as u64)){
+            Some(n)=>n,None=>return ActionResult::fail(Code::Quota)
+        };
+        // Every immutable version key trivially contains its own hash.
+        // That ownership key is not an independent live reference.
+        let self_hash=key.strip_prefix("/self/versions/");
+        scan(key.as_bytes(),self_hash);
+        scan(&obj.bytes,None);
+    }
+    for msg in world.state.pending_deliveries.iter().chain(
+        world.state.mailboxes.values().flatten()){
+        scanned=match scanned.checked_add(msg.bytes.len() as u64){
+            Some(n)=>n,None=>return ActionResult::fail(Code::Quota)
+        };
+        scan(&msg.bytes,None);
+    }
+    let Some(fee)=(2u64).checked_add(scanned.div_ceil(64))
+        .and_then(|n|n.checked_add(installed.len() as u64)) else{
+        return ActionResult::fail(Code::Quota)
+    };
+    if let Err(code)=world.spend_a_gas(fee){
+        return ActionResult::fail(code);
+    }
+    world.state.version_ref_index=Some(VersionRefIndex{
+        actor,active_hash,installed,referenced:seen,
+        scanned_bytes:scanned,built_step:world.state.step
+    });
+    ActionResult::ok(scanned.to_le_bytes().to_vec(),fee,0)
+}
+
+/// Reference-checked collection using a still-valid trusted index. The
+/// certificate is invalidated on potential new references or root switches,
+/// and may be conservatively reused across previous successful removals:
+/// removing an object cannot create a NEW reference to any other object.
+pub(crate) fn reclaim_certified_version(
+    world:&mut World,actor:u64,hash:&str
+)->ActionResult {
+    let hash=match ascii_hash(hash.as_bytes()){
+        Ok(h)=>h,Err(code)=>return ActionResult::fail(code)
+    };
+    let key=format!("/self/versions/{hash}");
+    let Some(target)=world.state.objects.get(&key) else{
+        return ActionResult::fail(Code::NotFound);
+    };
+    if target.owner!=actor{return ActionResult::fail(Code::Denied);}
+    if decode_candidate(&target.bytes,&hash).is_err(){
+        return ActionResult::fail(Code::InvalidCode);
+    }
+    let Some(index)=world.state.version_ref_index.as_ref() else{
+        return ActionResult::fail(Code::Conflict);
+    };
+    if index.actor!=actor ||
+        index.active_hash!=world.state.organisms[&actor].active_program_hash ||
+        !index.installed.contains(&hash) ||
+        index.referenced.contains(&hash) {
+        return ActionResult::fail(Code::Conflict);
+    }
+    if world.state.initial_root_hash.as_deref()==Some(hash.as_str()) ||
+        world.state.organisms.values().any(|org|
+            org.active_program_hash.as_deref()==Some(hash.as_str()) ||
+            org.vm_continuation.as_ref()
+                .is_some_and(|c|c.program_hash==hash)) {
+        return ActionResult::fail(Code::Conflict);
+    }
+    let len=target.bytes.len() as u64;
+    let used=world.state.organisms[&actor].storage_used;
+    let Some(next_used)=used.checked_sub(len) else{
+        return ActionResult::fail(Code::Quota);
+    };
+    let fee=3u64+len.div_ceil(64);
+    if let Err(code)=world.spend_a_gas(fee){
+        return ActionResult::fail(code);
+    }
+    world.state.objects.remove(&key);
+    world.state.organisms.get_mut(&actor)
+        .expect("valid actor").storage_used=next_used;
+    // No invalidation here: removal alone cannot introduce a new reference.
+    ActionResult::ok(len.to_le_bytes().to_vec(),fee,0)
 }
