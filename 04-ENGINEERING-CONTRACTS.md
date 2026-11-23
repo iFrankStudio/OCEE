@@ -136,3 +136,10 @@ ActionResult { request_id, code, payload, vm_gas, action_gas, bytes_charged }
 ## 8. 明确不在本阶段解决
 
 意识与个体身份本体论、无限开放演化、多生命社会、真实网络与物理执行器。世界内核提供的安全隔离不会被报告为个体自主能力。
+
+
+## 2026-11-23 — 已实现的研究型受限原子工具发布扩展（非正式E001六原语基线）
+
+原文“六原语”为E001 v0.2草案的冻结候选能力集合。**OCEE开发研究S29现新增第七类受限`PublishTool`，不能静默认为旧六原语已经包含它，也不能在正式样本中擅自混用两版能力。**其[先冻结设计和真实原生4/4账本](./experiments/E001/DEV-S29-ATOMIC-TOOL-PUBLISH-PROTOCOL.md)与传统`WRITE`严格区别：活动VM发送`PublishTool(registry_key:Bytes,canonical_program_bytes:Bytes,expected_version:U32)`，`u32::MAX`表示不存在，kernel只允许`/self/tools/`；完整验证规范Program/内容hash/单actor版本与注册CAS/总存储/gas后，一次动作提交规范不可变`/self/versions/<hash>`及Registry指针，不允许切换active root或修改公共对象。若版本已经存在且属于同actor/字节相同，引用时不重写旧版本，也不再次收费安装；只收CAS的6 A。否则新安装费是`2+ceil(program_bytes.len/16)`加registry6 A；失败不部分提交对象/存储。VM解释器和原有`WRITE`并未因此获得任何其他特权。
+
+当用于研究S29时，这一机制的成功被定义为**研究者给予新工具发布原语后，在既有有限算法搜索和反馈选择条件下消除版本孤儿**；不是个体发现世界新权限，亦非资源套利的自动证明。未来进入正式E001前必须版本化`kernel/vm/initial capabilities/action cost table`，重新校准并明确含/不含原子PublishTool的机制对照。不存在通用Delete或多对象任意事务，旧的合法程序版本不会因原子工具切换而自动回收。

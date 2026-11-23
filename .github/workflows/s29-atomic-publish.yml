@@ -1,9 +1,6 @@
 name: S29 Atomic Tool Publish and No Orphan Rollback
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-atomic-publish.yml'
+  # 2026-11-23 native 4/4 Run #45119834399; manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-atomic-publish-${{ github.ref }}
