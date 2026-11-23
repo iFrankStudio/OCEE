@@ -176,6 +176,14 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
                 expected_version:if version==u32::MAX{None}else{Some(u64::from(version))},
             }
         },
+        WorldCall::WriteIndexed if args.len()==3 => {
+            let version=as_num(&args[2])?;
+            Action::WriteIndexed{
+                actor,key:utf8(&args[0])?,
+                bytes:as_bytes(&args[1])?.to_vec(),
+                expected_version:if version==u32::MAX{None}else{Some(u64::from(version))},
+            }
+        },
         WorldCall::PublishTool if args.len()==3=>{
             let version=as_num(&args[2])?;
             Action::PublishTool{
@@ -485,6 +493,109 @@ pub(crate) fn reclaim_owned_version(
 }
 
 
+
+/// Exact source discovery under the original scanner's installed raw ASCII
+/// 64-byte-hash contract. Key/body are independent sources of windows;
+/// callers explicitly skip the owning /self/versions/<hash> key's own hash.
+fn installed_refs(
+    raw:&[u8],installed:&std::collections::BTreeSet<String>,
+    except:Option<&str>
+)->std::collections::BTreeSet<String>{
+    let mut found=std::collections::BTreeSet::new();
+    for bytes in raw.windows(64){
+        let Ok(candidate)=std::str::from_utf8(bytes) else{continue};
+        if except==Some(candidate){continue;}
+        if installed.contains(candidate){found.insert(candidate.to_owned());}
+    }
+    found
+}
+
+/// An opt-in atomic, paid CAS: maintain kernel-certified *per-object* raw-hash
+/// memberships on the same tick as an ordinary owned data write.
+/// It never changes the existing Write operation or old certificate behavior.
+/// A legacy snapshot's untracked index cannot authorize delta mutation.
+pub(crate) fn write_certified_object(
+    world:&mut World,actor:u64,key:String,bytes:Vec<u8>,
+    expected_version:Option<u64>
+)->ActionResult {
+    if !key.starts_with("/self/") ||
+        key=="/self/active" ||
+        key.starts_with("/self/versions/") ||
+        key.starts_with("/self/tools/") {
+        return ActionResult::fail(Code::Denied);
+    }
+    let old=world.state.objects.get(&key);
+    if old.is_some_and(|object|object.owner!=actor){
+        return ActionResult::fail(Code::Denied);
+    }
+    if let Err(code)=preflight_write(&world.state,actor,&key,&bytes,old){
+        return ActionResult::fail(code);
+    }
+    let old_version=old.map(|v|v.version);
+    if old_version!=expected_version{
+        return ActionResult::fail(Code::Conflict);
+    }
+    let next_version=match old_version{
+        None=>0,
+        Some(v)=>match v.checked_add(1){
+            Some(n)=>n,None=>return ActionResult::fail(Code::Quota),
+        },
+    };
+    let old_len=old.map_or(0,|v|v.bytes.len() as u64);
+    let used=world.state.organisms[&actor].storage_used;
+    let Some(next_used)=used.checked_sub(old_len)
+        .and_then(|n|n.checked_add(bytes.len() as u64)) else {
+        return ActionResult::fail(Code::Quota);
+    };
+    if next_used>world.state.nodes[&NodeId::A].storage_capacity {
+        return ActionResult::fail(Code::Quota);
+    }
+    let Some(mut certificate)=world.state.version_ref_index.clone() else{
+        return ActionResult::fail(Code::Conflict);
+    };
+    if certificate.actor!=actor ||
+        certificate.active_hash!=world.state.organisms[&actor].active_program_hash {
+        return ActionResult::fail(Code::Conflict);
+    }
+    let Some(ref mut sources)=certificate.object_refs else{
+        return ActionResult::fail(Code::Conflict);
+    };
+    let mut new_refs=installed_refs(key.as_bytes(),&certificate.installed,None);
+    new_refs.extend(installed_refs(&bytes,&certificate.installed,None));
+    if new_refs.is_empty(){sources.remove(&key);}
+    else{sources.insert(key.clone(),new_refs);}
+    let mut referenced=certificate.transport_refs.clone();
+    let mut members=0u64;
+    for source in sources.values(){
+        let Some(total)=members.checked_add(source.len() as u64) else{
+            return ActionResult::fail(Code::Quota);
+        };
+        members=total;
+        referenced.extend(source.iter().cloned());
+    }
+    certificate.referenced=referenced;
+    let Some(scan_bytes)=(key.len() as u64).checked_add(bytes.len() as u64)
+        else{return ActionResult::fail(Code::Quota)};
+    let base=2u64+(bytes.len() as u64).div_ceil(16);
+    let Some(fee)=base.checked_add(1)
+        .and_then(|n|n.checked_add(scan_bytes.div_ceil(64)))
+        .and_then(|n|n.checked_add(members)) else{
+        return ActionResult::fail(Code::Quota)
+    };
+    if let Err(code)=world.spend_a_gas(fee){
+        return ActionResult::fail(code);
+    }
+    // No fallible or unmetered part beyond this point: the object, storage
+    // ledger and certified reference union advance in the SAME world tick.
+    world.state.objects.insert(key,Object{
+        owner:actor,version:next_version,bytes
+    });
+    world.state.organisms.get_mut(&actor)
+        .expect("authenticated actor").storage_used=next_used;
+    world.state.version_ref_index=Some(certificate);
+    ActionResult::ok(next_version.to_le_bytes().to_vec(),fee,0)
+}
+
 /// Native kernel-owned reference certificate, built by a *paid* deterministic
 /// full scan. This is a finite, installed-version-scoped raw ASCII hash index:
 /// unknown encoded pointers are beyond the same conservative contract as
@@ -507,14 +618,9 @@ pub(crate) fn certify_version_references(
     let active_key=active_hash.as_ref()
         .map(|h|format!("/self/versions/{h}"));
     let mut seen=BTreeSet::<String>::new();
+    let mut per_object=std::collections::BTreeMap::<String,BTreeSet<String>>::new();
+    let mut transport_refs=BTreeSet::<String>::new();
     let mut scanned=0u64;
-    let mut scan=|raw:&[u8],except:Option<&str>|{
-        for window in raw.windows(64) {
-            let Ok(candidate)=std::str::from_utf8(window) else{continue};
-            if except==Some(candidate) {continue;}
-            if installed.contains(candidate){seen.insert(candidate.to_owned());}
-        }
-    };
     for (key,obj) in &world.state.objects{
         // Calling root itself must be able to name the retired program;
         // this exemption matches old ReclaimVersion and stays bound to
@@ -527,16 +633,21 @@ pub(crate) fn certify_version_references(
         // Every immutable version key trivially contains its own hash.
         // That ownership key is not an independent live reference.
         let self_hash=key.strip_prefix("/self/versions/");
-        scan(key.as_bytes(),self_hash);
-        scan(&obj.bytes,None);
+        let mut source=installed_refs(key.as_bytes(),&installed,self_hash);
+        source.extend(installed_refs(&obj.bytes,&installed,None));
+        if !source.is_empty(){
+            seen.extend(source.iter().cloned());
+            per_object.insert(key.clone(),source);
+        }
     }
     for msg in world.state.pending_deliveries.iter().chain(
         world.state.mailboxes.values().flatten()){
         scanned=match scanned.checked_add(msg.bytes.len() as u64){
             Some(n)=>n,None=>return ActionResult::fail(Code::Quota)
         };
-        scan(&msg.bytes,None);
+        transport_refs.extend(installed_refs(&msg.bytes,&installed,None));
     }
+    seen.extend(transport_refs.iter().cloned());
     let Some(fee)=(2u64).checked_add(scanned.div_ceil(64))
         .and_then(|n|n.checked_add(installed.len() as u64)) else{
         return ActionResult::fail(Code::Quota)
@@ -546,7 +657,8 @@ pub(crate) fn certify_version_references(
     }
     world.state.version_ref_index=Some(VersionRefIndex{
         actor,active_hash,installed,referenced:seen,
-        scanned_bytes:scanned,built_step:world.state.step
+        scanned_bytes:scanned,built_step:world.state.step,
+        object_refs:Some(per_object),transport_refs
     });
     ActionResult::ok(scanned.to_le_bytes().to_vec(),fee,0)
 }
