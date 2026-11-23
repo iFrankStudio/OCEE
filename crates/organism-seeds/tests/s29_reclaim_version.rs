@@ -864,13 +864,6 @@ fn run_pressure_arm(arm:&str){
     assert_eq!(w.state_hash(),World::from_snapshot(
         &w.snapshot_json()).unwrap().state_hash());
     let (vm,action)=spend(&w);
-    let new_exec=w.tick(Some(Action::Exec{
-        actor:ORGANISM_ID,program_hash:new_hash.clone(),
-        input:vec![18,2,7,4]
-    }));
-    assert_eq!(new_exec.code,Code::Ok);
-    assert_eq!(serde_json::from_slice::<Value>(&new_exec.payload).unwrap(),
-        Value::U32(4));
     println!("S29_POLICY arm={arm} root={root} \
         observed_used={used} observed_capacity={cap} \
         observed_A={available} pressure={pressure} budget={budget} \
@@ -881,6 +874,15 @@ fn run_pressure_arm(arm:&str){
         w.state.organisms[&ORGANISM_ID].storage_used,
         index.len(),index.iter().map(|x|x.result.gas_charged).sum::<u64>(),
         b_gas(&w),w.state.organisms[&ORGANISM_ID].last_return,w.state.step);
+    // After the audit references have been consumed, this is an ordinary
+    // true paid EXEC against the currently installed repaired Len program.
+    let new_exec=w.tick(Some(Action::Exec{
+        actor:ORGANISM_ID,program_hash:new_hash.clone(),
+        input:vec![18,2,7,4]
+    }));
+    assert_eq!(new_exec.code,Code::Ok);
+    assert_eq!(serde_json::from_slice::<Value>(&new_exec.payload).unwrap(),
+        Value::U32(4));
 }
 #[test]
 #[ignore="charged VM own-resource pressure maintenance policy with real race control"]
