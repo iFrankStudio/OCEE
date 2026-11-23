@@ -6,6 +6,7 @@ on:
       - '.github/workflows/p2-metamorphic-witness.yml'
   # First native Run #45099227328: all arms rejected by strict MAX_BLOCKS=128.
   # Retry only after safe same-edge block compaction, never raise VM limits.
+  # Single-arm forensic replay after full Run #45099406062 concluded 3/4.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-metamorphic-${{ github.ref }}
@@ -17,7 +18,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arm: [VALID, COMMON_DOUBLE, COMMON_PLUS_ONE, INVARIANT_FAULT]
+        arm: [COMMON_PLUS_ONE]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:

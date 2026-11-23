@@ -2864,8 +2864,24 @@ fn p2_task_metamorphic_native(){
         .is_some_and(|c|c.finished);
     let last=organism.last_return.clone();
     let claimed=finished&&last==Some(Value::U32(1));
-    let raw=&w.state.objects.get(REMOTE_VALUES)
-        .expect("root must actually create its P2 input").bytes;
+    if !w.state.objects.contains_key(REMOTE_VALUES){
+        println!(
+            "P2_META_EARLY_FAILURE arm={arm} finished={finished} \\
+             last={last:?} step={} genesis_A={genesis} \\
+             gas_denied={gas_denied} invalid={invalid} \\
+             audit_count={} restarts={:?} continuation={:?}",
+            w.state.step,w.audit.len(),w.state.guarded_restarts,
+            w.state.organisms[&ORGANISM_ID].vm_continuation
+                .as_ref().map(|c|(&c.block,&c.loop_counters)));
+        for rec in w.audit.iter().rev().filter(|x|x.action.is_some()).take(30){
+            println!(
+                "P2_META_EARLY_AUDIT step={} code={:?} vm_gas={} A_gas={} action={:?}",
+                rec.step,rec.result.code,rec.result.vm_gas_charged,
+                rec.result.gas_charged,rec.action);
+        }
+        panic!("root did not produce P2 input; preserve genuine native failure");
+    }
+    let raw=&w.state.objects[REMOTE_VALUES].bytes;
     assert_eq!(raw.len(),16);
     let mut transformed=raw.clone();
     transformed[0]^=1;

@@ -31,3 +31,9 @@ INVARIANT_FAULT 为研究者安装的合法纯VM程序，错误附加项取原�
 ## 2026-11-23 — 第一次原生构造拒绝与有界控制流压缩
 
 [首次 GitHub Actions #45099227328](https://github.com/iFrankStudio/OCEE/actions/runs/45099227328) @ c101f6bb036861854a0d7e4a8037324faa6fd7d8：至少两臂原生任务在开始前 `InvalidProgram("block count")`，来自严格 `MAX_BLOCKS=128`，无世界实验结果，不能当作变形检验成功/失败。保留CI红例。后置仅将零输入验证与变形验证中的串行JSON解析块、下一次世界调用的直通块合并；所有实际四次动作（任务两Exec、零输入Exec、变形Exec）和有偿输入Read、原始数据关系及输出最终判定不变。此合并版本在格式不合/Code非Ok时缺少预期类型化payload，将在VM中拒绝继续而不会落盘，不把非Ok反馈当作合法值；仍需复验正常行为和安全限制。没有提高128块上限或Gas/时间预算、没有更换2027样本/四个预冻结条件。修复版尚待真实原生CI证据。
+
+## 2026-11-23 — 压缩版首次完整运行3/4，单臂早期失败待审计
+
+[Run #45099406062](https://github.com/iFrankStudio/OCEE/actions/runs/45099406062) @21e1787c3e6ba9d464a42697186a126bd45e7886：**completed/failure**，而非4/4。原生COMMON_DOUBLE、VALID、INVARIANT_FAULT三组确实通过完整任务与额外付费变形执行断言；但COMMON_PLUS_ONE在测试读取预期任务输入 `REMOTE_VALUES` 之前已退出，原测试 `expect("root must actually create its P2 input")` 失败，并没有可供本次分析的完整任务审计。不能把这一组算成真实零见证拒绝。第三个同根程序实际VALID A13918，COMMON_DOUBLE A13880，INVARIANT_FAULT A14303；独立参考1415179467，只供宿主测试，未提供给根。最后一个负对照的确错写1415180882（正确值 + frozen tail字节和1415）且同输入最低位变形仍通过关系，说明已验证的结果仅是有限约束。当前3/4，原生失败永久保留。
+
+针对失败，不重跑三组已经完成的昂贵轨迹，先单独重播COMMON_PLUS_ONE并在读取输入前打印 root last_return、是否finished、world step、最后30条世界真实收费动作和VM continuation。之后若有证据再做最小修复并完整四臂复验；不补A gas、不改协议/样本，也不将开发诊断追认成预注册证据。
