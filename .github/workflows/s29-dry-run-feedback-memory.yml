@@ -1,9 +1,7 @@
 name: S29 Paid Dry-Run Memory, One-Round Cooldown and Recovery
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-dry-run-feedback-memory.yml'
+  # Four independent native Rust jobs passed in #45206316515 on first run.
+  # Keep this expensive actual P2 three-episode suite manual-only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-dry-memory-${{ github.ref }}
