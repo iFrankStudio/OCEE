@@ -893,3 +893,236 @@ fn s29_resource_policy_native(){
         .contains(&arm.as_str()));
     run_pressure_arm(&arm);
 }
+
+
+const S29_RISK_KEY:&str="/self/maintenance/risk-s29";
+
+/// Researcher-designed one-episode backoff using actual VM read/write
+/// feedback. No privileged oracle or new kernel action.
+fn feedback_backoff_root(targets:&[String])->Program {
+    let mut p=pressure_gc_policy(targets);
+    let f=&mut p.functions[0];
+    let entry=f.blocks.iter_mut().find(|b|b.id=="entry").unwrap();
+    let resource_code=std::mem::replace(&mut entry.instructions,
+        vec![Instruction{id:50,op:lit(S29_RISK_KEY.as_bytes())}]);
+    let resource_yield=std::mem::replace(&mut entry.terminator,
+        Terminator::Yield{
+            call:WorldCall::Read,args:vec![50],
+            next:"risk_reply".into(),next_args:vec![]
+        });
+    let first_reply=f.blocks.iter_mut().find(|b|b.id=="reply0").unwrap();
+    first_reply.terminator=Terminator::Branch{
+        condition:6,if_true:"delete1".into(),true_args:vec![],
+        if_false:"risk_failure_class".into(),false_args:vec![2]
+    };
+    let pars=|id|vec![Param{id,ty:Type::Bytes}];
+    let check_code=|reg|vec![
+        Instruction{id:3,op:lit(b"code")},
+        Instruction{id:4,op:Op::JsonFieldString(reg,3)},
+        Instruction{id:5,op:lit(b"Ok")},
+        Instruction{id:6,op:Op::EqBytes(4,5)}
+    ];
+    f.blocks.extend([
+        Block{
+            id:"policy_read_resources".into(),params:vec![],
+            instructions:resource_code,terminator:resource_yield
+        },
+        Block{
+            id:"risk_reply".into(),params:pars(2),
+            instructions:check_code(2),
+            terminator:Terminator::Branch{
+                condition:6,if_true:"risk_parse".into(),true_args:vec![2],
+                if_false:"risk_missing".into(),false_args:vec![2]
+            }
+        },
+        Block{
+            id:"risk_missing".into(),params:pars(2),
+            instructions:vec![
+                Instruction{id:3,op:lit(b"code")},
+                Instruction{id:4,op:Op::JsonFieldString(2,3)},
+                Instruction{id:5,op:lit(b"NotFound")},
+                Instruction{id:6,op:Op::EqBytes(4,5)}
+            ],
+            terminator:Terminator::Branch{
+                condition:6,if_true:"policy_read_resources".into(),
+                true_args:vec![],if_false:"failed".into(),false_args:vec![]
+            }
+        },
+        Block{
+            id:"risk_parse".into(),params:pars(2),
+            instructions:vec![
+                Instruction{id:10,op:lit(b"payload")},
+                Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+                Instruction{id:12,op:lit(b"1")},
+                Instruction{id:13,op:Op::EqBytes(11,12)}
+            ],
+            terminator:Terminator::Branch{
+                condition:13,if_true:"risk_cooldown".into(),
+                true_args:vec![],if_false:"risk_zero".into(),
+                false_args:vec![11]
+            }
+        },
+        Block{
+            id:"risk_zero".into(),params:pars(2),
+            instructions:vec![
+                Instruction{id:10,op:lit(b"0")},
+                Instruction{id:11,op:Op::EqBytes(2,10)}
+            ],
+            terminator:Terminator::Branch{
+                condition:11,if_true:"policy_read_resources".into(),
+                true_args:vec![],if_false:"failed".into(),false_args:vec![]
+            }
+        },
+        Block{
+            id:"risk_cooldown".into(),params:vec![],
+            instructions:vec![
+                Instruction{id:10,op:lit(S29_RISK_KEY.as_bytes())},
+                Instruction{id:11,op:lit(b"0")},
+                Instruction{id:12,op:Op::ConstU32(0)}
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Write,args:vec![10,11,12],
+                next:"risk_written_cooldown".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"risk_written_cooldown".into(),params:pars(2),
+            instructions:vec![],
+            terminator:Terminator::Jump{
+                target:"failed".into(),args:vec![]
+            }
+        },
+        Block{
+            id:"risk_failure_class".into(),params:pars(2),
+            instructions:vec![
+                Instruction{id:3,op:lit(b"code")},
+                Instruction{id:4,op:Op::JsonFieldString(2,3)},
+                Instruction{id:5,op:lit(b"Conflict")},
+                Instruction{id:6,op:Op::EqBytes(4,5)}
+            ],
+            terminator:Terminator::Branch{
+                condition:6,if_true:"risk_set".into(),true_args:vec![],
+                if_false:"failed".into(),false_args:vec![]
+            }
+        },
+        Block{
+            id:"risk_set".into(),params:vec![],
+            instructions:vec![
+                Instruction{id:10,op:lit(S29_RISK_KEY.as_bytes())},
+                Instruction{id:11,op:lit(b"1")},
+                Instruction{id:12,op:Op::ConstU32(u32::MAX)}
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Write,args:vec![10,11,12],
+                next:"risk_written_failure".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"risk_written_failure".into(),params:pars(2),
+            instructions:vec![],
+            terminator:Terminator::Jump{
+                target:"failed".into(),args:vec![]
+            }
+        }
+    ]);
+    p.validate().expect("bounded typed feedback-memory policy program");
+    p
+}
+
+fn setup_backoff_world(include_fixed_baseline:bool)
+    ->(World,Vec<String>,String,Option<String>,String,u64)
+{
+    let (mut w,old_hash,new_hash,_)=boot_repaired();
+    let mut targets=vec![old_hash];
+    for p in extra_unreferenced_tools(){
+        let hash=p.content_hash().unwrap();
+        put(&mut w,version_key(&hash),p.canonical_bytes());
+        targets.push(hash);
+    }
+    let policy=feedback_backoff_root(&targets);
+    let root=policy.content_hash().unwrap();
+    put(&mut w,version_key(&root),policy.canonical_bytes());
+    let baseline=if include_fixed_baseline{
+        let p=pressure_gc_policy(&targets);
+        let hash=p.content_hash().unwrap();
+        put(&mut w,version_key(&hash),p.canonical_bytes());
+        Some(hash)
+    }else{None};
+    let r=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(r.code,Code::Ok);
+    let payload:serde_json::Value=
+        serde_json::from_slice(&r.payload).unwrap();
+    alter(&mut w,"/self/active",root.as_bytes().to_vec(),
+        payload["version"].as_u64().unwrap());
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap()
+        .storage_capacity=used+2048;
+    assert_eq!(b_gas(&w),20);
+    (w,targets,root,baseline,new_hash,used)
+}
+fn reactivate_program(w:&mut World,hash:&str){
+    let meta=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(meta.code,Code::Ok);
+    let payload:serde_json::Value=
+        serde_json::from_slice(&meta.payload).unwrap();
+    alter(w,"/self/active",hash.as_bytes().to_vec(),
+        payload["version"].as_u64().unwrap());
+}
+fn gc_actions_since(w:&World,start:u64)->(usize,Vec<Code>,Vec<(Vec<u8>,Code,u64)>){
+    let mut count=0;
+    let mut results=Vec::<Code>::new();
+    let mut risk_writes=Vec::<(Vec<u8>,Code,u64)>::new();
+    for e in &w.audit{
+        if e.step<start{continue;}
+        match &e.action{
+            Some(Action::IndexVersionRefs{..})=>count+=1,
+            Some(Action::ReclaimIndexedVersion{..})=>
+                results.push(e.result.code),
+            Some(Action::Write{key,bytes,..}) if key==S29_RISK_KEY=>
+                risk_writes.push((bytes.clone(),e.result.code,
+                    e.result.gas_charged)),
+            _=>{}
+        }
+    }
+    (count,results,risk_writes)
+}
+fn verify_memory(w:&World,bytes:&[u8],version:u64){
+    let obj=&w.state.objects[S29_RISK_KEY];
+    assert_eq!(obj.owner,ORGANISM_ID);
+    assert_eq!(obj.version,version);
+    assert_eq!(obj.bytes,bytes);
+}
+fn run_first_real_conflict(w:&mut World,targets:&[String]){
+    let start=w.state.step;
+    let mut did_index=false;
+    for _ in 0..32{
+        let tick=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(tick.code,Code::Denied|Code::InvalidCode));
+        if matches!(&w.audit.last().unwrap().action,
+            Some(Action::IndexVersionRefs{..})){
+            assert_eq!(tick.code,Code::Ok);
+            did_index=true;break;
+        }
+    }
+    assert!(did_index,"active VM must genuinely build paid index");
+    put(w,"/self/pins/s29-backoff".into(),
+        targets[0].as_bytes().to_vec());
+    assert!(w.state.version_ref_index.is_none());
+    run(w,64);
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(0)));
+    let (scans,gc,mem)=gc_actions_since(w,start);
+    assert_eq!(scans,1);
+    assert_eq!(gc,vec![Code::Conflict]);
+    assert_eq!(mem.len(),1);
+    assert_eq!(mem[0].0,b"1");
+    assert_eq!(mem[0].1,Code::Ok);
+    assert!(mem[0].2>0);
+    verify_memory(w,b"1",0);
+    assert!(targets.iter().all(|h|w.state.objects.contains_key(
+        &version_key(h))));
+}
