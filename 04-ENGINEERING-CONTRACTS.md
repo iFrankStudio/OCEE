@@ -150,3 +150,10 @@ ActionResult { request_id, code, payload, vm_gas, action_gas, bytes_charged }
 继原子`PublishTool`之后，OCEE原生世界又加入一个**仅限本actor拥有的程序版本的回收动作** `WorldCall::ReclaimVersion(hash_bytes)`。它精确检查64字节规范程序内容hash、持有权、root/continuation/初始恢复根及所有可见的原始ASCII字符串哈希引用，包括其他对象key和正文及未完成消息；若保守证明有已知活引用，返回Conflict，不删版本。调用根**自己的活动Program字节码不做原始字符串扫描**（否则其请求参数本身就阻止回收），故此机制并非对所有未来代码路径与任意转码引用的安全证明。只有全部检查通过、A已付完整`1+ceil(scanned_bytes/64)+2+ceil(old_program_bytes/64)`后，原子删除目标不可变对象并退还同等实际Program字节的存储占用。已有`Read/Write/Exec/PublishTool`等语义未改变。
 
 [DEV协议与首轮红例、最终原生4/4以及收费记录](./experiments/E001/DEV-S29-METERED-VERSION-RECLAIM-PROTOCOL.md)表明279B程序在完整S29世界回收收费1646 A，有界回收不必然产生资源净收益。第8类开发扩展及成本表需在正式E001校准预注册前独立冻结，旧六原语正式基线和开发原语需明确标注。
+
+
+## 2026-11-23 — 开发环境的可信引用索引：不可混用的额外成本/能力契约
+
+继`ReclaimVersion`开发研究之后新增两类**额外**研究动作：`IndexVersionRefs()` 付费读取内核已存在的Program版本路径、其余对象key/raw bytes及pending/mailbox消息中完整ASCII 64位hash，建立内核私有、可信快照可重放的`VersionRefIndex`；`ReclaimIndexedVersion(hash)`只有当前actor/活动根与签发时一致、索引仍存在、目标确为已安装未被识别引用的本actor规范版本并经过活动root/initial root/continuation实时保护复核才收费并删除。证书不会被私有`/self/index`伪造；世界Write、PublishTool、Send、Receive、Exec见证、服务消息转移、定时公共对象发布和根切换会失效，而删除自身不会新增引用，允许保守复用。旧`ReclaimVersion`不变。额外两种研究动作及其成本须单独版本化，**不属于原正式E001仅六原语基线**。
+
+[运行前协议与原生同快照配对4/4](./experiments/E001/DEV-S29-CERTIFIED-REF-INDEX-PROTOCOL.md)显示：3个版本合计834B，传统世界GC动作收费4954 A，新方案核付费扫描+3次快速GC收费1691 A，节省3263 A；其对照未覆盖旧版同等维护VM路径开销。只跟踪当前安装版本完整64字节ASCII hash，活动调用根字节码有意豁免，历史audit不视为活动引用；未知编码、外部任务、多actor寄存器持有者及伪造原始snapshot仍不在本次证明内。正式使用前应冻结kernel/vm/能力manifest/成本表并单独校准。
