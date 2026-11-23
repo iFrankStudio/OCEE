@@ -1532,3 +1532,217 @@ fn s29_self_retry_native(){
         other=>panic!("unknown test arm {other}")
     }
 }
+
+
+const S29_OWN_META:&str="/sys/self-object/maintenance/risk-s29";
+
+/// A fixed, verifier-bounded single-activation policy. Unlike the old
+/// hard-coded None/0 CAS, every existing-object write uses the actual
+/// version from a charged atomic, actor-owned kernel observation.
+fn versioned_self_retry_root(targets:&[String])->Program{
+    let mut root=self_retry_maintenance_root(targets);
+    let f=&mut root.functions[0];
+    let block=|f:&mut Function,name:&str|
+        f.blocks.iter_mut().find(|b|b.id==name)
+            .expect("preexisting resource feedback block");
+    {
+        let b=block(f,"retry_body");
+        b.instructions=vec![Instruction{
+            id:50,op:lit(S29_OWN_META.as_bytes())
+        }];
+        assert!(matches!(&b.terminator,Terminator::Yield{
+            call:WorldCall::Read,..}));
+    }
+    {
+        let b=block(f,"risk_parse");
+        b.instructions=vec![
+            Instruction{id:10,op:lit(b"payload")},
+            Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:12,op:lit(b"1")},
+            Instruction{id:14,op:lit(b"bytes")},
+            Instruction{id:15,op:Op::JsonFieldBytes(11,14)},
+            Instruction{id:16,op:lit(b"version")},
+            Instruction{id:17,op:Op::JsonFieldU32(11,16)},
+            Instruction{id:13,op:Op::EqBytes(15,12)}
+        ];
+        b.terminator=Terminator::Branch{
+            condition:13,if_true:"risk_cooldown".into(),
+            true_args:vec![17],if_false:"risk_zero".into(),
+            false_args:vec![15]
+        };
+    }
+    {
+        let b=block(f,"risk_cooldown");
+        b.params=vec![Param{id:30,ty:Type::U32}];
+        b.instructions=vec![
+            Instruction{id:10,op:lit(S29_RISK_KEY.as_bytes())},
+            Instruction{id:11,op:lit(b"0")}
+        ];
+        b.terminator=Terminator::Yield{
+            call:WorldCall::Write,args:vec![10,11,30],
+            next:"risk_written_cooldown".into(),next_args:vec![]
+        };
+    }
+    {
+        let b=block(f,"risk_written_cooldown");
+        b.instructions=vec![
+            Instruction{id:3,op:lit(b"code")},
+            Instruction{id:4,op:Op::JsonFieldString(2,3)},
+            Instruction{id:5,op:lit(b"Ok")},
+            Instruction{id:6,op:Op::EqBytes(4,5)}
+        ];
+        b.terminator=Terminator::Branch{
+            condition:6,if_true:"failed".into(),true_args:vec![],
+            if_false:"halt_cas".into(),false_args:vec![]
+        };
+    }
+    {
+        let b=block(f,"risk_set");
+        b.instructions=vec![Instruction{
+            id:40,op:lit(S29_OWN_META.as_bytes())
+        }];
+        b.terminator=Terminator::Yield{
+            call:WorldCall::Read,args:vec![40],
+            next:"risk_set_meta".into(),next_args:vec![]
+        };
+    }
+    {
+        let b=block(f,"risk_written_failure");
+        b.instructions=vec![
+            Instruction{id:3,op:lit(b"code")},
+            Instruction{id:4,op:Op::JsonFieldString(2,3)},
+            Instruction{id:5,op:lit(b"Ok")},
+            Instruction{id:6,op:Op::EqBytes(4,5)}
+        ];
+        b.terminator=Terminator::Branch{
+            condition:6,if_true:"failed".into(),true_args:vec![],
+            if_false:"halt_cas".into(),false_args:vec![]
+        };
+    }
+    let params=|id:u32|vec![Param{id,ty:Type::Bytes}];
+    f.blocks.extend([
+        Block{
+            id:"risk_set_meta".into(),params:params(2),
+            instructions:vec![
+                Instruction{id:3,op:lit(b"code")},
+                Instruction{id:4,op:Op::JsonFieldString(2,3)},
+                Instruction{id:5,op:lit(b"Ok")},
+                Instruction{id:6,op:Op::EqBytes(4,5)}
+            ],
+            terminator:Terminator::Branch{
+                condition:6,if_true:"risk_set_existing".into(),
+                true_args:vec![2],if_false:"risk_set_missing".into(),
+                false_args:vec![2]
+            }
+        },
+        Block{
+            id:"risk_set_missing".into(),params:params(2),
+            instructions:vec![
+                Instruction{id:3,op:lit(b"code")},
+                Instruction{id:4,op:Op::JsonFieldString(2,3)},
+                Instruction{id:5,op:lit(b"NotFound")},
+                Instruction{id:6,op:Op::EqBytes(4,5)}
+            ],
+            terminator:Terminator::Branch{
+                condition:6,if_true:"risk_set_create".into(),
+                true_args:vec![],if_false:"halt_cas".into(),
+                false_args:vec![]
+            }
+        },
+        Block{
+            id:"risk_set_existing".into(),params:params(2),
+            instructions:vec![
+                Instruction{id:10,op:lit(b"payload")},
+                Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+                Instruction{id:12,op:lit(b"bytes")},
+                Instruction{id:13,op:Op::JsonFieldBytes(11,12)},
+                Instruction{id:14,op:lit(b"version")},
+                Instruction{id:15,op:Op::JsonFieldU32(11,14)},
+                Instruction{id:16,op:lit(b"0")},
+                Instruction{id:17,op:Op::EqBytes(13,16)}
+            ],
+            terminator:Terminator::Branch{
+                condition:17,if_true:"risk_set_write_existing".into(),
+                true_args:vec![15],if_false:"risk_set_check_one".into(),
+                false_args:vec![13,15]
+            }
+        },
+        Block{
+            id:"risk_set_check_one".into(),params:vec![
+                Param{id:13,ty:Type::Bytes},
+                Param{id:15,ty:Type::U32}
+            ],
+            instructions:vec![
+                Instruction{id:16,op:lit(b"1")},
+                Instruction{id:17,op:Op::EqBytes(13,16)}
+            ],
+            terminator:Terminator::Branch{
+                condition:17,if_true:"risk_set_write_existing".into(),
+                true_args:vec![15],if_false:"halt_cas".into(),
+                false_args:vec![]
+            }
+        },
+        Block{
+            id:"risk_set_write_existing".into(),
+            params:vec![Param{id:30,ty:Type::U32}],
+            instructions:vec![
+                Instruction{id:10,op:lit(S29_RISK_KEY.as_bytes())},
+                Instruction{id:11,op:lit(b"1")}
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Write,args:vec![10,11,30],
+                next:"risk_written_failure".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"risk_set_create".into(),params:vec![],
+            instructions:vec![
+                Instruction{id:10,op:lit(S29_RISK_KEY.as_bytes())},
+                Instruction{id:11,op:lit(b"1")},
+                Instruction{id:12,op:Op::ConstU32(u32::MAX)}
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Write,args:vec![10,11,12],
+                next:"risk_written_failure".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"halt_cas".into(),params:vec![],
+            instructions:vec![Instruction{
+                id:1,op:Op::ConstU32(0)
+            }],
+            terminator:Terminator::Return{value:1}
+        }
+    ]);
+    root.validate().expect("real CAS versioned maintenance graph valid");
+    root
+}
+
+fn setup_versioned_retry_world()->(World,Vec<String>,String,String,u64){
+    let (mut w,old_hash,new_hash,_)=boot_repaired();
+    let mut targets=vec![old_hash];
+    for p in extra_unreferenced_tools(){
+        let hash=p.content_hash().unwrap();
+        put(&mut w,version_key(&hash),p.canonical_bytes());
+        targets.push(hash);
+    }
+    let p=versioned_self_retry_root(&targets);
+    let root=p.content_hash().unwrap();
+    put(&mut w,version_key(&root),p.canonical_bytes());
+    let meta=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(meta.code,Code::Ok);
+    let payload:serde_json::Value=
+        serde_json::from_slice(&meta.payload).unwrap();
+    alter(&mut w,"/self/active",root.as_bytes().to_vec(),
+        payload["version"].as_u64().unwrap());
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap()
+        .storage_capacity=used+2048;
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(targets.iter().map(|h|
+        w.state.objects[&version_key(h)].bytes.len() as u64
+    ).sum::<u64>(),834);
+    (w,targets,root,new_hash,used)
+}
