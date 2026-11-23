@@ -1,5 +1,5 @@
 name: S29 Matched Lifetime Task Utility Pilot
-# Replay after fixing report-only Rust format string; original failed run archived.
+# Replay after preserving adverse-case failure: only ALL_PINNED may require cooldown A dominance.
 on:
   push:
     branches: [main]
