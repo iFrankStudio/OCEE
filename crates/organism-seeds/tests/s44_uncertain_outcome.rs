@@ -2677,6 +2677,74 @@ fn p2_task_metamorphic_root()->Program{
     ]);
     // Preserve strict VM hard limits; all new blocks are reached only
     // after actual dual Exec and zero witness succeed.
+
+    // The native first run #45099227328 rejected the inherited root at
+    // MAX_BLOCKS=128 before any world task. Reduce only same-edge parser
+    // blocks, keeping all FOUR world calls and the public ±1 relation.
+    // A missing/non-Ok feedback without the expected typed payload
+    // traps before any success artifact and is NOT accepted as Ok.
+    let registry=f.blocks.iter_mut().find(|x|
+        x.id=="zero_anchor_registry_reply").unwrap();
+    registry.instructions=vec![
+        i(19901,lit(b"payload")),
+        i(19902,Op::JsonFieldBytes(19510,19901)),
+        i(19903,lit(&[0u8;16]))
+    ];
+    registry.terminator=Terminator::Yield{
+        call:WorldCall::Exec,args:vec![19902,19903],
+        next:"zero_anchor_status".into(),next_args:vec![19500,19902]
+    };
+    f.blocks.retain(|x|x.id!="zero_anchor_exec");
+    let zstatus=f.blocks.iter_mut().find(|x|
+        x.id=="zero_anchor_status").unwrap();
+    let zero_expected=serde_json::to_vec(&Value::U32(0)).unwrap();
+    zstatus.instructions=vec![
+        i(19904,lit(b"payload")),
+        i(19905,Op::JsonFieldBytes(19530,19904)),
+        i(19906,lit(&zero_expected)),
+        i(19907,Op::EqBytes(19905,19906))
+    ];
+    zstatus.terminator=br(19907,"meta_input_read",
+        vec![19500,19600],"failed",vec![]);
+    f.blocks.retain(|x|x.id!="zero_anchor_value");
+    let input_status=f.blocks.iter_mut().find(|x|
+        x.id=="meta_input_status").unwrap();
+    input_status.instructions=vec![
+        i(19703,lit(b"payload")),
+        i(19704,Op::JsonFieldBytes(19622,19703)),
+        i(19705,Op::ConstU32(0)),
+        i(19706,Op::ConstU32(1)),
+        i(19707,Op::ByteAt(19704,19705)),
+        i(19708,Op::Xor(19707,19706)),
+        i(19709,Op::ReplaceByte(19704,19705,19708)),
+        i(19710,Op::And(19707,19706)),
+        i(19711,Op::Add(19710,19710)),
+        i(19712,Op::Sub(19706,19711)),
+        i(19713,Op::JsonFieldBytes(19620,19703)),
+        i(19714,lit(b"U32")),
+        i(19715,Op::JsonFieldU32(19713,19714)),
+        i(19716,Op::Add(19715,19712))
+    ];
+    input_status.terminator=Terminator::Yield{
+        call:WorldCall::Exec,args:vec![19621,19709],
+        next:"meta_exec_status".into(),next_args:vec![19620,19716]
+    };
+    f.blocks.retain(|x|x.id!="meta_prepare");
+    let morph_response=f.blocks.iter_mut().find(|x|
+        x.id=="meta_exec_status").unwrap();
+    morph_response.instructions=vec![
+        i(19813,lit(b"payload")),
+        i(19814,Op::JsonFieldBytes(19802,19813)),
+        i(19815,lit(b"U32")),
+        i(19816,Op::JsonFieldU32(19814,19815)),
+        i(19817,Op::EqU32(19816,19801))
+    ];
+    morph_response.terminator=br(19817,
+        "equal_local_pack",vec![19800],"failed",vec![]);
+    f.blocks.retain(|x|x.id!="meta_compare");
+    // The new root still has the same 128-block hard limit and
+    // must have an entirely valid statically typed graph.
+    println!("P2_METAMORPHIC_GRAPH_BLOCKS total={}",f.blocks.len());
     root.validate().expect("typed bounded active metamorphic root");
     root
 }

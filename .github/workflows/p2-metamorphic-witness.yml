@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/p2-metamorphic-witness.yml'
+  # First native Run #45099227328: all arms rejected by strict MAX_BLOCKS=128.
+  # Retry only after safe same-edge block compaction, never raise VM limits.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-metamorphic-${{ github.ref }}
