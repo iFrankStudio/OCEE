@@ -174,3 +174,10 @@ ActionResult { request_id, code, payload, vm_gas, action_gas, bytes_charged }
 ## 2026-11-23 — 一次激活后的有界VM续执行，仍无自动宿主唤醒特权
 
 [冻结协议与首次原生3/3](./experiments/E001/DEV-S29-BOUNDED-SELF-RETRY-CONTINUATION-PROTOCOL.md)：继上轮研究者每次`/self/active` CAS重新激活同一维护根，本轮仅通过VM已有`Terminator::RepeatBounded(limit=3)`、持久`Continuation.loop_counters`和原有`WorldCall::Observe`的有偿world tick切换，允许单次初始激活后的同一活动Program在真实GC Conflict→普通`/self`记忆1→后续tick读1并付费写0跳过→再后续tick经资源Read和安全索引重试。完整snapshot能重放到逐字节一致的audit与state，不新增世界动作、VM指令、内核“定时唤醒”或绕过费率/GC活引用检查。真实负例：外部pin一直存在时第三轮GC仍Conflict，已有risk对象v1下旧预设CAS None也Conflict，**有限静态程序如实停机**；不声称长期学习或完整epoch主动调度。世界驱动器原本按tick调用`tick_autonomous`仍必要，这是物理世界的调度契约；本实验只解决“每轮人为重启根”的额外需求，不能把已有限验证的开环循环称作开放式赛博生命。
+
+
+## 2026-11-23 — 额外有偿自身对象快照元数据与CAS原子性约束
+
+开发版`WorldCall::Read("/sys/self-object/{relative}")`是对现有Read的受限、非写入的**能力可见面扩展**，不是增加Action/WorldCall种类。严禁空/./..等非规范路径段；仅映射请求actor**自己拥有**的`/self/{relative}`对象，禁止返回外人owner/公开对象/其他key；缺失NotFound、owner不符Denied、版本超U32 Quota，真实按`2+ceil(body_bytes/64)`A付费，返回与同一个内核对象快照对应的`{"bytes":[u8...],"version":U32}`。原普通`Read("/self/...")`继续直接返回原始bytes，旧功能兼容。VM要基于一次真正的元数据Read决定实际CAS`Write`版本；**读/写之间若版本发生并发变化，CAS必须正常Conflict，不得重试失败删除或假冒成功写**。
+
+[冻结协议+原生4/4](./experiments/E001/DEV-S29-OWN-OBJECT-CAS-VERSION-RETRY-PROTOCOL.md)用此普通付费信息和既有有界VM语言在一次活动根启动的三轮中多次真实`Conflict`后记录风险字节`1(v0)→0(v1)→1(v2)`，并真重放快照及双冲突不误删。该接口只提供**对象字节/版本**，不证明未来维护时机、最佳策略、编码引用追踪安全或开放式演化；正式E001环境/计价版本需要另行冻结，不能静默称原六原语基线未变。

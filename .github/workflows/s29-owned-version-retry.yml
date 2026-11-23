@@ -1,9 +1,7 @@
 name: S29 Paid Own-Object CAS Version and Repeated Risk
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-owned-version-retry.yml'
+  # Native #45145971582 success, independently verified 4/4.
+  # Scoped research workflow now manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-owned-version-retry-${{ github.ref }}
