@@ -149,3 +149,8 @@ Initial compile-only failure [#44991946675](https://github.com/iFrankStudio/OCEE
 从`65bdff70f0c7`现实HEAD读取后，[先冻结研究协议](./experiments/E001/DEV-S29-PAID-SOURCE-DELTA-CERTIFICATE-PROTOCOL.md) @`91b00ed6`，再提交显式`WriteIndexed`世界/VM能力、同收费Index内核可信来源集合、严格CAS/元数据复核收费、六臂定向测试，并仅由`.github/workflows/s29-source-delta.yml`单文件路径限定push触发一次小矩阵。**[Run #45163504990](https://github.com/iFrankStudio/OCEE/actions/runs/45163504990) @`7e15bf9edc8b16706e561bc10151e9c2a8f966c5` completed/success，六个独立Rust jobs全部1/1通过、0个本轮原生红例。** LONG/P2四臂B20正确、同一研究者提供的S29维护root；一个独立真的活动VM调用新世界动作，另有独立真实传输在途引用拒删。等世界起点的研究者Write区间LEGACY两次Index/3353A对DELTA一次Index/1692A，局部节省1661A。具体审计见[报告](./experiments/E001/DEV-S29-PAID-SOURCE-DELTA-CERTIFICATE-PROTOCOL.md)，不可把6/6冒充全Rust workspace回归或E001正式确认实验。
 
 完成档案后，该专项workflow应恢复`workflow_dispatch`手动重放；此前老S29历史检验保持归档而不因本轮共享代码改动自动成群触发。实际内容哈希与新增世界能力均为开发性变更，正式E001能力集及成本必须另行冻结，不可隐含维持“六原语不变”。
+
+
+## 2026-11-23 — S29 有偿本人版本目录→有限VM动态回收 首次4/4
+
+从实时main `7557be27e3ca`、此前源级差分6/6成功出发，**先冻结**[实验安全/资源判据](./experiments/E001/DEV-S29-PAID-OWN-INVENTORY-BOUNDED-DISCOVERY-PROTOCOL.md) @8698549b，再提交付费Read目录、无候选hash常量的有限搜索VM与4个定向原生arm；仅由`.github/workflows/s29-paid-catalog-discovery.yml`新增文件路径过滤触发一次4-job Rust矩阵。**[原生Run #45180137615](https://github.com/iFrankStudio/OCEE/actions/runs/45180137615) @b905f6bdd0 completed/success，四个独立job每个1 passed/0 failed，首次运行全部成功、无本轮红例。** CATALOG_CONTRACT首次真目录读取27A、真实自有版本总数10、BadRequest/Gas边界正确；DYNAMIC_RECOVERY现有活动VM真根据支付的目录反馈动态尝试`Conflict,Conflict,Ok(8A)`并安全回收276B，VM A700+世界Action1702；PIN_AND_CONTINUATION拒绝有偿pin指向的真实活引用，改选另一279B候选并保留真实snapshot全文字节一致；INVALIDATED_CERT在新的有偿长引用使原证书失效后8次GC全部Conflict/0A，不误删。前置P2任务全部保持B20。结论是有限受费候选身份发现，不是内生目标/长程净收益；专项4/4不是全工作区新一轮全量重测。完成归档后专项workflow应回到**`workflow_dispatch` only**，避免旧昂贵世界被每个push重复触发。
