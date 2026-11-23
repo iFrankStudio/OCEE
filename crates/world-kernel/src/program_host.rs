@@ -424,7 +424,7 @@ pub(crate) fn reclaim_owned_version(
     {
         return ActionResult::fail(Code::Conflict);
     }
-    let requester's_active=world.state.organisms.get(&actor)
+    let requesters_active=world.state.organisms.get(&actor)
         .and_then(|o|o.active_program_hash.as_ref())
         .map(|active|format!("/self/versions/{active}"));
     let contains_hash=|bytes:&[u8]|->bool{
@@ -435,7 +435,7 @@ pub(crate) fn reclaim_owned_version(
         if key==&version_key{continue;}
         // The invoking program may contain the target literal solely to
         // request collection. Caller is responsible not to EXEC it again.
-        if requester's_active.as_deref()==Some(key.as_str()){continue;}
+        if requesters_active.as_deref()==Some(key.as_str()){continue;}
         scanned_bytes=match scanned_bytes
             .checked_add(key.len() as u64)
             .and_then(|v|v.checked_add(obj.bytes.len() as u64)){
