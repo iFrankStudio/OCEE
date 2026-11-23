@@ -2119,3 +2119,151 @@ fn s29_benign_churn_native(){
         _=>panic!("unknown benign churn arm {arm}")
     }
 }
+
+
+/// Preregistered S29: keep the kernel's exact 64-byte raw-hash reference
+/// guarantee while testing metered, strictly shorter own-object writes.
+/// This reuses the previous *real* P2/B20 boot and the unchanged active
+/// risk-aware maintenance root. Only the kernel Write behavior differs.
+fn test_certified_short_write_arm(arm:&str){
+    let (mut w,targets,root,new_hash,used)=setup_versioned_retry_world();
+    let start=w.state.step;
+    let (vm_before,action_before)=spend(&w);
+    let noise="/self/noise/s29-churn";
+    if arm=="OLD_REF_REMOVED"{
+        put(&mut w,noise.into(),targets[0].as_bytes().to_vec());
+    }
+    advance_to_true_index(&mut w);
+    let before_certificate=w.state.version_ref_index.clone()
+        .expect("actual paid Index must install a trusted certificate");
+    assert_eq!(before_certificate.active_hash,Some(root.clone()));
+    let mut write_a=Vec::<u64>::new();
+    match arm{
+        "SHORT_WRITE"|"FAILED_CAS"=>{
+            let added=w.tick(Some(Action::Write{
+                actor:ORGANISM_ID,key:noise.into(),
+                expected_version:None,bytes:b"x".to_vec()
+            }));
+            assert_eq!(added.code,Code::Ok);
+            assert_eq!(added.gas_charged,4,
+                "successful one-byte certified own write is base 3+1 A");
+            write_a.push(added.gas_charged);
+            assert_eq!(w.state.version_ref_index,Some(before_certificate.clone()),
+                "proof-carrying short new state cannot introduce 64B raw hash");
+            if arm=="FAILED_CAS"{
+                let before=w.state.objects[noise].clone();
+                let rejected=w.tick(Some(Action::Write{
+                    actor:ORGANISM_ID,key:noise.into(),
+                    expected_version:None,bytes:b"y".to_vec()
+                }));
+                assert_eq!(rejected.code,Code::Conflict);
+                assert_eq!(rejected.gas_charged,0);
+                assert_eq!(w.state.objects[noise],before);
+                assert_eq!(w.state.version_ref_index,Some(before_certificate),
+                    "rejected short CAS cannot mutate a live certificate");
+                write_a.push(rejected.gas_charged);
+            }
+            run(&mut w,100);
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+                Some(Value::U32(1)));
+            let (indexes,gc,risk)=gc_actions_since(&w,start);
+            assert_eq!(indexes,1);
+            assert_eq!(gc,vec![Code::Ok,Code::Ok,Code::Ok]);
+            assert!(risk.is_empty());
+            assert!(!w.state.objects.contains_key(S29_RISK_KEY));
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+                used+1-834);
+            assert!(targets.iter().all(|h|
+                !w.state.objects.contains_key(&version_key(h))));
+            // Same world/VM root and P2 business as the frozen timing pair.
+            let (vm_after,action_after)=spend(&w);
+            assert_eq!(vm_after-vm_before,191);
+            assert_eq!(action_after-action_before,1697);
+        },
+        "LIVE_HASH_PIN"=>{
+            let pinned=w.tick(Some(Action::Write{
+                actor:ORGANISM_ID,key:noise.into(),
+                expected_version:None,bytes:targets[0].as_bytes().to_vec()
+            }));
+            assert_eq!(pinned.code,Code::Ok);
+            assert_eq!(pinned.gas_charged,6,
+                "full 64-byte reference must use ordinary metered Write");
+            write_a.push(pinned.gas_charged);
+            assert!(w.state.version_ref_index.is_none(),
+                "a full live hash must invalidate the certificate");
+            run(&mut w,100);
+            let (indexes,gc,risk)=gc_actions_since(&w,start);
+            assert_eq!(indexes,2);
+            assert_eq!(gc,vec![Code::Conflict,Code::Conflict]);
+            assert_eq!(risk.len(),3);
+            verify_memory(&w,b"1",2);
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+                Some(Value::U32(0)));
+            assert!(targets.iter().all(|h|
+                w.state.objects.contains_key(&version_key(h))));
+        },
+        "OLD_REF_REMOVED"=>{
+            assert!(before_certificate.referenced.contains(&targets[0]),
+                "the paid original index must prove the old hash was live");
+            let pin=w.state.objects[noise].clone();
+            assert_eq!(pin.bytes,targets[0].as_bytes());
+            let replaced=w.tick(Some(Action::Write{
+                actor:ORGANISM_ID,key:noise.into(),
+                expected_version:Some(pin.version),bytes:b"x".to_vec()
+            }));
+            assert_eq!(replaced.code,Code::Ok);
+            assert_eq!(replaced.gas_charged,4);
+            write_a.push(replaced.gas_charged);
+            assert_eq!(w.state.version_ref_index,Some(before_certificate.clone()),
+                "short replacement must retain conservative old reference");
+            let blocked=fast_reclaim(&mut w,&targets[0]);
+            assert_eq!(blocked.code,Code::Conflict,
+                "an old certified reference must not be forgotten");
+            assert_eq!(blocked.gas_charged,0);
+            assert!(w.state.objects.contains_key(&version_key(&targets[0])));
+            // Rebuilding the WHOLE original paid index removes the
+            // conservative false positive, rather than erasing it by hand.
+            let new_index=index_refs(&mut w);
+            assert_eq!(new_index.code,Code::Ok);
+            assert!(new_index.gas_charged>0);
+            let current=w.state.version_ref_index.as_ref().unwrap();
+            assert!(!current.referenced.contains(&targets[0]));
+            let freed=fast_reclaim(&mut w,&targets[0]);
+            assert_eq!(freed.code,Code::Ok);
+            assert!(freed.gas_charged>0);
+            assert_eq!(u64::from_le_bytes(
+                freed.payload.as_slice().try_into().unwrap()),279);
+            assert!(!w.state.objects.contains_key(&version_key(&targets[0])));
+            assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+                used+64-63-279);
+        },
+        other=>panic!("unknown certified short write arm {other}"),
+    }
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(w.state.objects["/self/active"].bytes,root.as_bytes());
+    assert_eq!(count_internal_active_switches(&w,start),0);
+    assert_eq!(b_gas(&w),20,"P2 B may not run twice");
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    let (indexes,gc,_)=gc_actions_since(&w,start);
+    let (vm_after,action_after)=spend(&w);
+    println!("S29_SHORT_CERT {arm} root={root} \
+        index_count={indexes} gc={gc:?} certified_write_gas={write_a:?} \
+        VM_A={} Action_A={} storage_delta={} B={} final_step={} \
+        snapshot_consistent=true",
+        vm_after-vm_before,action_after-action_before,
+        (w.state.organisms[&ORGANISM_ID].storage_used as i64)-(used as i64),
+        b_gas(&w),w.state.step);
+}
+
+#[test]
+#[ignore="paid 64B raw-hash certificate short-write preservation"]
+fn s29_certified_short_write_native(){
+    let arm=std::env::var("OCEE_S29_SHORT_ARM")
+        .expect("preregistered native certified short write arm");
+    match arm.as_str(){
+        "SHORT_WRITE"|"LIVE_HASH_PIN"|"FAILED_CAS"|"OLD_REF_REMOVED"=>
+            test_certified_short_write_arm(&arm),
+        _=>panic!("unrecognized certified short write arm {arm}")
+    }
+}
