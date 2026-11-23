@@ -378,3 +378,91 @@ pub fn s29_second_label_repair_root(p1:&str,p2:&str)->Program{
         "S29 second labelled feedback repair must stay statically bounded");
     root
 }
+
+
+/// Atomic S29 adoption after real first- or second-label mismatch.
+/// A single charged PublishTool action installs canonical VM program bytes
+/// AND updates the owned registry under CAS. A stale CAS cannot leave an
+/// immutable orphan: no kernel mutation occurs before full authorization,
+/// quota/gas checks, and a successful registry version match.
+/// The old inherited version remains valid history on successful adoption.
+pub fn s29_atomic_publish_repair_root(p1:&str,p2:&str)->Program{
+    let mut root=s29_second_label_repair_root(p1,p2);
+    let f=&mut root.functions[0];
+    let make=f.blocks.iter_mut().find(|x|x.id=="s29_make")
+        .expect("running S29 must build real canonical candidate bytes");
+    make.instructions.iter_mut().find(|x|x.id==6210)
+        .expect("existing expected-version register").op=Op::ConstU32(0);
+    make.instructions.push(i(7210,lit(REGISTRY.as_bytes())));
+    // A real hash of the organism-generated program is still carried
+    // to compare with the kernel-issued hash receipt on successful commit.
+    make.terminator=y(
+        WorldCall::PublishTool,vec![7210,6203,6210],
+        "s29_atomic_reply",vec![100,101,102,103,104,6207,6203]
+    );
+    let b=Type::Bytes;
+    f.blocks.extend([
+        bl("s29_atomic_reply",extended(&[(105,b),(106,b),(107,b)]),
+            vec![
+                i(7220,lit(b"code")),
+                i(7221,Op::JsonFieldString(107,7220)),
+                i(7222,lit(b"Ok")),
+                i(7223,Op::EqBytes(7221,7222)),
+            ],br(7223,"s29_atomic_receipt",
+                vec![100,101,102,103,104,105,107],
+                "s29_atomic_conflict",
+                vec![100,101,102,103,104,105,106,7221])),
+        bl("s29_atomic_receipt",extended(&[(105,b),(107,b)]),vec![
+            i(7230,lit(b"payload")),
+            i(7231,Op::JsonFieldBytes(107,7230)),
+            i(7232,Op::EqBytes(105,7231)),
+        ],br(7232,"s29_repaired_check1",plus(ids(),105),
+            "failed",vec![])),
+        bl("s29_atomic_conflict",extended(&[(105,b),(106,b),(107,b)]),
+            vec![
+                i(7240,lit(b"Conflict")),
+                i(7241,Op::EqBytes(107,7240)),
+            ],br(7241,"s29_atomic_create",
+                vec![100,101,102,103,104,105,106],
+                "failed",vec![])),
+        bl("s29_atomic_create",extended(&[(105,b),(106,b)]),vec![
+            i(7250,lit(REGISTRY.as_bytes())),
+            i(7251,Op::ConstU32(u32::MAX)),
+        ],y(WorldCall::PublishTool,vec![7250,106,7251],
+            "s29_atomic_create_reply",plus(ids(),105))),
+        bl("s29_atomic_create_reply",extended(&[(105,b),(107,b)]),vec![
+            i(7260,lit(b"code")),
+            i(7261,Op::JsonFieldString(107,7260)),
+            i(7262,lit(b"Ok")),
+            i(7263,Op::EqBytes(7261,7262)),
+        ],br(7263,"s29_atomic_receipt",vec![100,101,102,103,104,105,107],
+            "failed",vec![])),
+    ]);
+    // Retire the old non-atomic two-Write route, without changing either
+    // initial real samples, the repair decision, or the post-repair
+    // paid EXEC/held-out/B protocol chain. Remove only graph-inaccessible
+    // nodes, keeping the strict static 128-block bound unchanged.
+    let mut seen=std::collections::BTreeSet::<String>::new();
+    let mut pending=vec![f.blocks[0].id.clone()];
+    while let Some(id)=pending.pop(){
+        if !seen.insert(id.clone()){continue;}
+        let node=f.blocks.iter().find(|x|x.id==id)
+            .expect("static control graph must not dangle");
+        match &node.terminator {
+            Terminator::Return{..}=>{},
+            Terminator::Jump{target,..}=>pending.push(target.clone()),
+            Terminator::Branch{if_true,if_false,..}=>{
+                pending.push(if_true.clone());pending.push(if_false.clone());
+            },
+            Terminator::RepeatBounded{body,done,..}|
+            Terminator::RepeatScoped{body,done,..}=>{
+                pending.push(body.clone());pending.push(done.clone());
+            },
+            Terminator::Yield{next,..}=>pending.push(next.clone()),
+        }
+    }
+    f.blocks.retain(|x|seen.contains(&x.id));
+    root.validate().expect(
+        "atomic S29 must preserve strict typed, bounded, acyclic VM rules");
+    root
+}
