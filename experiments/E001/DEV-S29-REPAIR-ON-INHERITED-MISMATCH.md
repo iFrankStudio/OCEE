@@ -1,6 +1,6 @@
 # DEV — S29 真实反馈下的错误继承工具局部修复与 CAS 安全采用（运行前冻结）
 
-**状态：运行前冻结，未取得本项原生证据。** 基线 `ad4cc0a43d24610cd9b4fe75da805f58fc9014b6`。参考S29原生 [#44673328957](https://github.com/iFrankStudio/OCEE/actions/runs/44673328957)：正确跨家族复用与两例+held-out均已验证；但在目标 `P2 world_seed=129` 的 Len 任务导入来源 `P1 world_seed=43` 的 XorFold 工具时，根真实Exec后 U32(0) 提前结束、B0、无预测工件。上述单次失败**已被看过**，不是独立盲测。
+**状态：运行前冻结协议，已补录真实原生4/4和两次红例。** 基线 `ad4cc0a43d24610cd9b4fe75da805f58fc9014b6`。参考S29原生 [#44673328957](https://github.com/iFrankStudio/OCEE/actions/runs/44673328957)：正确跨家族复用与两例+held-out均已验证；但在目标 `P2 world_seed=129` 的 Len 任务导入来源 `P1 world_seed=43` 的 XorFold 工具时，根真实Exec后 U32(0) 提前结束、B0、无预测工件。上述单次失败**已被看过**，不是独立盲测。
 
 ## 核心假说及限定
 
@@ -24,3 +24,38 @@
 MATCHED / WRONG / STALE具备相同root和环境，但初始工具/注册版本不同；FRESH没有导入工具，绝不以跨臂gas差作为同起点因果效益。特别强调CAS0若遇到了真实并发更改后的version1，仍需保证注册对象不被本root覆盖。每种情况最多一次原始候选检验+一次三原语重新生成，不无限循环。
 
 该实验仅提供**研究者定义的有限修复策略在活动VM里的真实执行**，不能升级G1/G2，也不替代正式E001所要求30seed A/B/C/D配对、结构性外推和长期生命周期。首次原生红灯永久保留；以真实完成状态为准，不因CI绿色就推断任何超出断言的能力。CI仅运行定向四组并在验收后改为workflow_dispatch；旧 [#45103750605](https://github.com/iFrankStudio/OCEE/actions/runs/45103750605) 已最终 `completed/cancelled`（旧VALID cancelled），不能当作4/4成功。
+
+## 2026-11-23 — 真正原生4/4：错误继承工具反馈修复、一次性复核、CAS安全采用
+
+最终 [GitHub Actions #45107700394](https://github.com/iFrankStudio/OCEE/actions/runs/45107700394) @ `e7f602399be6f6039dd07ccbb022cf26e8dccd45` **completed/success，FRESH/MATCHED/WRONG/STALE四个独立Rust jobs均1 passed/0 failed**。活动新S29根四条件同一内容hash `f8e5d42b1d4286395b6b3453801264c819e4b97d53159d8c24cb04e480b4b5fe`；目标皆P2 world seed129/protocol seed42，12,000 A gas每epoch、16,384 tick上限、真实S29 P1→P2继承、原VM强制静态无界环禁令和所有世界权限成本不变。
+
+**算法与信任边界**：源程序来自实际P1 seed42/43各自自主运行并真正通过两公开样例、真实heldout和B20的 `Len`/`XorFold` 可执行版本，非宿主伪造输出。研究者在目标运行前正常付费导入来源工具和注册表，目标活动根只能读自身已注册hash、执行已安装纯VM、读取世界公开双标签和计算隐藏答案未知的第三输入。根首个样例真实Exec和标签不符时（旧XorFold在P2 seed129的`[32,3,8]`实际返回43，公开正确标签3），通过已有3候选 `Len/XorFold/ByteAt0` 比较公开两标签，真正调用 `RewriteOp` 生成新的内容寻址程序，按世界费用Write安装，然后CAS `expected_version=0` 替换旧注册表；成功后使用**另外一条仅通过一次**的修复后校验路径，真正Exec两个已标注例子及不同heldout例子，才允许进入既有B协议后续计算。不存在世界私有答案传入活动VM；校验选择、重写、采用和继续运行均可在审计中追踪。
+
+| 完整原生账本 | FRESH | MATCHED | WRONG | STALE |
+|---|---:|---:|---:|---:|
+| 导入的实际P1工具 | 无 | Len | XorFold | XorFold |
+| 首次旧工具Exec样例 | 无 | 实际Len三次（见下一行） | **43，错误** | **43，错误** |
+| 新Len在目标运行期真正Exec次数 | 3 | **0次重新生成；3次复用来源Len** | **3次新版本Exec** | 0次（未采用） |
+| 目标运行中新Len版本成功Write次数 | 1 | **0** | 1 | **1，孤儿版本** |
+| 注册表CAS0实际反馈 | Conflict | 不调用 | **Ok** | **Conflict** |
+| 不存在注册表时的None写入 | Ok（新建） | 无（研究者先导入） | 无（研究者先导入） | **Conflict** |
+| 最终Registry版本 | 0（新Len） | 0（继承Len） | **1（更新为Len）** | **1（旧XorFold保持）** |
+| heldout预测与独立真值 | 5 / 5 | 5 / 5 | **5 / 5** | 无 |
+| 原生P2落盘结果与独立真值 | 1156832460 / 1156832460 | 同 | 同 | 无 |
+| 真实B gas | **20** | **20** | **20** | **0** |
+| VM A gas | 17149 | 16979 | 17197 | 398 |
+| 世界Action A gas（含安装） | 6835 | 6837 | 6867 | 6255 |
+| **总A gas** | **23984** | **23816** | **24064** | **6653** |
+| 结束world step | 1183 | 1183 | **2051** | 14 |
+| 根最后返回 | U32(1) | U32(1) | **U32(1)** | **U32(0)** |
+| 自主Denied/InvalidCode / 未授权重启 / 快照恢复 | 0/无/一致 | 0/无/一致 | 0/无/一致 | 0/无/一致 |
+
+同一个目标P2下，WRONG相对MATCHED总A多248 gas并多868 steps，但两臂预置工具字节、来源和初始世界状态不同，**不构成等起点因果净收益估计**。MATCHED的0新版本Write要求从目标个体开始自主运行**之后**计数，不能把研究者付费导入的那次版本Write误计成个体重新生成。STALE的两次Conflict分别为活动根试图CAS0修改已有version1及尝试None新建已有对象；只剩已完成付费Write的新Len不可变版本对象但没有注册采用，是真实“孤儿版本/不可逆创建”限制，不能称为原子回滚，也不能把安全拒绝说成完整恢复。FRESH在确实没有注册表时先尝试CAS0返回Conflict，再仅一次None Write创建成功；这是有限预置容错而非动态版本探测通用协议。
+
+### 原生红绿链必须保留
+
+- **首次[#45107240682](https://github.com/iFrankStudio/OCEE/actions/runs/45107240682) @c878b64**：native四臂 **0/4**，全部在活动根静态校验阶段 `InvalidProgram("unbounded control-flow cycle")`，没有世界任务语义结果。最初把“第一次失败后重选”跳回原校验块形成隐式无界循环。
+- **修正 `cd4d6b0` 后 [#45107371940](https://github.com/iFrankStudio/OCEE/actions/runs/45107371940) @9e91a00**：修复后校验只执行一次、完全单向；STALE/FRESH/WRONG三组真世界协议都达成各自冻结断言，**3/4**。MATCHED实为正常正确复用、成功B20，但测试误把运行前研究者导入工具的合法Version Write计成新生成，导致测试断言红色；不能当4/4。
+- **修正 `07e8472` 后 [#45107700394](https://github.com/iFrankStudio/OCEE/actions/runs/45107700394) @e7f6023**：只将版本审计限制在目标根真正开始自主运行之后；不改任务、资源、初始工具、VM、实验条件或活动控制图。最终四臂4/4，静态无界环限制始终保留。
+
+**科学判定**：这是原生VM在公开标签下从“已有工具语义不符即死亡式停止”提升到“先证伪继承工具、有限候选选择、修改合法可执行代码、付费采用、正确调用并完成原生P2计算”的真实开发级适应演示。两标签、三原语搜索空间、控制图及修复契约仍由研究者预设，没发现新的原语、没有跨开放空间演化或正式30-seed A/B/C/D；当前 G0 GO、G1/G2 NO-GO，正式E001未校准或预注册。下一可证伪缺口是**第二标签才冲突的修复路径**、可信且能回滚的工具升级、跨episode对照与更多独立heldout。旧完整checker原生 [#45103750605](https://github.com/iFrankStudio/OCEE/actions/runs/45103750605) 现在明确`completed/cancelled`，原VALID job cancelled，旧3/4不可追认为4/4；后来独立的锁定checker研究 [#45105207973](https://github.com/iFrankStudio/OCEE/actions/runs/45105207973) 为另一根四臂4/4。此定向S29 workflow验收后改为仅手动。

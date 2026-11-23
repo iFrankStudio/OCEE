@@ -52,3 +52,7 @@
 `RESIDUAL_FAULT`候选沿用上轮已有的两个坐标仍误判的 `FOLD32 + sum(byte[2..15])`，真偏差1190；在本次**完整输入参考复核**下被成功拒绝（Code::Ok,U32(0)）。`COMPROMISED_CHECKER`仅把正常校验器换成独立有偿安装、注册的`return U32(1)`合法纯VM，根完全相同且收到了真正的付费Code::Ok响应，但错误工件确实被存储：说明**注册表内的哈希/实现语义若不可信，完整复核同样无法建立真正信任**。校验器虽然通过独立VM执行，但它本质上完整重算参考任务，不存在廉价证书或个体自主演化。这些组初始安装字节和genesis差异很大（尤其篡改者），不能横比A总成本推断净收益。
 
 原生工作流现在重置为`workflow_dispatch`手动，历史旧实验不被重新触发；初始Run的最后一个VALID job仍可在GitHub完成且须另行审计。G0 GO、G1/G2 NO-GO；正式E001未校准/预注册。
+
+## 2026-11-23 — 初始完整校验器CI最终状态修订（不重写当时记录）
+
+[初次原生 #45103750605](https://github.com/iFrankStudio/OCEE/actions/runs/45103750605) 后续最终变成 **workflow completed/cancelled**：原 `VALID` job **completed/cancelled**；其余 `PLUS_ONE`、`RESIDUAL_FAULT`、`COMPROMISED_CHECKER` 三独立 jobs 各 `completed/success`，原生证据实际分母仍为**3完成+1取消，不是4/4**。上文“当时仍在运行”是当时的历史状态，不能自动追认；新的pin根的 [#45105207973](https://github.com/iFrankStudio/OCEE/actions/runs/45105207973)是不同根代码与不同实验，自己的4/4不修复这个Run的取消。

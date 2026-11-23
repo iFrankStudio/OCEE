@@ -3,10 +3,7 @@ name: S29 Inherited Tool Feedback Repair with CAS
 # Second #45107371940: 3/4 real semantic successes, MATCHED test audit counted donor import.
 # One scoped full matrix rerun after correcting active-only version-write audit.
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-feedback-repair.yml'
+  # Frozen native 4/4 Run #45107700394; manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-feedback-repair-${{ github.ref }}
