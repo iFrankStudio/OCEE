@@ -1,0 +1,27 @@
+name: S29 Matched Lifetime Task Utility Pilot
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-matched-lifetime-pilot.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-lifetime-pilot-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  matched-three-policy-pilot:
+    strategy:
+      fail-fast: false
+      matrix:
+        tape: [ALL_PINNED, RELEASE_BEFORE_SECOND]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OCEE_S29_LIFE_TAPE: ${{ matrix.tape }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native paired lifetime opportunity and actual paid useful artifact
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_lifetime_matched_pilot_native -- --ignored --show-output
