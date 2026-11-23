@@ -2567,3 +2567,359 @@ fn p2_zero_anchor_witness_native(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+
+/// Publicly derivable task-local relation:
+/// for FOLD32, toggling the lowest bit of word0 changes its contribution
+/// by +1 or -1 modulo 2^32. No target answer is supplied to the root.
+/// Existing two real Exec calls and the paid zero anchor are prerequisites.
+fn p2_task_metamorphic_root()->Program{
+    use ocee_organism_vm::{Block,Instruction,Op,Param,Terminator,Type,WorldCall};
+    fn lit(v:&[u8])->Op{
+        Op::ConstBytes{hex:v.iter().map(|n|format!("{n:02x}")).collect()}
+    }
+    fn b(id:u32)->Param{Param{id,ty:Type::Bytes}}
+    fn u(id:u32)->Param{Param{id,ty:Type::U32}}
+    fn i(id:u32,op:Op)->Instruction{Instruction{id,op}}
+    fn br(c:u32,t:&str,ta:Vec<u32>,f:&str,fa:Vec<u32>)->Terminator{
+        Terminator::Branch{
+            condition:c,if_true:t.into(),true_args:ta,
+            if_false:f.into(),false_args:fa
+        }
+    }
+    let mut root=p2_zero_anchor_witness_root();
+    let f=&mut root.functions[0];
+    // Preserve the already-paid registry hash across the original zero
+    // witness, rather than looking it up a second time.
+    let zexec=f.blocks.iter_mut().find(|x|x.id=="zero_anchor_exec").unwrap();
+    zexec.terminator=Terminator::Yield{
+        call:WorldCall::Exec,args:vec![19522,19523],
+        next:"zero_anchor_status".into(),next_args:vec![19500,19522]
+    };
+    let zstatus=f.blocks.iter_mut().find(|x|x.id=="zero_anchor_status").unwrap();
+    zstatus.params=vec![b(19500),b(19600),b(19530)];
+    zstatus.terminator=br(19534,"zero_anchor_value",
+        vec![19500,19600,19530],"failed",vec![]);
+    let zvalue=f.blocks.iter_mut().find(|x|x.id=="zero_anchor_value").unwrap();
+    zvalue.params=vec![b(19500),b(19600),b(19540)];
+    zvalue.terminator=br(19544,"meta_input_read",
+        vec![19500,19600],"failed",vec![]);
+    f.blocks.extend([
+        Block{
+            id:"meta_input_read".into(),params:vec![b(19610),b(19611)],
+            instructions:vec![i(19612,lit(REMOTE_VALUES.as_bytes()))],
+            terminator:Terminator::Yield{
+                call:WorldCall::Read,args:vec![19612],
+                next:"meta_input_status".into(),next_args:vec![19610,19611]
+            }
+        },
+        Block{
+            id:"meta_input_status".into(),
+            params:vec![b(19620),b(19621),b(19622)],
+            instructions:vec![
+                i(19623,lit(b"code")),
+                i(19624,Op::JsonFieldString(19622,19623)),
+                i(19625,lit(b"Ok")),
+                i(19626,Op::EqBytes(19624,19625))
+            ],
+            terminator:br(19626,"meta_prepare",
+                vec![19620,19621,19622],"failed",vec![])
+        },
+        Block{
+            id:"meta_prepare".into(),
+            params:vec![b(19700),b(19701),b(19702)],
+            instructions:vec![
+                i(19703,lit(b"payload")),
+                i(19704,Op::JsonFieldBytes(19702,19703)),
+                i(19705,Op::ConstU32(0)),
+                i(19706,Op::ConstU32(1)),
+                i(19707,Op::ByteAt(19704,19705)),
+                i(19708,Op::Xor(19707,19706)),
+                i(19709,Op::ReplaceByte(19704,19705,19708)),
+                i(19710,Op::And(19707,19706)),
+                i(19711,Op::Add(19710,19710)),
+                i(19712,Op::Sub(19706,19711)),
+                i(19713,Op::JsonFieldBytes(19700,19703)),
+                i(19714,lit(b"U32")),
+                i(19715,Op::JsonFieldU32(19713,19714)),
+                i(19716,Op::Add(19715,19712))
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Exec,args:vec![19701,19709],
+                next:"meta_exec_status".into(),next_args:vec![19700,19716]
+            }
+        },
+        Block{
+            id:"meta_exec_status".into(),
+            params:vec![b(19800),u(19801),b(19802)],
+            instructions:vec![
+                i(19803,lit(b"code")),
+                i(19804,Op::JsonFieldString(19802,19803)),
+                i(19805,lit(b"Ok")),
+                i(19806,Op::EqBytes(19804,19805))
+            ],
+            terminator:br(19806,"meta_compare",
+                vec![19800,19801,19802],"failed",vec![])
+        },
+        Block{
+            id:"meta_compare".into(),
+            params:vec![b(19810),u(19811),b(19812)],
+            instructions:vec![
+                i(19813,lit(b"payload")),
+                i(19814,Op::JsonFieldBytes(19812,19813)),
+                i(19815,lit(b"U32")),
+                i(19816,Op::JsonFieldU32(19814,19815)),
+                i(19817,Op::EqU32(19816,19811))
+            ],
+            terminator:br(19817,"equal_local_pack",vec![19810],
+                "failed",vec![])
+        }
+    ]);
+    // Preserve strict VM hard limits; all new blocks are reached only
+    // after actual dual Exec and zero witness succeed.
+    root.validate().expect("typed bounded active metamorphic root");
+    root
+}
+
+/// A zero-preserving common bug that is also invariant to toggling byte0:
+/// FOLD32(input) + sum(input[1..15]). The sum is zero for all-zero inputs,
+/// and unchanged by the exact metamorphic mutation, but nonzero on the
+/// frozen real task input. Two independently coded implementations carry
+/// the same semantic defect.
+fn invariant_byte_tail_fault(mut p:Program)->Program{
+    use ocee_organism_vm::{Instruction,Op,Terminator};
+    let block=&mut p.functions[0].blocks[0];
+    let correct_reg=match block.terminator{
+        Terminator::Return{value}=>value,
+        _=>panic!("pure FOLD32 must return U32")
+    };
+    let mut id=block.instructions.iter().map(|i|i.id).max().unwrap()+1;
+    let mut acc=id;
+    block.instructions.push(Instruction{id,op:Op::ConstU32(0)});
+    id+=1;
+    for index in 1u32..16{
+        let idx=id;
+        block.instructions.push(Instruction{
+            id:idx,op:Op::ConstU32(index)
+        });
+        id+=1;
+        let byte=id;
+        block.instructions.push(Instruction{
+            id:byte,op:Op::ByteAt(0,idx)
+        });
+        id+=1;
+        acc=id;
+        let old=id-3;
+        // At the first iteration the previous accumulator is the zero
+        // literal immediately before this three-instruction suffix.
+        block.instructions.push(Instruction{
+            id:acc,op:Op::Add(old,byte)
+        });
+        id+=1;
+    }
+    block.instructions.push(Instruction{
+        id,op:Op::Add(correct_reg,acc)
+    });
+    block.terminator=Terminator::Return{value:id};
+    p.validate().expect("zero-preserving context-dependent wrong tool");
+    p
+}
+
+/// Actual paid metamorphic Exec on ACTIVE organism-created task bytes.
+/// Both root and all world-visible bytes are identical across four arms
+/// except researcher-installed legitimate programs and paid registry.
+#[test]
+#[ignore = "four charged task-metamorphic native world trajectories"]
+fn p2_task_metamorphic_native(){
+    let arm=std::env::var("OCEE_P2_META_ARM").expect("matrix arm");
+    assert!(["VALID","COMMON_DOUBLE","COMMON_PLUS_ONE","INVARIANT_FAULT"]
+        .contains(&arm.as_str()));
+    let a_good=local_fold4_vm_program();
+    let b_good=alternate_fold4_vm_program();
+    let a_plus=corrupted_fold4_ok();
+    let b_plus=alternate_corrupted_fold4();
+    let a_double=doubled_fold4(local_fold4_vm_program());
+    let b_double=doubled_fold4(alternate_fold4_vm_program());
+    let a_invariant=invariant_byte_tail_fault(local_fold4_vm_program());
+    let b_invariant=invariant_byte_tail_fault(alternate_fold4_vm_program());
+    let (primary,verifier)=match arm.as_str(){
+        "VALID"=>(&a_good,&b_good),
+        "COMMON_DOUBLE"=>(&a_double,&b_double),
+        "COMMON_PLUS_ONE"=>(&a_plus,&b_plus),
+        "INVARIANT_FAULT"=>(&a_invariant,&b_invariant),
+        _=>unreachable!()
+    };
+    let primary_hash=primary.content_hash().unwrap();
+    let verifier_hash=verifier.content_hash().unwrap();
+    assert_ne!(primary_hash,verifier_hash);
+    let root=p2_task_metamorphic_root();
+    let root_hash=root.content_hash().unwrap();
+    let mut w=boot_with_protocol_seed_budget(
+        8,2027,12_000,s45_p2_scoped_result_wait(),root
+    );
+    for prog in [primary,verifier]{
+        let hash=prog.content_hash().unwrap();
+        let response=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:format!("/self/versions/{hash}"),
+            bytes:prog.canonical_bytes(),expected_version:None
+        }));
+        assert_eq!(response.code,Code::Ok,
+            "researcher-installed executable must pay its A cost");
+    }
+    for (key,value) in [
+        ("/self/work/local-fold-candidate",&primary_hash),
+        ("/self/work/local-fold-verifier",&verifier_hash)
+    ]{
+        let response=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,key:key.into(),
+            bytes:value.as_bytes().to_vec(),expected_version:None
+        }));
+        assert_eq!(response.code,Code::Ok);
+    }
+    let genesis=w.audit.iter().map(|r|
+        r.result.gas_charged+r.result.vm_gas_charged).sum::<u64>();
+    assert_eq!(genesis+w.state.nodes[&NodeId::A].gas_available,12_000);
+    let prehash=w.state_hash();
+    assert_eq!(prehash,
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+    let mut gas_denied=0usize;
+    let mut invalid=0usize;
+    for _ in 0..14_000{
+        let response=w.tick_autonomous(ORGANISM_ID);
+        if response.code==Code::Gas{gas_denied+=1;}
+        if matches!(response.code,Code::Denied|Code::InvalidCode){invalid+=1;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let organism=&w.state.organisms[&ORGANISM_ID];
+    let finished=organism.vm_continuation.as_ref()
+        .is_some_and(|c|c.finished);
+    let last=organism.last_return.clone();
+    let claimed=finished&&last==Some(Value::U32(1));
+    let raw=&w.state.objects.get(REMOTE_VALUES)
+        .expect("root must actually create its P2 input").bytes;
+    assert_eq!(raw.len(),16);
+    let mut transformed=raw.clone();
+    transformed[0]^=1;
+    let old0=raw[0];
+    let delta=if old0&1==0{1u32}else{u32::MAX};
+    let values=raw.chunks_exact(4).map(|x|
+        u32::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>();
+    let correct=fold32(&values).unwrap();
+    let mut new_values=values.clone();
+    new_values[0]^=1;
+    let transformed_true=fold32(&new_values).unwrap();
+    assert_eq!(transformed_true,correct.wrapping_add(delta));
+    let tail_bias=raw.iter().skip(1).map(|v|u32::from(*v)).sum::<u32>();
+    assert!(tail_bias>0,"frozen adversarial invariant fault must be observable");
+    let saved=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|x|{
+            assert_eq!(x.bytes.len(),4);
+            u32::from_le_bytes(x.bytes[..4].try_into().unwrap())
+        });
+    let mut primary_task=Vec::<(Code,Option<u32>)>::new();
+    let mut verifier_task=Vec::<(Code,Option<u32>)>::new();
+    let mut anchor=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut morph=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut sends=0usize;
+    for event in &w.audit{
+        match &event.action{
+            Some(Action::Exec{program_hash,input,..})
+                if program_hash==&primary_hash ||
+                    program_hash==&verifier_hash=>{
+                let output=if event.result.code==Code::Ok{
+                    let Value::U32(value)=serde_json::from_slice::<Value>(
+                        &event.result.payload).unwrap() else{
+                        panic!("all candidate results must be genuine typed U32")
+                    };
+                    Some(value)
+                }else{None};
+                if input.as_slice()==raw.as_slice(){
+                    if program_hash==&primary_hash{
+                        primary_task.push((event.result.code,output));
+                    }else{
+                        verifier_task.push((event.result.code,output));
+                    }
+                }else if input.as_slice()==[0u8;16]{
+                    assert_eq!(program_hash,&primary_hash);
+                    anchor.push((event.result.code,output,
+                        event.result.gas_charged));
+                }else if input.as_slice()==transformed.as_slice(){
+                    assert_eq!(program_hash,&primary_hash);
+                    morph.push((event.result.code,output,
+                        event.result.gas_charged));
+                }else{
+                    panic!("world Exec must use only real, zero or flipped input")
+                }
+            },
+            Some(Action::Send{destination:NodeId::C,..})
+                if event.result.code==Code::Ok=>sends+=1,
+            _=>()
+        }
+    }
+    let total_vm=w.audit.iter().map(|r|r.result.vm_gas_charged).sum::<u64>();
+    let total_actions=w.audit.iter().map(|r|r.result.gas_charged).sum::<u64>();
+    let b=b_total(&w);
+    println!(
+        "P2_METAMORPHIC arm={arm} root={root_hash} \\
+         primary={primary_hash} verifier={verifier_hash} prehash={prehash} \\
+         genesis_A={genesis} A_vm={total_vm} A_actions={total_actions} \\
+         A_total={} B={b} C_SEND={sends} old_bit={} delta={delta} \\
+         first={primary_task:?} second={verifier_task:?} \\
+         zero={anchor:?} morph={morph:?} expected={correct} \\
+         expected_morph={transformed_true} tail_bias={tail_bias} \\
+         returned={last:?} finished={finished} claimed={claimed} \\
+         saved={saved:?} gas_refused={gas_denied} invalid={invalid} step={}",
+        total_vm+total_actions,old0&1,w.state.step
+    );
+    assert_eq!(invalid,0);
+    assert_eq!(b,0);
+    assert_eq!(sends,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    assert!(finished);
+    let result_primary=match arm.as_str(){
+        "VALID"=>correct,
+        "COMMON_DOUBLE"=>correct.wrapping_mul(2),
+        "COMMON_PLUS_ONE"=>correct.wrapping_add(1),
+        "INVARIANT_FAULT"=>correct.wrapping_add(tail_bias),
+        _=>unreachable!()
+    };
+    assert_eq!(primary_task.iter().filter(|(c,v)|
+        *c==Code::Ok&&*v==Some(result_primary)).count(),1);
+    assert_eq!(verifier_task.iter().filter(|(c,v)|
+        *c==Code::Ok&&*v==Some(result_primary)).count(),1);
+    if arm=="COMMON_PLUS_ONE"{
+        assert_eq!(anchor.iter().filter(|(c,v,_)|
+            *c==Code::Ok&&*v==Some(1)).count(),1);
+        assert!(morph.is_empty(),"zero failure must skip metamorphic work");
+        assert!(!claimed&&saved.is_none()&&last==Some(Value::U32(0)));
+    }else{
+        assert_eq!(anchor.iter().filter(|(c,v,_)|
+            *c==Code::Ok&&*v==Some(0)).count(),1);
+        let expected_morphed=match arm.as_str(){
+            "VALID"=>transformed_true,
+            "COMMON_DOUBLE"=>transformed_true.wrapping_mul(2),
+            "INVARIANT_FAULT"=>transformed_true.wrapping_add(tail_bias),
+            _=>unreachable!()
+        };
+        assert_eq!(morph.iter().filter(|(c,v,_)|
+            *c==Code::Ok&&*v==Some(expected_morphed)).count(),1,
+            "metamorphic proof must be a genuine paid Exec");
+        match arm.as_str(){
+            "VALID"=>{
+                assert!(claimed&&saved==Some(correct));
+            },
+            "COMMON_DOUBLE"=>{
+                assert!(!claimed&&saved.is_none()&&last==Some(Value::U32(0)));
+            },
+            "INVARIANT_FAULT"=>{
+                assert!(claimed && saved==Some(result_primary));
+                assert_ne!(saved,Some(correct),
+                    "frozen negative control must be a false success");
+            },
+            _=>unreachable!()
+        }
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}

@@ -1,0 +1,27 @@
+name: P2 Task-Linked Metamorphic Witness
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2-metamorphic-witness.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-metamorphic-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-metamorphic:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [VALID, COMMON_DOUBLE, COMMON_PLUS_ONE, INVARIANT_FAULT]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_META_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Charged causal metamorphic witness and invariant shared-fault control
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_task_metamorphic_native -- --ignored --show-output
