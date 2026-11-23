@@ -2565,3 +2565,420 @@ fn s29_source_delta_native(){
         _=>panic!("unknown source-delta arm {arm}")
     }
 }
+
+
+// DEV S29: This researcher-supplied *policy graph* embeds NO candidate
+// program hashes. It discovers candidates only from real, paid, actor-owned
+// kernel Read metadata, and treats paid GC feedback as the safety authority.
+// One page, at most eight tries. Not endogenous goal creation or general GC.
+fn catalog_discovery_root()->Program {
+    let params=||vec![
+        Param{id:1,ty:Type::Bytes},
+        Param{id:2,ty:Type::U32},
+        Param{id:3,ty:Type::U32}
+    ];
+    let feedback_params=||vec![
+        Param{id:1,ty:Type::Bytes},
+        Param{id:2,ty:Type::U32},
+        Param{id:3,ty:Type::U32},
+        Param{id:4,ty:Type::Bytes}
+    ];
+    let code_match=|feedback:u32,expected:&[u8]|vec![
+        Instruction{id:20,op:lit(b"code")},
+        Instruction{id:21,op:Op::JsonFieldString(feedback,20)},
+        Instruction{id:22,op:lit(expected)},
+        Instruction{id:23,op:Op::EqBytes(21,22)}
+    ];
+    let f=Function {
+        name:"main".into(),args:vec![Type::Bytes],returns:Type::U32,
+        blocks:vec![
+            Block{
+                id:"entry".into(),
+                params:vec![Param{id:0,ty:Type::Bytes}],
+                instructions:vec![Instruction{
+                    id:1,op:lit(b"/sys/self-version-catalog/0")
+                }],
+                terminator:Terminator::Yield{
+                    call:WorldCall::Read,args:vec![1],
+                    next:"catalog_reply".into(),next_args:vec![]
+                }
+            },
+            Block{
+                id:"catalog_reply".into(),
+                params:vec![Param{id:2,ty:Type::Bytes}],
+                instructions:code_match(2,b"Ok"),
+                terminator:Terminator::Branch{
+                    condition:23,if_true:"parse_catalog".into(),
+                    true_args:vec![2],if_false:"failed".into(),
+                    false_args:vec![]
+                }
+            },
+            Block{
+                id:"parse_catalog".into(),
+                params:vec![Param{id:2,ty:Type::Bytes}],
+                instructions:vec![
+                    Instruction{id:10,op:lit(b"payload")},
+                    Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+                    Instruction{id:12,op:lit(b"entries")},
+                    Instruction{id:13,op:Op::JsonFieldJson(11,12)},
+                    Instruction{id:14,op:lit(b"count")},
+                    Instruction{id:15,op:Op::JsonFieldU32(11,14)},
+                    Instruction{id:16,op:Op::ConstU32(0)}
+                ],
+                terminator:Terminator::Jump{
+                    target:"build_index".into(),
+                    args:vec![13,15,16]
+                }
+            },
+            Block{
+                id:"build_index".into(),params:params(),instructions:vec![],
+                terminator:Terminator::Yield{
+                    call:WorldCall::IndexVersionRefs,args:vec![],
+                    next:"index_reply".into(),next_args:vec![1,2,3]
+                }
+            },
+            Block{
+                id:"index_reply".into(),params:feedback_params(),
+                instructions:code_match(4,b"Ok"),
+                terminator:Terminator::Branch{
+                    condition:23,if_true:"search_header".into(),
+                    true_args:vec![1,2,3],if_false:"failed".into(),
+                    false_args:vec![]
+                }
+            },
+            Block{
+                id:"search_header".into(),params:params(),instructions:vec![],
+                terminator:Terminator::RepeatBounded{
+                    limit:8,body:"check_count".into(),body_args:vec![1,2,3],
+                    done:"failed".into(),done_args:vec![]
+                }
+            },
+            Block{
+                id:"check_count".into(),params:params(),
+                instructions:vec![Instruction{
+                    id:4,op:Op::EqU32(3,2)
+                }],
+                terminator:Terminator::Branch{
+                    condition:4,if_true:"failed".into(),true_args:vec![],
+                    if_false:"choose_hash".into(),false_args:vec![1,2,3]
+                }
+            },
+            Block{
+                id:"choose_hash".into(),params:params(),
+                instructions:vec![
+                    Instruction{id:4,op:Op::JsonIndex(1,3)},
+                    Instruction{id:5,op:lit(b"hash")},
+                    Instruction{id:6,op:Op::JsonFieldString(4,5)}
+                ],
+                terminator:Terminator::Yield{
+                    call:WorldCall::ReclaimIndexedVersion,args:vec![6],
+                    next:"gc_reply".into(),next_args:vec![1,2,3]
+                }
+            },
+            Block{
+                id:"gc_reply".into(),params:feedback_params(),
+                instructions:code_match(4,b"Ok"),
+                terminator:Terminator::Branch{
+                    condition:23,if_true:"succeeded".into(),
+                    true_args:vec![],if_false:"gc_conflict".into(),
+                    false_args:vec![1,2,3,4]
+                }
+            },
+            Block{
+                id:"gc_conflict".into(),params:feedback_params(),
+                instructions:code_match(4,b"Conflict"),
+                terminator:Terminator::Branch{
+                    condition:23,if_true:"advance".into(),
+                    true_args:vec![1,2,3],if_false:"gc_missing".into(),
+                    false_args:vec![1,2,3,4]
+                }
+            },
+            Block{
+                id:"gc_missing".into(),params:feedback_params(),
+                instructions:code_match(4,b"NotFound"),
+                terminator:Terminator::Branch{
+                    condition:23,if_true:"advance".into(),
+                    true_args:vec![1,2,3],if_false:"failed".into(),
+                    false_args:vec![]
+                }
+            },
+            Block{
+                id:"advance".into(),params:params(),
+                instructions:vec![
+                    Instruction{id:4,op:Op::ConstU32(1)},
+                    Instruction{id:5,op:Op::Add(3,4)}
+                ],
+                terminator:Terminator::Jump{
+                    target:"search_header".into(),args:vec![1,2,5]
+                }
+            },
+            Block{
+                id:"succeeded".into(),params:vec![],
+                instructions:vec![Instruction{
+                    id:1,op:Op::ConstU32(1)
+                }],
+                terminator:Terminator::Return{value:1}
+            },
+            Block{
+                id:"failed".into(),params:vec![],
+                instructions:vec![Instruction{
+                    id:1,op:Op::ConstU32(0)
+                }],
+                terminator:Terminator::Return{value:1}
+            }
+        ]
+    };
+    let p=Program{format_version:1,entry_function:"main".into(),
+        functions:vec![f]};
+    p.validate().expect("finite policy must pass static typed verifier");
+    p
+}
+const S29_CATALOG_PAGE0:&str="/sys/self-version-catalog/0";
+fn catalog_research_setup()->(World,Vec<String>,String,String,u64){
+    let (mut w,old_hash,new_hash,_)=boot_repaired();
+    let mut candidates=vec![old_hash];
+    for p in extra_unreferenced_tools(){
+        let h=p.content_hash().unwrap();
+        assert!(!w.state.objects.contains_key(&version_key(&h)));
+        put(&mut w,version_key(&h),p.canonical_bytes());
+        candidates.push(h);
+    }
+    let policy=catalog_discovery_root();
+    let policy_bytes=policy.canonical_bytes();
+    assert!(candidates.iter().all(|hash|
+        !policy_bytes.windows(64).any(|w|w==hash.as_bytes())),
+        "researcher must not preload candidate identity into VM bytecode");
+    let root=policy.content_hash().unwrap();
+    put(&mut w,version_key(&root),policy_bytes);
+    let metadata=w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:"/sys/active-version".into()
+    }));
+    assert_eq!(metadata.code,Code::Ok);
+    let parsed:serde_json::Value=
+        serde_json::from_slice(&metadata.payload).unwrap();
+    alter(&mut w,"/self/active",root.as_bytes().to_vec(),
+        parsed["version"].as_u64().unwrap());
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+2048;
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(candidates.iter().map(|h|
+        w.state.objects[&version_key(h)].bytes.len() as u64)
+        .sum::<u64>(),834);
+    (w,candidates,root,new_hash,used)
+}
+fn paid_catalog_read(w:&mut World,key:&str)->ocee_world_kernel::ActionResult {
+    w.tick(Some(Action::Read{
+        actor:ORGANISM_ID,key:key.into()
+    }))
+}
+fn catalog_entries(w:&World,start:u64)->(Vec<String>,u64){
+    let actual=w.audit.iter().filter(|e|e.step>=start &&
+        matches!(&e.action,Some(Action::Read{key,..})
+            if key==S29_CATALOG_PAGE0))
+        .collect::<Vec<_>>();
+    assert_eq!(actual.len(),1,
+        "the active graph may read the catalog only once");
+    assert_eq!(actual[0].result.code,Code::Ok);
+    assert!(actual[0].result.gas_charged>0);
+    let parsed:serde_json::Value=
+        serde_json::from_slice(&actual[0].result.payload).unwrap();
+    let items=parsed["entries"].as_array().expect("real paid entries");
+    assert_eq!(parsed["page"],0);
+    assert_eq!(parsed["count"].as_u64().unwrap() as usize,items.len());
+    (items.iter().map(|v|v["hash"].as_str().unwrap().to_owned())
+        .collect(),actual[0].result.gas_charged)
+}
+fn advance_to_catalog_index(w:&mut World,start:u64){
+    let mut observed=false;
+    for _ in 0..24{
+        let r=w.tick_autonomous(ORGANISM_ID);
+        assert!(!matches!(r.code,Code::InvalidCode|Code::Denied));
+        if matches!(w.audit.last().unwrap().action,
+            Some(Action::IndexVersionRefs{..})){
+            assert_eq!(r.code,Code::Ok);
+            observed=true;break;
+        }
+    }
+    assert!(observed,"real active policy must pay to certify after inventory");
+    let _=catalog_entries(w,start);
+}
+fn discovery_gc_audit(w:&World,start:u64)->Vec<(String,Code,u64)>{
+    w.audit.iter().filter_map(|e|{
+        if e.step<start{return None;}
+        match &e.action{
+            Some(Action::ReclaimIndexedVersion{program_hash,..})=>
+                Some((program_hash.clone(),e.result.code,
+                    e.result.gas_charged)),
+            _=>None
+        }
+    }).collect()
+}
+fn test_catalog_discovery_arm(arm:&str){
+    let (mut w,candidates,root,new_hash,used)=catalog_research_setup();
+    let start=w.state.step;
+    let (vm_begin,action_begin)=spend(&w);
+    if arm=="CATALOG_CONTRACT"{
+        let first=paid_catalog_read(&mut w,S29_CATALOG_PAGE0);
+        assert_eq!(first.code,Code::Ok);
+        assert!(first.gas_charged>0);
+        let parsed:serde_json::Value=
+            serde_json::from_slice(&first.payload).unwrap();
+        let mut expected=w.state.objects.iter().filter_map(|(key,obj)|{
+            let hash=key.strip_prefix("/self/versions/")?;
+            (obj.owner==ORGANISM_ID && hash.len()==64).then_some(
+                (obj.bytes.len() as u64,hash.to_owned()))
+        }).collect::<Vec<_>>();
+        expected.sort();
+        assert_eq!(parsed["total"].as_u64().unwrap(),expected.len() as u64);
+        let rows=parsed["entries"].as_array().unwrap();
+        assert_eq!(rows.len(),expected.len().min(8));
+        for (i,v) in rows.iter().enumerate(){
+            assert_eq!(v["hash"],expected[i].1);
+            assert_eq!(v["bytes"].as_u64().unwrap(),expected[i].0);
+            assert!(!v.as_object().unwrap().contains_key("referenced"));
+            assert!(!v.as_object().unwrap().contains_key("protected"));
+        }
+        let repeat=paid_catalog_read(&mut w,S29_CATALOG_PAGE0);
+        assert_eq!(repeat.code,Code::Ok);
+        assert_eq!(repeat.payload,first.payload);
+        assert_eq!(repeat.gas_charged,first.gas_charged);
+        let later=paid_catalog_read(&mut w,
+            "/sys/self-version-catalog/127");
+        assert_eq!(later.code,Code::Ok);
+        let empty:serde_json::Value=
+            serde_json::from_slice(&later.payload).unwrap();
+        assert_eq!(empty["count"],0);
+        assert_eq!(empty["total"],expected.len());
+        for malformed in [
+            "/sys/self-version-catalog/00",
+            "/sys/self-version-catalog/nope",
+            "/sys/self-version-catalog/128"
+        ]{
+            assert_eq!(paid_catalog_read(&mut w,malformed).code,
+                Code::BadRequest);
+        }
+        // Researcher-injected gas starvation is a negative test fixture,
+        // NOT a paid organism action. It must not mutate owned state.
+        let before_obj=w.state.objects.clone();
+        let before_storage=w.state.organisms[&ORGANISM_ID].storage_used;
+        let before_index=w.state.version_ref_index.clone();
+        w.state.nodes.get_mut(&NodeId::A).unwrap().gas_available=0;
+        let refused=paid_catalog_read(&mut w,S29_CATALOG_PAGE0);
+        assert_eq!(refused.code,Code::Gas);
+        assert_eq!(refused.gas_charged,0);
+        assert!(refused.payload.is_empty());
+        assert_eq!(w.state.objects,before_obj);
+        assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
+            before_storage);
+        assert_eq!(w.state.version_ref_index,before_index);
+        assert_eq!(b_gas(&w),20);
+        assert_eq!(w.state_hash(),World::from_snapshot(
+            &w.snapshot_json()).unwrap().state_hash());
+        println!("S29_CATALOG CONTRACT root={root} count={} first_A={}             empty_page=Ok malformed=BadRequest starvation=Gas B=20",
+            expected.len(),first.gas_charged);
+        return;
+    }
+    if arm=="PIN_AND_CONTINUATION"{
+        let pinned=candidates.iter().min_by_key(|h|
+            (w.state.objects[&version_key(h)].bytes.len(),*h))
+            .unwrap().clone();
+        // The pin is installed by the RESEARCHER; the fixed VM program
+        // has no literal target hash or privileged reference-status oracle.
+        put(&mut w,"/self/pins/s29-catalog".into(),
+            pinned.as_bytes().to_vec());
+        let started=w.state.step;
+        advance_to_catalog_index(&mut w,started);
+        let before_snap=w.snapshot_json();
+        let mut restore=World::from_snapshot(&before_snap).unwrap();
+        run(&mut w,96);
+        run(&mut restore,96);
+        assert_eq!(w.snapshot_json(),restore.snapshot_json());
+        assert_eq!(w.audit,restore.audit);
+        let gc=discovery_gc_audit(&w,start);
+        assert!(gc.iter().any(|(h,code,_)|
+            h==&pinned && *code==Code::Conflict),
+            "pinned discovered candidate must be vetoed by real kernel");
+        assert!(w.state.objects.contains_key(&version_key(&pinned)));
+        assert!(gc.iter().any(|(_,code,_)|*code==Code::Ok),
+            "after a pinned cheapest candidate there are other candidates");
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(1)));
+        println!("S29_CATALOG PIN_AND_CONTINUATION root={root} pinned={pinned}             attempts={gc:?} epoch={} deterministic_snapshot=true",
+            w.state.step/w.state.config.epoch_length);
+    }else if arm=="INVALIDATED_CERT"{
+        advance_to_catalog_index(&mut w,start);
+        let pin=&candidates[0];
+        put(&mut w,"/self/pins/s29-catalog".into(),
+            pin.as_bytes().to_vec());
+        assert!(w.state.version_ref_index.is_none());
+        run(&mut w,96);
+        let gc=discovery_gc_audit(&w,start);
+        assert!(!gc.is_empty());
+        assert!(gc.iter().all(|(_,code,fee)|
+            *code==Code::Conflict && *fee==0));
+        assert!(candidates.iter().all(|h|
+            w.state.objects.contains_key(&version_key(h))));
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(0)));
+        println!("S29_CATALOG INVALIDATED_CERT root={root}             attempts={gc:?} no_delete=true");
+    }else if arm=="DYNAMIC_RECOVERY"{
+        run(&mut w,96);
+        let gc=discovery_gc_audit(&w,start);
+        assert!(!gc.is_empty());
+        assert!(gc.iter().any(|(_,code,fee)|
+            *code==Code::Ok && *fee>0));
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(1)));
+    }else{panic!("unknown catalog arm {arm}");}
+    let (catalog_hashes,catalog_fee)=catalog_entries(&w,start);
+    let gc=discovery_gc_audit(&w,start);
+    assert!(gc.len()<=8);
+    assert!(gc.iter().all(|(hash,_,_)|catalog_hashes.contains(hash)));
+    assert_eq!(w.audit.iter().filter(|e|e.step>=start &&
+        matches!(e.action,Some(Action::IndexVersionRefs{..})))
+        .count(),1);
+    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
+    assert_eq!(w.state.objects["/self/active"].bytes,root.as_bytes());
+    assert_eq!(count_internal_active_switches(&w,start),0);
+    assert_eq!(b_gas(&w),20);
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+    let reclaimed=gc.iter().filter(|(_,code,_)|*code==Code::Ok)
+        .map(|(h,_,_)|{
+            let initial=candidates.iter().find(|a|*a==h);
+            assert!(initial.is_some(),
+                "in controlled fixture only installed orphan candidates reclaim");
+            match h==&candidates[1]{
+                true=>w.state.organisms[&ORGANISM_ID].storage_used,
+                false=>w.state.organisms[&ORGANISM_ID].storage_used
+            };
+            // Old fixture tools: exactly 276 or 279 bytes.
+            if h==&candidates[1]{
+                279u64
+            }else if h==&candidates[2]{
+                276u64
+            }else{279u64}
+        }).sum::<u64>();
+    assert_eq!(used +
+        if arm=="PIN_AND_CONTINUATION"||arm=="INVALIDATED_CERT"{
+            64
+        }else{0}
+        - w.state.organisms[&ORGANISM_ID].storage_used,reclaimed);
+    let (vm_end,action_end)=spend(&w);
+    println!("S29_CATALOG {arm} root={root} catalog_A={catalog_fee}         attempted={gc:?} reclaimed={reclaimed}B VM_A={} Action_A={}         remaining={} B={} step={} epoch={} replay=true",
+        vm_end-vm_begin,action_end-action_begin,
+        w.state.organisms[&ORGANISM_ID].storage_used,b_gas(&w),
+        w.state.step,w.state.step/w.state.config.epoch_length);
+}
+#[test]
+#[ignore="preregistered paid owner-inventory autonomous bounded candidate discovery"]
+fn s29_paid_catalog_discovery_native(){
+    let arm=std::env::var("OCEE_S29_CATALOG_ARM")
+        .expect("four-arm paid own version catalog preregistration");
+    match arm.as_str(){
+        "CATALOG_CONTRACT"|"DYNAMIC_RECOVERY"|
+        "PIN_AND_CONTINUATION"|"INVALIDATED_CERT"=>
+            test_catalog_discovery_arm(&arm),
+        other=>panic!("unexpected inventory arm {other}")
+    }
+}
