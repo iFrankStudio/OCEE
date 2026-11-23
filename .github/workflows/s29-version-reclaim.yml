@@ -1,0 +1,27 @@
+name: S29 Metered Conservative Program Version Reclaim
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-version-reclaim.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-version-reclaim-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-reclaim:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [POST_REPAIR, REGISTERED, ROOTS, OPAQUE_REF]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_GC_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native metered reference-safe program collection
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_reclaim_version_native -- --ignored --show-output
