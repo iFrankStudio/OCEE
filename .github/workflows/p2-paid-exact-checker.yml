@@ -1,9 +1,6 @@
 name: P2 Paid Exact-Result Verifier Trust Boundary
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/p2-paid-exact-checker.yml'
+  # Initial Run #45103750605 performed. Manual replay only to avoid CI fanout.
   workflow_dispatch:
 concurrency:
   group: ocee-p2-exact-checker-${{ github.ref }}
