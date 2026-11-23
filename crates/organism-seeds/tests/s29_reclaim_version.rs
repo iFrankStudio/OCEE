@@ -4150,6 +4150,7 @@ fn test_matched_lifetime_pilot(tape:&str){
         "task_key":S29_LIFE_TASK,"task_bytes":280
     })).unwrap();
     let tape_sha=format!("{:x}",Sha256::digest(&tape_bytes));
+    let shared_versions=versions.len();
     let always=&metrics[0];
     let cool=&metrics[1];
     let none=&metrics[2];
@@ -4183,7 +4184,7 @@ fn test_matched_lifetime_pilot(tape:&str){
         event_tape_SHA256={tape_sha} \
         policy_hashes={roots:?} release_step={release_step} \
         task_step={task_step} horizon={horizon} \
-        shared_installed={} initial_used={start_storage} \
+        shared_installed={shared_versions} initial_used={start_storage} \
         initial_capacity={capacity} initial_A={start_a} \
         metrics={metrics:?} true_P2_B=20 paired_replay=true \
         all_exogenous_actions_identical=true");
