@@ -298,6 +298,9 @@ pub enum Action {
         actor: u64, registry_key: String, program_bytes: Vec<u8>,
         expected_version: Option<u64>,
     },
+    /// Charged, conservative removal of one unreferenced owned immutable
+    /// version. Existing live roots/registries/pending raw-hash refs block.
+    ReclaimVersion {actor:u64, program_hash:String},
     Send { actor: u64, destination: NodeId, bytes: Vec<u8> },
     Receive { actor: u64, max_count: usize },
     // P2 only: deliberately not implemented as a fake success in P1.
@@ -865,7 +868,7 @@ impl World {
         let actor = match &action {
             Action::Observe {actor} | Action::Read {actor,..} |
             Action::Write {actor,..} | Action::PublishTool{actor,..} |
-            Action::Send {actor,..} |
+            Action::ReclaimVersion{actor,..} | Action::Send {actor,..} |
             Action::Receive {actor,..} | Action::Exec {actor,..} |
             Action::Probe {actor,..} | Action::VerifyProbe{actor,..} |
             Action::RenewProbe{actor,..} | Action::ArmTaskFence{actor,..} |
@@ -956,6 +959,9 @@ impl World {
                 program_host::atomic_publish_tool(
                     self,actor,registry_key,program_bytes,expected_version
                 )
+            }
+            Action::ReclaimVersion{program_hash,..}=>{
+                program_host::reclaim_owned_version(self,actor,&program_hash)
             }
             Action::Send {destination,bytes,..} => {
                 if destination != NodeId::C { return ActionResult::fail(Code::Denied); }

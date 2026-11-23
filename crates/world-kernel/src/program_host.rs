@@ -186,6 +186,9 @@ fn into_action(actor:u64,call:WorldCall,args:&[Value])->Result<Action,Code> {
                 }else{Some(u64::from(version))},
             }
         },
+        WorldCall::ReclaimVersion if args.len()==1=>{
+            Action::ReclaimVersion{actor,program_hash:utf8(&args[0])?}
+        },
         WorldCall::Send if args.len()==1 => Action::Send{
             actor,destination:NodeId::C,bytes:as_bytes(&args[0])?.to_vec()
         },
@@ -388,4 +391,87 @@ pub(crate) fn atomic_publish_tool(
     world.state.organisms.get_mut(&actor)
         .expect("valid actor").storage_used=next_used;
     ActionResult::ok(hash.into_bytes(),fee,0)
+}
+
+
+/// Reclaim one actor-owned immutable version *after* checking world-known
+/// references in the same deterministic tick. This is intentionally
+/// conservative, not a general tracing GC for arbitrary encoded pointers.
+/// In particular, the currently running REQUESTING root's own immutable
+/// bytecode is exempt from the raw-string scan because it necessarily
+/// contains the to-be-retired hash as its action argument; active/initial
+/// root identity itself is still protected independently.
+pub(crate) fn reclaim_owned_version(
+    world:&mut World,actor:u64,hash:&str
+)->ActionResult {
+    let hash=match ascii_hash(hash.as_bytes()){
+        Ok(s)=>s,
+        Err(code)=>return ActionResult::fail(code),
+    };
+    let version_key=format!("/self/versions/{hash}");
+    let Some(target)=world.state.objects.get(&version_key) else{
+        return ActionResult::fail(Code::NotFound);
+    };
+    if target.owner!=actor{return ActionResult::fail(Code::Denied);}
+    if decode_candidate(&target.bytes,&hash).is_err(){
+        return ActionResult::fail(Code::InvalidCode);
+    }
+    if world.state.initial_root_hash.as_deref()==Some(hash.as_str()) ||
+        world.state.organisms.values().any(|o|
+            o.active_program_hash.as_deref()==Some(hash.as_str()) ||
+            o.vm_continuation.as_ref().is_some_and(|c|
+                c.program_hash==hash))
+    {
+        return ActionResult::fail(Code::Conflict);
+    }
+    let requester's_active=world.state.organisms.get(&actor)
+        .and_then(|o|o.active_program_hash.as_ref())
+        .map(|active|format!("/self/versions/{active}"));
+    let contains_hash=|bytes:&[u8]|->bool{
+        bytes.windows(64).any(|w|w==hash.as_bytes())
+    };
+    let mut scanned_bytes=0u64;
+    for (key,obj) in &world.state.objects{
+        if key==&version_key{continue;}
+        // The invoking program may contain the target literal solely to
+        // request collection. Caller is responsible not to EXEC it again.
+        if requester's_active.as_deref()==Some(key.as_str()){continue;}
+        scanned_bytes=match scanned_bytes
+            .checked_add(key.len() as u64)
+            .and_then(|v|v.checked_add(obj.bytes.len() as u64)){
+                Some(n)=>n,
+                None=>return ActionResult::fail(Code::Quota),
+            };
+        if contains_hash(key.as_bytes())||contains_hash(&obj.bytes){
+            return ActionResult::fail(Code::Conflict);
+        }
+    }
+    // Transport can contain an old executable version identity that
+    // will be consumed later. A historical audit record is not a lease.
+    for msg in world.state.pending_deliveries.iter().chain(
+        world.state.mailboxes.values().flatten()){
+        scanned_bytes=match scanned_bytes.checked_add(msg.bytes.len() as u64){
+            Some(n)=>n,None=>return ActionResult::fail(Code::Quota),
+        };
+        if contains_hash(&msg.bytes){return ActionResult::fail(Code::Conflict);}
+    }
+    let target_len=target.bytes.len() as u64;
+    let used=world.state.organisms[&actor].storage_used;
+    let Some(next_used)=used.checked_sub(target_len) else{
+        return ActionResult::fail(Code::Quota);
+    };
+    let scan_fee=1+scanned_bytes.div_ceil(64);
+    let reclaim_fee=2+target_len.div_ceil(64);
+    let Some(fee)=scan_fee.checked_add(reclaim_fee) else{
+        return ActionResult::fail(Code::Quota);
+    };
+    if let Err(code)=world.spend_a_gas(fee){
+        return ActionResult::fail(code);
+    }
+    // No fallible operations beyond this point; object and used accounting
+    // are applied within the SAME ordinary audited world action.
+    world.state.objects.remove(&version_key);
+    world.state.organisms.get_mut(&actor)
+        .expect("validated actor").storage_used=next_used;
+    ActionResult::ok(target_len.to_le_bytes().to_vec(),fee,0)
 }

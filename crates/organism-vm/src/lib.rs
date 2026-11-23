@@ -23,7 +23,7 @@ impl Value {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum WorldCall { Observe, Read, Write, PublishTool, Send, Receive, Exec, Probe, VerifyProbe, RenewProbe, ArmTaskFence, FenceStatus, RestartRoot, FenceStatusFor, RestartRootFor, RequestOutcomeFor, ConfirmResponseFor }
+pub enum WorldCall { Observe, Read, Write, PublishTool, ReclaimVersion, Send, Receive, Exec, Probe, VerifyProbe, RenewProbe, ArmTaskFence, FenceStatus, RestartRoot, FenceStatusFor, RestartRootFor, RequestOutcomeFor, ConfirmResponseFor }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Param { pub id: u32, pub ty: Type }
@@ -364,7 +364,7 @@ fn check_op(op:&Op,defs:&BTreeMap<u32,Type>) -> Result<Type,VmError> {
 fn check_call(call:WorldCall,args:&[u32],defs:&BTreeMap<u32,Type>) -> Result<(),VmError> {
     let signature:&[Type]=match call {
         WorldCall::Observe|WorldCall::Receive|WorldCall::FenceStatus|WorldCall::RestartRoot=>&[],
-        WorldCall::Read|WorldCall::Send|WorldCall::Probe|WorldCall::VerifyProbe|WorldCall::RenewProbe|WorldCall::ArmTaskFence|WorldCall::FenceStatusFor|WorldCall::RestartRootFor|WorldCall::RequestOutcomeFor=>&[Type::Bytes],
+        WorldCall::Read|WorldCall::ReclaimVersion|WorldCall::Send|WorldCall::Probe|WorldCall::VerifyProbe|WorldCall::RenewProbe|WorldCall::ArmTaskFence|WorldCall::FenceStatusFor|WorldCall::RestartRootFor|WorldCall::RequestOutcomeFor=>&[Type::Bytes],
         WorldCall::Exec|WorldCall::ConfirmResponseFor=>&[Type::Bytes,Type::Bytes],
         WorldCall::Write|WorldCall::PublishTool=>&[Type::Bytes,Type::Bytes,Type::U32],
     };
