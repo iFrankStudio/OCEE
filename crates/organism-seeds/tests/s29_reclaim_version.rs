@@ -2384,10 +2384,14 @@ fn test_source_delta_arm(arm:&str) {
             .collect::<Vec<_>>();
         assert_eq!(vm_write.len(),1);
         assert_eq!(vm_write[0].result.code,Code::Ok);
-        assert!(vm_write[0].result.vm_gas_charged>0);
-        assert!(vm_write[0].result.gas_charged>0);
+        let vm_write_fee=vm_write[0].result.gas_charged;
+        let vm_slice_fee=vm_write[0].result.vm_gas_charged;
+        assert!(vm_slice_fee>0);
+        assert!(vm_write_fee>0);
         assert!(!w.state.version_ref_index.as_ref().unwrap()
             .referenced.contains(&old_hash));
+        // End immutable audit borrows before the next mutable world action.
+        drop(vm_write);
         let collected=fast_reclaim(&mut w,&old_hash);
         assert_eq!(collected.code,Code::Ok);
         assert_eq!(u64::from_le_bytes(
@@ -2400,8 +2404,7 @@ fn test_source_delta_arm(arm:&str) {
         println!("S29_SOURCE_DELTA VM_DELTA root={root_hash} \
             worldcall_actual=true fee={} vm_fee={} \
             paid_index={} rescued_279B=true B=20",
-            vm_write[0].result.gas_charged,
-            vm_write[0].result.vm_gas_charged,index.gas_charged);
+            vm_write_fee,vm_slice_fee,index.gas_charged);
         return;
     }
     let (mut w,targets,root,new_hash,used)=setup_versioned_retry_world();
