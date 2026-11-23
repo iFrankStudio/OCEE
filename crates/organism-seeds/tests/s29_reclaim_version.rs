@@ -3324,10 +3324,16 @@ fn dry_run_cooldown_root()->Program{
     old_entry.id="maintenance_entry".into();
     let exhausted=f.blocks.iter_mut().find(|b|b.id=="search_header").unwrap();
     assert!(matches!(&exhausted.terminator,Terminator::RepeatBounded{..}));
-    if let Terminator::RepeatBounded{done,done_args,..}=&mut exhausted.terminator{
-        *done="mark_dry".into();
-        done_args.clear();
-    }
+    // The predecessor's RepeatBounded counter would remain at 8 in the
+    // SAME VM continuation after the first episode. Existing RepeatScoped
+    // instead charges/limits each candidate-index scope (U32 register 3)
+    // to max three visits across all three episodes, and max 24 globally.
+    // The existing actual catalog count still caps each episode at 8.
+    exhausted.terminator=Terminator::RepeatScoped{
+        limit:3,aggregate_limit:24,scope:3,
+        body:"check_count".into(),body_args:vec![1,2,3],
+        done:"mark_dry".into(),done_args:vec![]
+    };
     let no_more=f.blocks.iter_mut().find(|b|b.id=="check_count").unwrap();
     if let Terminator::Branch{if_true,true_args,..}=&mut no_more.terminator{
         assert_eq!(if_true,"failed");
@@ -3689,14 +3695,10 @@ fn test_dry_run_arm(arm:&str){
             let e=w.audit.last().unwrap();
             if matches!(&e.action,Some(Action::Read{key,..})
                 if key==S29_DRY_META) && e.result.code==Code::Ok{
-                let payload:serde_json::Value=
-                    serde_json::from_slice(&e.result.payload).unwrap();
-                let inner=payload["payload"].as_array().unwrap()
-                    .iter().map(|n|n.as_u64().unwrap() as u8)
-                    .collect::<Vec<_>>();
                 let obj:serde_json::Value=
-                    serde_json::from_slice(&inner).unwrap();
-                assert_eq!(obj["version"],0);
+                    serde_json::from_slice(&e.result.payload).unwrap();
+                assert_eq!(obj["version"].as_u64(),Some(0));
+                assert_eq!(obj["bytes"],serde_json::json!([49]));
                 found=true;break;
             }
         }
