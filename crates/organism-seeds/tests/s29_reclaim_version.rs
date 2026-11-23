@@ -2848,7 +2848,7 @@ fn test_catalog_discovery_arm(arm:&str){
         let empty:serde_json::Value=
             serde_json::from_slice(&later.payload).unwrap();
         assert_eq!(empty["count"],0);
-        assert_eq!(empty["total"],expected.len());
+        assert_eq!(empty["total"].as_u64(),Some(expected.len() as u64));
         for malformed in [
             "/sys/self-version-catalog/00",
             "/sys/self-version-catalog/nope",
@@ -2880,7 +2880,7 @@ fn test_catalog_discovery_arm(arm:&str){
     }
     if arm=="PIN_AND_CONTINUATION"{
         let pinned=candidates.iter().min_by_key(|h|
-            (w.state.objects[&version_key(h)].bytes.len(),*h))
+            (w.state.objects[&version_key(h)].bytes.len(),h.as_str().to_owned()))
             .unwrap().clone();
         // The pin is installed by the RESEARCHER; the fixed VM program
         // has no literal target hash or privileged reference-status oracle.
@@ -2943,22 +2943,15 @@ fn test_catalog_discovery_arm(arm:&str){
     assert_eq!(b_gas(&w),20);
     assert_eq!(w.state_hash(),World::from_snapshot(
         &w.snapshot_json()).unwrap().state_hash());
-    let reclaimed=gc.iter().filter(|(_,code,_)|*code==Code::Ok)
-        .map(|(h,_,_)|{
-            let initial=candidates.iter().find(|a|*a==h);
-            assert!(initial.is_some(),
-                "in controlled fixture only installed orphan candidates reclaim");
-            match h==&candidates[1]{
-                true=>w.state.organisms[&ORGANISM_ID].storage_used,
-                false=>w.state.organisms[&ORGANISM_ID].storage_used
-            };
-            // Old fixture tools: exactly 276 or 279 bytes.
-            if h==&candidates[1]{
-                279u64
-            }else if h==&candidates[2]{
-                276u64
-            }else{279u64}
-        }).sum::<u64>();
+    // Infer byte savings only from genuine, audited kernel GC receipts,
+    // never from researcher-provided size guesses or secret oracle values.
+    let reclaimed=w.audit.iter().filter(|e|e.step>=start &&
+        matches!(&e.action,Some(Action::ReclaimIndexedVersion{..})) &&
+        e.result.code==Code::Ok)
+        .map(|e|u64::from_le_bytes(
+            e.result.payload.as_slice().try_into()
+                .expect("real GC receipt is u64 reclaimed bytes")))
+        .sum::<u64>();
     assert_eq!(used +
         if arm=="PIN_AND_CONTINUATION"||arm=="INVALIDATED_CERT"{
             64
