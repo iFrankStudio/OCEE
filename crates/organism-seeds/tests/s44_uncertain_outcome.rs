@@ -3839,3 +3839,303 @@ fn p2_exact_checker_native(){
     assert_eq!(w.state_hash(),
         World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
 }
+
+
+/// Trust bootstrap: lock the reference verifier's content hash in the
+/// active program itself, rather than trusting a mutable /self/work
+/// registry value. This is NOT organism-discovered correctness, and
+/// depends on the researcher-provided initial trust anchor.
+fn p2_pinned_exact_checker_root()->Program{
+    use ocee_organism_vm::{Instruction,Op,Terminator,WorldCall};
+    fn lit(v:&[u8])->Op{
+        Op::ConstBytes{hex:v.iter().map(|x|format!("{x:02x}")).collect()}
+    }
+    let mut root=p2_paid_exact_claim_checker_root();
+    let pinned_hash=exact_fold4_claim_verifier().content_hash().unwrap();
+    let root_func=&mut root.functions[0];
+    let read_registry=root_func.blocks.iter_mut().find(|b|b.id=="ck_key_reply")
+        .expect("paid registry Read continuation");
+    // In this kernel a non-Ok Read cannot produce an authentic successful
+    // object payload. Exact hash payload equality therefore also rejects
+    // NotFound, Denied, or failed/empty Read feedback.
+    read_registry.instructions=vec![
+        Instruction{id:21201,op:lit(b"payload")},
+        Instruction{id:21202,op:Op::JsonFieldBytes(21010,21201)},
+        Instruction{id:21203,op:lit(pinned_hash.as_bytes())},
+        Instruction{id:21204,op:Op::EqBytes(21202,21203)}
+    ];
+    read_registry.terminator=Terminator::Branch{
+        condition:21204,
+        if_true:"ck_job_read".into(),true_args:vec![21000,21010],
+        if_false:"failed".into(),false_args:vec![]
+    };
+    // Changing only the identity gate preserves every S45 P1, candidate
+    // Exec, full 20-byte checker Exec, result write and their real gas.
+    assert!(root_func.blocks.iter().any(|b|
+        matches!(&b.terminator,Terminator::Yield{call:WorldCall::Exec,..})));
+    root.validate().expect("static pin must fit exact-checker active root");
+    root
+}
+
+/// The candidate remains an actual charged VM tool; a compromised
+/// verifier registry cannot impersonate the researcher's pinned hash.
+/// MISSING_PIN tests the *different* failure: a matching registry hash
+/// cannot make a missing content-addressed program executable.
+/// All four arms have the same root program content hash.
+#[test]
+#[ignore = "pinned reference checker native trust and absence controls"]
+fn p2_pinned_checker_native(){
+    let arm=std::env::var("OCEE_P2_PIN_ARM").expect("frozen matrix arm");
+    assert!(["VALID_PIN","WRONG_PIN","REGISTRY_SWAP","MISSING_PIN"]
+        .contains(&arm.as_str()));
+    let correct=local_fold4_vm_program();
+    let residual=invariant_tail_from_byte2(local_fold4_vm_program());
+    let trusted=exact_fold4_claim_verifier();
+    let malicious=compromised_claim_verifier();
+    let trusted_hash=trusted.content_hash().unwrap();
+    let malicious_hash=malicious.content_hash().unwrap();
+    assert_ne!(trusted_hash,malicious_hash);
+    let candidate=if arm=="VALID_PIN"{&correct}else{&residual};
+    let candidate_hash=candidate.content_hash().unwrap();
+    assert_ne!(candidate_hash,trusted_hash);
+    assert_ne!(candidate_hash,malicious_hash);
+    let root=p2_pinned_exact_checker_root();
+    let root_hash=root.content_hash().unwrap();
+    let mut w=boot_with_protocol_seed_budget(
+        8,2027,12_000,s45_p2_scoped_result_wait(),root
+    );
+    let tool_install=w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,
+        key:format!("/self/versions/{candidate_hash}"),
+        bytes:candidate.canonical_bytes(),expected_version:None
+    }));
+    assert_eq!(tool_install.code,Code::Ok,"paid candidate install");
+    let mut forge_denied=None;
+    if arm=="REGISTRY_SWAP"{
+        // The world kernel prevents installation of malicious canonical
+        // bytes AT the trusted hash key. This attempt is made BEFORE
+        // the real checker is installed so rejection must be caused by
+        // hash-content mismatch rather than an object Conflict.
+        let preflight=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,
+            key:format!("/self/versions/{trusted_hash}"),
+            bytes:malicious.canonical_bytes(),expected_version:None
+        }));
+        forge_denied=Some(preflight.code);
+        assert_eq!(preflight.code,Code::InvalidCode,
+            "the immutable version store checks canonical content hash");
+        assert!(!w.state.objects
+            .contains_key(&format!("/self/versions/{trusted_hash}")));
+    }
+    if arm!="MISSING_PIN"{
+        let install=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,
+            key:format!("/self/versions/{trusted_hash}"),
+            bytes:trusted.canonical_bytes(),expected_version:None
+        }));
+        assert_eq!(install.code,Code::Ok);
+    }
+    if arm=="REGISTRY_SWAP"{
+        let installed=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,
+            key:format!("/self/versions/{malicious_hash}"),
+            bytes:malicious.canonical_bytes(),expected_version:None
+        }));
+        assert_eq!(installed.code,Code::Ok);
+        assert_eq!(w.state.objects[
+            &format!("/self/versions/{trusted_hash}")].bytes,
+            trusted.canonical_bytes(),"no overwritten canonical checker bytes");
+    }
+    let registry_hash=if arm=="REGISTRY_SWAP"{
+        &malicious_hash
+    }else{&trusted_hash};
+    for (key,hash) in [
+        ("/self/work/local-fold-candidate",&candidate_hash),
+        ("/self/work/exact-fold-checker",registry_hash)
+    ]{
+        let r=w.tick(Some(Action::Write{
+            actor:ORGANISM_ID,
+            key:key.into(),bytes:hash.as_bytes().to_vec(),
+            expected_version:None
+        }));
+        assert_eq!(r.code,Code::Ok,"both registry writes must charge A");
+    }
+    let genesis=w.audit.iter().map(|r|
+        r.result.gas_charged+r.result.vm_gas_charged).sum::<u64>();
+    assert_eq!(genesis+w.state.nodes[&NodeId::A].gas_available,12_000);
+    let prehash=w.state_hash();
+    assert_eq!(prehash,World::from_snapshot(&w.snapshot_json())
+        .unwrap().state_hash());
+    let mut gas_denied=0usize;
+    let mut invalid=0usize;
+    for _ in 0..14_000{
+        let outcome=w.tick_autonomous(ORGANISM_ID);
+        if outcome.code==Code::Gas{gas_denied+=1;}
+        if matches!(outcome.code,Code::Denied|Code::InvalidCode){invalid+=1;}
+        if w.state.organisms[&ORGANISM_ID].vm_continuation
+            .as_ref().is_some_and(|c|c.finished){break;}
+    }
+    let organism=&w.state.organisms[&ORGANISM_ID];
+    let finished=organism.vm_continuation.as_ref()
+        .is_some_and(|c|c.finished);
+    let last=organism.last_return.clone();
+    let claimed=finished&&last==Some(Value::U32(1));
+    if !w.state.objects.contains_key(REMOTE_VALUES){
+        println!(
+            "P2_PIN_EARLY arm={arm} root={root_hash} genesis={genesis} \\
+             step={} last={last:?} finished={finished} Gas={gas_denied}",
+            w.state.step
+        );
+        for e in w.audit.iter().rev().filter(|r|r.action.is_some()).take(10){
+            println!(
+                "P2_PIN_EARLY_AUDIT step={} code={:?} vm={} actionA={} action={:?}",
+                e.step,e.result.code,e.result.vm_gas_charged,
+                e.result.gas_charged,e.action.as_ref().map(std::mem::discriminant)
+            );
+        }
+        panic!("real P1 task must finish before pin test");
+    }
+    let original=&w.state.objects[REMOTE_VALUES].bytes;
+    assert_eq!(original.len(),16);
+    let values=original.chunks_exact(4).map(|x|
+        u32::from_le_bytes(x.try_into().unwrap())).collect::<Vec<_>>();
+    let truth=fold32(&values).unwrap();
+    let bias=original.iter().skip(2).map(|x|u32::from(*x)).sum::<u32>();
+    assert!(bias>0,"frozen dev sample has nonzero residual shared bug");
+    let candidate_value=if arm=="VALID_PIN"{
+        truth
+    }else{truth.wrapping_add(bias)};
+    let mut original_exec=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut trusted_exec=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut malicious_exec=Vec::<(Code,Option<u32>,u64)>::new();
+    let mut verified_inputs=Vec::<Vec<u8>>::new();
+    let mut sent_c=0usize;
+    let mut registry_reads=Vec::new();
+    for event in &w.audit{
+        match &event.action{
+            Some(Action::Exec{program_hash,input,..})
+                if program_hash==&candidate_hash=>{
+                assert_eq!(input.as_slice(),original.as_slice());
+                let val=if event.result.code==Code::Ok{
+                    let Value::U32(v)=serde_json::from_slice::<Value>(
+                        &event.result.payload).unwrap() else{
+                        panic!("primary Exec returned non-U32")
+                    };
+                    Some(v)
+                }else{None};
+                original_exec.push((
+                    event.result.code,val,event.result.gas_charged
+                ));
+            },
+            Some(Action::Exec{program_hash,input,..})
+                if program_hash==&trusted_hash=>{
+                verified_inputs.push(input.clone());
+                let val=if event.result.code==Code::Ok{
+                    let Value::U32(v)=serde_json::from_slice::<Value>(
+                        &event.result.payload).unwrap() else{
+                        panic!("trusted Exec returned non-U32")
+                    };
+                    Some(v)
+                }else{None};
+                trusted_exec.push((
+                    event.result.code,val,event.result.gas_charged
+                ));
+            },
+            Some(Action::Exec{program_hash,..})
+                if program_hash==&malicious_hash=>{
+                let val=if event.result.code==Code::Ok{
+                    let Value::U32(v)=serde_json::from_slice::<Value>(
+                        &event.result.payload).unwrap() else{
+                        panic!("malicious Exec returned non-U32")
+                    };
+                    Some(v)
+                }else{None};
+                malicious_exec.push((
+                    event.result.code,val,event.result.gas_charged
+                ));
+            },
+            Some(Action::Read{key,..}) if key=="/self/work/exact-fold-checker"=>{
+                registry_reads.push(event.result.code);
+            },
+            Some(Action::Send{destination:NodeId::C,..})
+                if event.result.code==Code::Ok=>sent_c+=1,
+            _=>()
+        }
+    }
+    let saved=w.state.objects.get("/self/results/p2-job0/value_le")
+        .map(|o|{
+            assert_eq!(o.bytes.len(),4);
+            u32::from_le_bytes(o.bytes[..4].try_into().unwrap())
+        });
+    let vm_A=w.audit.iter().map(|e|e.result.vm_gas_charged).sum::<u64>();
+    let action_A=w.audit.iter().map(|e|e.result.gas_charged).sum::<u64>();
+    let b=b_total(&w);
+    println!(
+        "P2_PINNED arm={arm} root={root_hash} candidate={candidate_hash} \\
+         trusted={trusted_hash} malicious={malicious_hash} reg={registry_hash} \\
+         prehash={prehash} genesis_A={genesis} vm_A={vm_A} \\
+         action_A={action_A} total_A={} B={b} C={sent_c} \\
+         task={original_exec:?} trust_exec={trusted_exec:?} \\
+         attack_exec={malicious_exec:?} checker_inputs={verified_inputs:?} \\
+         registry_reads={registry_reads:?} fake_version_denied={forge_denied:?} \\
+         truth={truth} bias={bias} returned={last:?} \\
+         claimed={claimed} saved={saved:?} Gas={gas_denied} \\
+         Invalid={invalid} step={}",
+        vm_A+action_A,w.state.step
+    );
+    assert!(finished);
+    assert_eq!(invalid,0);
+    assert!(w.state.guarded_restarts.is_empty());
+    assert_eq!(b,0);
+    assert_eq!(sent_c,0);
+    assert_eq!(registry_reads,vec![Code::Ok]);
+    assert_eq!(original_exec.len(),1);
+    assert_eq!(original_exec[0].0,Code::Ok);
+    assert_eq!(original_exec[0].1,Some(candidate_value));
+    assert!(original_exec[0].2>0);
+    assert!(malicious_exec.is_empty(),
+        "compromised registry must NEVER run the malicious checker");
+    let mut expected_input=original.clone();
+    expected_input.extend(candidate_value.to_le_bytes());
+    match arm.as_str(){
+        "VALID_PIN"=>{
+            assert_eq!(trusted_exec.len(),1);
+            assert_eq!(trusted_exec[0].0,Code::Ok);
+            assert_eq!(trusted_exec[0].1,Some(1));
+            assert!(trusted_exec[0].2>0);
+            assert_eq!(verified_inputs,vec![expected_input]);
+            assert!(claimed);
+            assert_eq!(saved,Some(truth));
+        },
+        "WRONG_PIN"=>{
+            assert_eq!(trusted_exec.len(),1);
+            assert_eq!(trusted_exec[0].0,Code::Ok);
+            assert_eq!(trusted_exec[0].1,Some(0));
+            assert!(trusted_exec[0].2>0);
+            assert_eq!(verified_inputs,vec![expected_input]);
+            assert!(!claimed);
+            assert_eq!(last,Some(Value::U32(0)));
+            assert_eq!(saved,None);
+        },
+        "REGISTRY_SWAP"=>{
+            assert_eq!(forge_denied,Some(Code::InvalidCode));
+            assert!(trusted_exec.is_empty());
+            assert!(verified_inputs.is_empty());
+            assert!(!claimed);
+            assert_eq!(last,Some(Value::U32(0)));
+            assert_eq!(saved,None);
+        },
+        "MISSING_PIN"=>{
+            assert_eq!(trusted_exec.len(),1);
+            assert_eq!(trusted_exec[0].0,Code::NotFound);
+            assert_eq!(trusted_exec[0].1,None);
+            assert_eq!(verified_inputs,vec![expected_input]);
+            assert!(!claimed);
+            assert_eq!(last,Some(Value::U32(0)));
+            assert_eq!(saved,None);
+        },
+        _=>unreachable!()
+    }
+    assert_eq!(w.state_hash(),
+        World::from_snapshot(&w.snapshot_json()).unwrap().state_hash());
+}

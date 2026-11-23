@@ -1,0 +1,27 @@
+name: P2 Pinned Checker Identity and Registry Attack
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/p2-pinned-checker.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-p2-pinned-checker-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-pinned-checker:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [VALID_PIN, WRONG_PIN, REGISTRY_SWAP, MISSING_PIN]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_P2_PIN_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Metered VM identity pin and true content-addressed failure controls
+        run: cargo test -p ocee-organism-seeds --test s44_uncertain_outcome p2_pinned_checker_native -- --ignored --show-output
