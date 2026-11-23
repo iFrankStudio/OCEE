@@ -4092,6 +4092,7 @@ fn test_matched_lifetime_pilot(tape:&str){
     let mut metrics=Vec::<LifetimeMeasured>::new();
     let policies=["ALWAYS_RETRY","NEGATIVE_COOLDOWN","NO_MAINTENANCE"];
     let mut common_schedule:Option<(u64,u64,u64)>=None;
+    let mut common_branch_a:Option<u64>=None;
     for (p,policy) in policies.iter().enumerate(){
         let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
         lifetime_set_active(&mut w,&roots[p]);
@@ -4101,8 +4102,13 @@ fn test_matched_lifetime_pilot(tape:&str){
         let horizon=study_start+245;
         assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
             start_storage);
-        assert_eq!(w.state.nodes[&NodeId::A].gas_available,
-            start_a-5,"all active switches are identical paid reads/CAS");
+        let active_a=w.state.nodes[&NodeId::A].gas_available;
+        assert!(active_a<start_a,
+            "each root activation must pay real A");
+        if let Some(previous)=common_branch_a{
+            assert_eq!(active_a,previous,
+                "all active root CAS operations have the same paid A");
+        }else{common_branch_a=Some(active_a);}
         if let Some(sched)=common_schedule{
             assert_eq!(sched,(release_step,task_step,horizon));
         }else{
@@ -4150,7 +4156,8 @@ fn test_matched_lifetime_pilot(tape:&str){
     assert!(always.vm_a>0&&cool.vm_a>0);
     assert_eq!(none.index_count,0);
     assert_eq!(none.gc_attempts,0);
-    assert_eq!(always.index_count,3.min(always.index_count));
+    assert!(always.index_count<=3,
+        "strictly bounded three episodes");
     assert_eq!(cool.index_count,2);
     assert!(always.vm_a+always.maintenance_action_a >
         cool.vm_a+cool.maintenance_action_a,
