@@ -1,0 +1,27 @@
+name: S29 Inherited Tool Feedback Repair with CAS
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-feedback-repair.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-feedback-repair-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  native-repair:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [FRESH, MATCHED, WRONG, STALE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OCEE_S29_REPAIR_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native public-feedback reselection and metered CAS adoption
+        run: cargo test -p ocee-organism-seeds --test s29_feedback_repair s29_inherited_semantics_repair_native -- --ignored --show-output
