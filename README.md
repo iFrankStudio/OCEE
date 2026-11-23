@@ -1,10 +1,10 @@
 # OCEE — 开放式演化赛博生态世界
 
-**规范基线：v0.2.0（后续开发世界能力需独立版本化） · 2026-11-23 最新S29付费证书失效/跨epoch续行定向4/4通过 · G0 GO、G1/G2 NO-GO · E001尚未校准/预注册**
+**规范基线：v0.2.0（后续开发世界能力需独立版本化） · 2026-11-23 最新S29安全短写入认证索引保留原生4/4通过 · G0 GO、G1/G2 NO-GO · E001尚未校准/预注册**
 
 OCEE 是与 CIOC/CL 系列**相互独立**的研究路线。其长期目标是探索一种能够适应未知数字环境、学习使用现有软硬件与网络服务、创造新工具并持续改进自身的赛博生命培养机制。
 
-**最新验证的工程事实（2026-11-23）**：S29仍是开发性有界维护，不是开放式演化。[最新原生CI四臂4/4](https://github.com/iFrankStudio/OCEE/actions/runs/45151720848)显示**同一1B无害写入**放在付费引用索引后，而不是索引前，会使保守证书真实失效、后续VM额外扫描，并让同834B回收的维护期间A开销从**1887升到3888**；同一VM的有偿CAS风险记忆经宿主推进真实epoch后仍可确定性恢复。详细冻结协议/审计见[证书失效与跨epoch研究](./experiments/E001/DEV-S29-CROSS-EPOCH-CERTIFICATE-CHURN-PROTOCOL.md)，全部原生工程进度以[07工程检查点](./07-ENGINEERING-CHECKPOINT.md)最新条目为准；历史S41运行器阻断描述只是当时状态，并非当前运行器状态。
+**最新验证的工程事实（2026-11-23）**：上一S29[索引时序原生4/4](https://github.com/iFrankStudio/OCEE/actions/runs/45151720848)揭示：同样的1B无害写入若发生在昂贵认证Index之后，保守失效会使834B维护回收的VM+世界Action A由1887升到3888。最新[付费短写入保留原生4/4](https://github.com/iFrankStudio/OCEE/actions/runs/45156166086)在**不新增VM/Action、严格键和内容都短于64B且避开注册/版本/active**的条件下保留原已付费认证证书，短写成功额外收1A后，**同一索引后写入的总成本从3888A降至1888A（-2000A/-51.4%）**；64B真活引用仍被阻止回收，旧引用被移除时旧证书仍过保守不误删。账本/安全边界见[最新协议](./experiments/E001/DEV-S29-CERTIFIED-SHORT-WRITE-PRESERVATION.md)，跨epoch连续性见[前轮协议](./experiments/E001/DEV-S29-CROSS-EPOCH-CERTIFICATE-CHURN-PROTOCOL.md)。这些均是研究者预置候选和根的开发性验证，不是开放式演化；完整进度以[07工程检查点](./07-ENGINEERING-CHECKPOINT.md)最新条目为准。
 
 首个原型 **OCEE-0** 不宣称创造出生命，也不将一般编程智能体得分等同于开放式演化。它先检验一个可证伪命题：
 
