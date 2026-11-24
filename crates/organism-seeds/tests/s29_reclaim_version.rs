@@ -4708,3 +4708,214 @@ fn s29_lifetime_complement_native(){
         pruned_setup_A={pruned_a} removed={removed:?} initial_used={initial_used} capacity={capacity} \
         start_A={} rows={rows:?}",installed.len(),branch_a.unwrap());
 }
+
+
+// Own-task quota feedback pilot: both policies actually attempt the same
+// synthetic task, inherit the same paid dry-run memory, and differ only
+// on whether a true Quota receipt can override that negative memory.
+fn quota_task_root(override_cooldown:bool)->Program{
+    let mut p=dry_run_cooldown_root();
+    let f=&mut p.functions[0];
+    let entry=f.blocks.iter_mut().find(|b|b.id=="entry").unwrap();
+    let task_ops=||vec![
+        Instruction{id:10,op:lit(S29_LIFE_TASK.as_bytes())},
+        Instruction{id:11,op:lit(&[0x55;280])},
+        Instruction{id:12,op:Op::ConstU32(u32::MAX)}
+    ];
+    let code_ops=|expected:&[u8]|vec![
+        Instruction{id:20,op:lit(b"code")},
+        Instruction{id:21,op:Op::JsonFieldString(2,20)},
+        Instruction{id:22,op:lit(expected)},
+        Instruction{id:23,op:Op::EqBytes(21,22)}
+    ];
+    let reply=||vec![Param{id:2,ty:Type::Bytes}];
+    entry.instructions=task_ops();
+    entry.terminator=Terminator::Yield{
+        call:WorldCall::Write,args:vec![10,11,12],
+        next:"task_initial_reply".into(),next_args:vec![]
+    };
+    let round=f.blocks.iter_mut().find(|b|b.id=="round_header").unwrap();
+    round.terminator=Terminator::RepeatBounded{
+        limit:1,body:"probe_memory".into(),body_args:vec![],
+        done:"failed".into(),done_args:vec![]
+    };
+    let success=f.blocks.iter_mut().find(|b|b.id=="succeeded").unwrap();
+    success.instructions.clear();
+    success.terminator=Terminator::Jump{
+        target:"task_retry".into(),args:vec![]
+    };
+    if override_cooldown{
+        let memory=f.blocks.iter_mut().find(|b|b.id=="probe_memory_exists").unwrap();
+        if let Terminator::Branch{if_true,true_args,..}=&mut memory.terminator{
+            assert_eq!(if_true,"cooldown_reset");
+            *if_true="start_uncached".into();
+            true_args.clear();
+        }else{panic!("expected real negative memory decision");}
+    }
+    f.blocks.extend([
+        Block{
+            id:"task_initial_reply".into(),params:reply(),
+            instructions:code_ops(b"Ok"),
+            terminator:Terminator::Branch{
+                condition:23,if_true:"task_ok".into(),true_args:vec![],
+                if_false:"task_quota".into(),false_args:vec![2]
+            }
+        },
+        Block{
+            id:"task_quota".into(),params:reply(),
+            instructions:code_ops(b"Quota"),
+            terminator:Terminator::Branch{
+                condition:23,if_true:"round_header".into(),true_args:vec![],
+                if_false:"failed".into(),false_args:vec![]
+            }
+        },
+        Block{
+            id:"task_retry".into(),params:vec![],instructions:task_ops(),
+            terminator:Terminator::Yield{
+                call:WorldCall::Write,args:vec![10,11,12],
+                next:"task_retry_reply".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"task_retry_reply".into(),params:reply(),
+            instructions:code_ops(b"Ok"),
+            terminator:Terminator::Branch{
+                condition:23,if_true:"task_ok".into(),true_args:vec![],
+                if_false:"failed".into(),false_args:vec![]
+            }
+        },
+        Block{
+            id:"task_ok".into(),params:vec![],
+            instructions:vec![Instruction{id:1,op:Op::ConstU32(1)}],
+            terminator:Terminator::Return{value:1}
+        }
+    ]);
+    p.validate().expect("typed one-opportunity own task feedback policy");
+    p
+}
+fn quota_wait_next_grant(w:&mut World){
+    let epoch=w.state.config.epoch_length;
+    let next=(w.state.step/epoch+1)*epoch;
+    while w.state.step<=next{w.tick(None);}
+    assert_eq!(w.state.nodes[&NodeId::A].gas_available,
+        w.state.nodes[&NodeId::A].gas_per_epoch);
+}
+#[test]
+#[ignore="frozen seed129 paired own-task quota override pilot"]
+fn s29_task_quota_override_native(){
+    let arm=std::env::var("OCEE_S29_TASK_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"RELEASED"|"PINNED"|"SPACE"));
+    let (mut base,versions,target,previous_roots,registered)=lifetime_setup(129);
+    // Preinstall both researcher-authored policy programs and both pins in
+    // the same physical world. Capacity is a fixture constraint, not a VM gift.
+    let before=spend(&base);
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+65_536;
+    let mut roots=Vec::new();
+    for (i,enable) in [false,true].into_iter().enumerate(){
+        let p=quota_task_root(enable);
+        let raw=p.canonical_bytes();
+        assert!(!raw.windows(64).any(|x|x==target.as_bytes()));
+        let hash=p.content_hash().unwrap();
+        put(&mut base,version_key(&hash),raw);
+        put(&mut base,format!("/self/pins/s29-quota-root-{i}"),hash.as_bytes().to_vec());
+        roots.push(hash);
+    }
+    assert_ne!(roots[0],roots[1]);
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    quota_wait_next_grant(&mut base);
+    lifetime_set_active(&mut base,&previous_roots[1]);
+    let dry_start=base.state.step;
+    let mut dry_probe=LifetimeIndexProbe::default();
+    lifetime_advance_to_action(&mut base,"DRY_MARK",80,&mut dry_probe);
+    assert_eq!(paid_memory_value(&base),(b"1".to_vec(),0));
+    assert!(base.audit.iter().any(|e|e.step>=dry_start &&
+        matches!(&e.action,Some(Action::IndexVersionRefs{..}))&&e.result.code==Code::Ok));
+    assert!(base.audit.iter().any(|e|e.step>=dry_start &&
+        matches!(&e.action,Some(Action::ReclaimIndexedVersion{..}))&&e.result.code==Code::Conflict));
+    assert_eq!(lifetime_extra_versions(&base).len(),versions.len()+2);
+    let target_idx=versions.iter().position(|x|x==&target).unwrap();
+    let target_len=base.state.objects[&version_key(&target)].bytes.len() as u64;
+    let pin=format!("/self/pins/s29-dry-{target_idx}");
+    alter(&mut base,&pin,if arm=="RELEASED"{vec![b'-';64]}else{target.as_bytes().to_vec()},0);
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    let free=if arm=="SPACE"{512}else{195};
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+free;
+    quota_wait_next_grant(&mut base);
+    let end=spend(&base);
+    let base_hash=base.state_hash();
+    let original=lifetime_extra_versions(&base);
+    let mut start_a=None;
+    let mut common_start=None;
+    for (i,root) in roots.iter().enumerate(){
+        let label=if i==0{"FIXED_COOLDOWN"}else{"QUOTA_OVERRIDE"};
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        lifetime_set_active(&mut w,root);
+        let start=w.state.step;
+        let a=w.state.nodes[&NodeId::A].gas_available;
+        if let Some(prev)=start_a{assert_eq!(a,prev);}else{start_a=Some(a);}
+        if let Some(prev)=common_start{assert_eq!(start,prev);}else{common_start=Some(start);}
+        let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+        let mut peak=LifetimeIndexProbe::default();
+        peak.sample(&w);
+        let mut replay_peak=peak.clone();
+        lifetime_finish_remaining(&mut w,&mut peak,start+90);
+        lifetime_finish_remaining(&mut replay,&mut replay_peak,start+90);
+        assert_eq!(peak,replay_peak);
+        assert_eq!(w.snapshot_json(),replay.snapshot_json());
+        assert_eq!(w.audit,replay.audit);
+        let success=arm=="SPACE"||(arm=="RELEASED"&&i==1);
+        let mut tasks=Vec::new();
+        let mut vm=0u64;let mut action=0u64;let mut task_a=0u64;
+        let mut gc=0u64;let mut indexes=0usize;let mut conflicts=0usize;
+        let mut successful_gc_step=None;
+        for e in w.audit.iter().filter(|e|e.step>=start){
+            vm+=e.result.vm_gas_charged;action+=e.result.gas_charged;
+            if let Some(Action::Write{key,bytes,..})=&e.action{
+                if key==S29_LIFE_TASK{
+                    assert_eq!(bytes,&vec![0x55;280]);
+                    tasks.push((e.step,e.result.code,e.result.gas_charged));
+                    task_a+=e.result.gas_charged;
+                }
+            }
+            if matches!(&e.action,Some(Action::IndexVersionRefs{..})){
+                assert_eq!(e.result.code,Code::Ok);indexes+=1;
+            }
+            if let Some(Action::ReclaimIndexedVersion{program_hash,..})=&e.action{
+                if e.result.code==Code::Ok{
+                    assert_eq!(program_hash,&target);
+                    gc+=u64::from_le_bytes(e.result.payload.as_slice().try_into().unwrap());
+                    successful_gc_step=Some(e.step);
+                }else if e.result.code==Code::Conflict{conflicts+=1;}
+            }
+        }
+        assert_eq!(tasks.len(),if arm=="RELEASED"&&i==1{2}else{1});
+        assert_eq!(tasks[0].1,if arm=="SPACE"{Code::Ok}else{Code::Quota});
+        if tasks.len()==2{
+            assert_eq!(tasks[1].1,Code::Ok);
+            assert!(tasks[0].0<successful_gc_step.unwrap()&&successful_gc_step.unwrap()<tasks[1].0);
+        }
+        assert_eq!(indexes,if i==1&&arm!="SPACE"{1}else{0});
+        assert_eq!(gc,if arm=="RELEASED"&&i==1{target_len}else{0});
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(if success{1}else{0})));
+        assert_eq!(w.state.objects.contains_key(S29_LIFE_TASK),success);
+        if success{assert_eq!(w.state.objects[S29_LIFE_TASK].bytes,vec![0x55;280]);}
+        for h in &original{
+            assert_eq!(w.state.objects.contains_key(&version_key(h)),
+                !(gc>0&&h==&target));
+        }
+        assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+        let memory=paid_memory_value(&w);
+        if arm=="SPACE"{assert_eq!(memory,(b"1".to_vec(),0));}
+        else if i==0{assert_eq!(memory,(b"0".to_vec(),1));}
+        else if arm=="PINNED"{assert_eq!(memory,(b"1".to_vec(),1));}
+        else{assert_eq!(memory,(b"1".to_vec(),0));}
+        assert_eq!(b_gas(&w),20);
+        println!("S29_QUOTA_ROW arm={arm} policy={label} root={root} start={start} tasks={tasks:?} success={success} VM_A={vm} world_A={action} task_A={task_a} non_task_action_A={} non_task_total_A={} indexes={indexes} conflicts={conflicts} GC_B={gc} memory={memory:?} storage_peak={} index_peak_unbilled={} replay=true B=20",
+            action-task_a,vm+action-task_a,peak.storage_peak,peak.post_tick_peak);
+    }
+    println!("S29_QUOTA_DONE arm={arm} seed=129 base={base_hash} target={target} target_B={target_len} free={free} start_A={} setup_VM_A={} setup_world_A={} roots={roots:?}",
+        start_a.unwrap(),end.0-before.0,end.1-before.1);
+}
