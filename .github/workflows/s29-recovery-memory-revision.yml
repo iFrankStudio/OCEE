@@ -1,9 +1,6 @@
 name: S29 Recovery Memory Revision
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-recovery-memory-revision.yml'
+  # Native evidence verified; manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-recovery-revision-${{ github.ref }}
