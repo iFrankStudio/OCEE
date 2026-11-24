@@ -484,4 +484,161 @@ mod autonomous_pilot{
         assert_eq!(w.state.objects[OFFER].version,2);
         println!("S29_CHAIN_NEGATIVE duplicate=true overcommitted=true wrong_no_advance=true stale_no_credit=true epoch_preserved=true");
     }
+
+    fn liquidity_root(estimate:bool)->Program{
+        let mut p=chain_root();let f=&mut p.functions[0];
+        let yields=f.blocks.iter().filter_map(|b|match &b.terminator{
+            Terminator::Yield{next,..}=>Some(next.clone()),_=>None
+        }).collect::<std::collections::BTreeSet<_>>();
+        for b in &mut f.blocks{
+            if b.id=="entry"{
+                b.instructions.push(Instruction{id:91,op:Op::ConstU32(0)});
+            }else{
+                let at=if yields.contains(&b.id){b.params.len()-1}else{b.params.len()};
+                b.params.insert(at,Param{id:91,ty:Type::U32});
+            }
+            match &mut b.terminator{
+                Terminator::Jump{args,..}=>args.push(91),
+                Terminator::Branch{true_args,false_args,..}=>{true_args.push(91);false_args.push(91);},
+                Terminator::Yield{next_args,..}=>next_args.push(91),
+                Terminator::RepeatBounded{body_args,done_args,..}|
+                Terminator::RepeatScoped{body_args,done_args,..}=>{body_args.push(91);done_args.push(91);},
+                Terminator::Return{..}=>{}
+            }
+        }
+        let ctx=vec![Param{id:90,ty:Type::U32},Param{id:91,ty:Type::U32}];
+        let mut initial_reply=ctx.clone();initial_reply.push(Param{id:2,ty:Type::Bytes});
+        let entry=f.blocks.iter_mut().find(|b|b.id=="entry").unwrap();
+        entry.instructions.push(Instruction{id:10,op:literal(b"/sys/resource-status")});
+        entry.terminator=Terminator::Yield{call:WorldCall::Read,args:vec![10],next:"liquidity_initial".into(),next_args:vec![90,91]};
+        let credit=f.blocks.iter_mut().find(|b|b.id=="chain_credit").unwrap();
+        credit.terminator=Terminator::Branch{condition:13,if_true:"failed".into(),true_args:vec![90,91],
+            if_false:"liquidity_read".into(),false_args:vec![90,91,11]};
+        // The old increment is replaced by a measured-interval decision.
+        f.blocks.retain(|b|b.id!="chain_advance");
+        let mut cost_ctx=ctx.clone();cost_ctx.push(Param{id:92,ty:Type::U32});
+        let mut cost_reply=cost_ctx.clone();cost_reply.push(Param{id:2,ty:Type::Bytes});
+        let measured=|id:u32|vec![
+            Instruction{id:10,op:literal(b"payload")},Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:12,op:literal(b"a_available")},Instruction{id,op:Op::JsonFieldU32(11,12)}
+        ];
+        let mut measure=measured(13);
+        measure.extend([
+            Instruction{id:14,op:Op::Add(91,92)},Instruction{id:15,op:Op::Sub(14,13)},
+            Instruction{id:16,op:Op::ConstU32(0)},Instruction{id:17,op:Op::EqU32(15,16)},
+            Instruction{id:18,op:Op::ConstU32(1)},Instruction{id:19,op:Op::Add(90,18)}
+        ]);
+        let mut compare_ctx=ctx.clone();compare_ctx.push(Param{id:92,ty:Type::U32});
+        f.blocks.extend([
+            Block{id:"liquidity_initial".into(),params:initial_reply,instructions:measured(13),
+                terminator:Terminator::Jump{target:"chain_header".into(),args:vec![90,13]}},
+            Block{id:"liquidity_read".into(),params:cost_ctx,instructions:vec![Instruction{id:10,op:literal(b"/sys/resource-status")}],
+                terminator:Terminator::Yield{call:WorldCall::Read,args:vec![10],next:"liquidity_measure".into(),next_args:vec![90,91,92]}},
+            Block{id:"liquidity_measure".into(),params:cost_reply,instructions:measure,
+                terminator:Terminator::Branch{condition:17,if_true:"failed".into(),true_args:vec![19,13],
+                    if_false:"liquidity_compare".into(),false_args:vec![19,13,15]}},
+            Block{id:"liquidity_compare".into(),params:compare_ctx,instructions:vec![
+                Instruction{id:10,op:Op::Div(91,92)},Instruction{id:11,op:Op::ConstU32(0)},
+                Instruction{id:12,op:Op::EqU32(10,11)}
+            ],terminator:if estimate{Terminator::Branch{condition:12,if_true:"failed".into(),true_args:vec![90,91],
+                if_false:"chain_header".into(),false_args:vec![90,91]}}
+                else{Terminator::Jump{target:"chain_header".into(),args:vec![90,91]}}}
+        ]);
+        p.validate().expect("typed measured liquidity");p
+    }
+    #[test]
+    fn s29_measured_liquidity_native(){
+        for first in [1,1000]{
+            let mut totals=Vec::new();
+            for estimate in [false,true]{
+                let p=liquidity_root(estimate);let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+                let tasks=chain_tasks(first);
+                let mut w=World::with_transform_sequence(Config{seed:129,epoch_length:16,
+                    a_gas_per_epoch:12000,..Config::default()},tasks.clone(),1400).unwrap();
+                for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                    let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                    assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+                }
+                let paid=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+                w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                    kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:384}});
+                while w.state.step<16{w.tick(None);}
+                let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+                let mut balance=384u64;let mut remaining=1400u64;let mut fees=0u64;
+                let mut received=0u64;let mut settlements=Vec::new();let mut reads=Vec::new();let mut gas=0;
+                let mut sensors=Vec::new();let mut intervals=Vec::new();let mut last_sensor:Option<(u64,u64,u64)>=None;
+                for _ in 0..12{
+                    let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                    let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                    let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                    assert_eq!(r,rr);
+                    let fee=r.gas_charged+r.vm_gas_charged;
+                    balance=balance.checked_sub(fee).unwrap().checked_add(r.a_credited).unwrap();
+                    remaining=remaining.checked_sub(r.a_credited).unwrap();
+                    received+=r.a_credited;fees+=fee;
+                    assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                    let escrow=w.state.transform_escrow.as_ref().unwrap();
+                    assert_eq!(remaining,escrow.remaining_a);assert_eq!(balance+remaining,1784-fees);
+                    let e=w.audit.last().unwrap();
+                    if r.code==Code::Gas{gas+=1;}
+                    if matches!(&e.action,Some(Action::Read{key,..}) if key=="/sys/resource-status")&&r.code==Code::Ok{
+                        assert_eq!(r.gas_charged,2);
+                        let v:serde_json::Value=serde_json::from_slice(&r.payload).unwrap();
+                        assert_eq!(v["a_available"].as_u64(),Some(balance));
+                        assert_eq!(v["capacity"].as_u64(),Some(w.state.nodes[&NodeId::A].storage_capacity));
+                        assert_eq!(v["used"].as_u64(),Some(w.state.organisms[&ORGANISM_ID].storage_used));
+                        if let Some((old,credit,spent))=last_sensor{
+                            let cost=old+(received-credit)-balance;
+                            assert_eq!(cost,fees-spent);assert!(cost>0);
+                            intervals.push((cost,balance,balance/cost));
+                        }
+                        last_sensor=Some((balance,received,fees));sensors.push((e.step,balance));
+                    }
+                    if matches!(&e.action,Some(Action::Read{key,..}) if key==OFFER)&&r.code==Code::Ok{
+                        let slot=settlements.len();
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&r.payload).unwrap(),tasks[slot].0);
+                        reads.push((e.step,slot));
+                    }
+                    if r.a_credited>0{
+                        let slot=settlements.len();let (task,price)=&tasks[slot];
+                        let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                        assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,20);
+                        assert!(reads.iter().any(|(step,i)|*step<e.step&&*i==slot));
+                        assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                        settlements.push((e.step,slot,*price));
+                        let ledger=&escrow.sequence.as_ref().unwrap().settled;
+                        assert_eq!(ledger.len(),slot+1);
+                        assert_eq!(ledger[slot],TransformSettlement{outcome_key:key,offer_version:slot as u64,step:e.step,price_a:*price});
+                    }
+                }
+                println!("S29_LIQUIDITY first={first} estimate={estimate} root={hash} root_B={} install_A={paid} settlements={settlements:?} reads={reads:?} sensors={sensors:?} intervals={intervals:?} credit={received} fees={fees} final_A={balance} payer_A={remaining} gas={gas} return={:?} replay=true",raw.len(),w.state.organisms[&ORGANISM_ID].last_return);
+                assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+                let expected=if first==1000{3}else{1};
+                assert_eq!(settlements.len(),expected);assert_eq!(sensors.len(),expected+1);
+                assert_eq!(received,if first==1000{1400}else{1});
+                for (slot,(task,_)) in tasks.iter().enumerate(){
+                    let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                    assert_eq!(w.state.objects.contains_key(&key),slot<expected);
+                    if slot<expected{
+                        let o=&w.state.objects[&key];assert_eq!(o.owner,ORGANISM_ID);assert_eq!(o.version,0);
+                        assert_eq!(o.bytes.len(),280);assert_eq!(o.bytes[0],task.held_out_input.len() as u8);
+                        assert_eq!(&o.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                        assert!(o.bytes[33..].iter().all(|b|*b==0x55));
+                    }
+                }
+                if first==1000{
+                    assert_eq!(gas,0);assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(3)));
+                    assert!(intervals.iter().all(|x|x.2>0));
+                }else{
+                    assert_eq!(intervals[0].2,0);
+                    if estimate{
+                        assert_eq!(gas,0);assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(1)));
+                        assert_eq!(reads.len(),1);
+                    }else{assert!(gas>0);}
+                }
+                totals.push((balance,fees,paid));
+            }
+            if first==1{assert!(totals[1].0>totals[0].0);}
+        }
+    }
 }
