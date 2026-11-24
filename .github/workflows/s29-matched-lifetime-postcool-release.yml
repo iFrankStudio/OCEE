@@ -1,9 +1,7 @@
 name: S29 Matched Post-Cooldown Release Task Control
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-matched-lifetime-postcool-release.yml'
+  # Fixed-Len baseline post-cooldown tape was 1/3 at #45308748855; archived red.
+  # Replay manually only; do not fan out historical expensive P2 jobs.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-postcool-release-${{ github.ref }}
