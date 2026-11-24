@@ -194,3 +194,6 @@ Initial compile-only failure [#44991946675](https://github.com/iFrankStudio/OCEE
 
 ## 2026-11-24 — Own-task quota override native pilot
 [Run #45318054188](https://github.com/iFrankStudio/OCEE/actions/runs/45318054188) @716a5109 completed/success 3/3; each native job 1 passed/0 failed. RELEASED actual same-VM retry Ok at step4108 after initial Quota step4099 and true GC276B; PINNED extra3609A and no task; SPACE both immediate Ok. [Protocol and logs summary](./experiments/E001/DEV-S29-TASK-QUOTA-OVERRIDE.md). Restore workflow manual-only. No full workspace regression.
+
+## 2026-11-24 — Earned history and recovery revision
+Native [45318793560](https://github.com/iFrankStudio/OCEE/actions/runs/45318793560) @ac986f79 2/2 and [45319202821](https://github.com/iFrankStudio/OCEE/actions/runs/45319202821) @9681065a 3/3 all success, exact logs archived in the respective DEV reports. Narrow tests only; restore both workflows manual-only. No full workspace regression.
