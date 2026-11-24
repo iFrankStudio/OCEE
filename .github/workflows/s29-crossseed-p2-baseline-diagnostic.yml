@@ -1,9 +1,7 @@
 name: S29 Frozen Three-Seed P2 Selected-Tool Baseline Diagnostic
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-crossseed-p2-baseline-diagnostic.yml'
+  # True unmodified seed-specific P2 oracle diagnosis was 3/3 at #45309166319.
+  # Replay manually only; do not fan out historical expensive P2 jobs.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-crossseed-baseline-${{ github.ref }}
