@@ -5169,3 +5169,188 @@ fn s29_earned_task_history_native(){
     println!("S29_HISTORY_DONE arm={arm} seed=129 base={base_hash} target={target} target_B={target_len} roots={roots:?} install_VM_A={} install_world_A={} normalized_objects_match_except_earned_memory=true",
         install_spend.0-initial_spend.0,install_spend.1-initial_spend.1);
 }
+
+
+// Recovery revision does not reinterpret the already committed task as a
+// failure if the separately metered history update loses its CAS.
+fn recovery_revision_root()->Program{
+    let mut p=quota_task_root(true);
+    let f=&mut p.functions[0];
+    let retry=f.blocks.iter_mut().find(|b|b.id=="task_retry_reply").unwrap();
+    if let Terminator::Branch{if_true,..}=&mut retry.terminator{
+        assert_eq!(if_true,"task_ok");*if_true="revision_read".into();
+    }else{panic!("must follow real successful retry");}
+    let reply=||vec![Param{id:2,ty:Type::Bytes}];
+    f.blocks.extend([
+        Block{id:"revision_read".into(),params:vec![],
+            instructions:vec![Instruction{id:10,op:lit(S29_DRY_META.as_bytes())}],
+            terminator:Terminator::Yield{call:WorldCall::Read,args:vec![10],
+                next:"revision_read_reply".into(),next_args:vec![]}},
+        Block{id:"revision_read_reply".into(),params:reply(),
+            instructions:vec![
+                Instruction{id:20,op:lit(b"code")},
+                Instruction{id:21,op:Op::JsonFieldString(2,20)},
+                Instruction{id:22,op:lit(b"Ok")},
+                Instruction{id:23,op:Op::EqBytes(21,22)}
+            ],
+            terminator:Terminator::Branch{condition:23,if_true:"revision_parse".into(),
+                true_args:vec![2],if_false:"task_ok".into(),false_args:vec![]}},
+        Block{id:"revision_parse".into(),params:reply(),instructions:vec![
+            Instruction{id:10,op:lit(b"payload")},
+            Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:12,op:lit(b"bytes")},
+            Instruction{id:13,op:Op::JsonFieldBytes(11,12)},
+            Instruction{id:14,op:lit(b"version")},
+            Instruction{id:15,op:Op::JsonFieldU32(11,14)},
+            Instruction{id:16,op:lit(b"1")},
+            Instruction{id:17,op:Op::EqBytes(13,16)}
+        ],terminator:Terminator::Branch{condition:17,if_true:"revision_cas".into(),
+            true_args:vec![15],if_false:"revision_zero".into(),false_args:vec![13,15]}},
+        Block{id:"revision_zero".into(),params:vec![
+            Param{id:1,ty:Type::Bytes},Param{id:2,ty:Type::U32}],
+            instructions:vec![Instruction{id:10,op:lit(b"0")},
+                Instruction{id:11,op:Op::EqBytes(1,10)}],
+            terminator:Terminator::Branch{condition:11,if_true:"revision_cas".into(),
+                true_args:vec![2],if_false:"task_ok".into(),false_args:vec![]}},
+        Block{id:"revision_cas".into(),params:vec![Param{id:1,ty:Type::U32}],
+            instructions:vec![
+                Instruction{id:10,op:lit(S29_DRY_KEY.as_bytes())},
+                Instruction{id:11,op:lit(b"0")}],
+            terminator:Terminator::Yield{call:WorldCall::Write,args:vec![10,11,1],
+                next:"revision_cas_reply".into(),next_args:vec![]}},
+        Block{id:"revision_cas_reply".into(),params:reply(),instructions:vec![],
+            terminator:Terminator::Jump{target:"task_ok".into(),args:vec![]}}
+    ]);
+    p.validate().expect("bounded typed positive recovery CAS");
+    p
+}
+fn recovery_revision_episode(w:&mut World,race:bool,target:&str)
+    ->(HistoryReceiptMetrics,LifetimeIndexProbe,Option<(u64,u64)>){
+    let start=w.state.step;
+    let horizon=start+90;
+    let mut peak=LifetimeIndexProbe::default();
+    peak.sample(w);
+    let mut exogenous=None;
+    while w.state.step<horizon && !w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().is_some_and(|c|c.finished){
+        let r=w.tick_autonomous(ORGANISM_ID);peak.sample(w);
+        assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        if race && exogenous.is_none() && w.state.objects.contains_key(S29_LIFE_TASK)
+            && matches!(&w.audit.last().unwrap().action,
+                Some(Action::Read{key,..}) if key==S29_DRY_META)
+        {
+            assert_eq!(r.code,Code::Ok);
+            assert_eq!(paid_memory_value(w),(b"1".to_vec(),0));
+            let step=w.state.step;
+            let r=lifetime_external_write(w,S29_DRY_KEY,b"1".to_vec(),Some(0),&mut peak);
+            assert_eq!(r.code,Code::Ok);
+            assert!(r.gas_charged>0);
+            exogenous=Some((step,r.gas_charged));
+        }
+    }
+    assert!(w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().is_some_and(|c|c.finished));
+    lifetime_pad_to(w,horizon,&mut peak);
+    assert_eq!(exogenous.is_some(),race);
+    assert_eq!(b_gas(w),20);
+    (history_measure(w,start,S29_LIFE_TASK,target),peak,exogenous)
+}
+#[test]
+#[ignore="frozen actual recovery memory revision and stale CAS"]
+fn s29_recovery_memory_revision_native(){
+    let arm=std::env::var("OCEE_S29_REVISION_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"RELEASED"|"PINNED"|"STALE_CAS"));
+    let (mut base,versions,target,old_roots,registered)=lifetime_setup(129);
+    let before=spend(&base);
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+65_536;
+    let mut roots=Vec::new();
+    for (i,p) in [quota_task_root(true),recovery_revision_root()].into_iter().enumerate(){
+        let raw=p.canonical_bytes();
+        assert!(!raw.windows(64).any(|x|x==target.as_bytes()));
+        let h=p.content_hash().unwrap();
+        put(&mut base,version_key(&h),raw);
+        put(&mut base,format!("/self/pins/s29-revision-root-{i}"),h.as_bytes().to_vec());
+        roots.push(h);
+    }
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    quota_wait_next_grant(&mut base);
+    lifetime_set_active(&mut base,&old_roots[1]);
+    let dry_start=base.state.step;
+    let mut peak=LifetimeIndexProbe::default();
+    lifetime_advance_to_action(&mut base,"DRY_MARK",80,&mut peak);
+    assert_eq!(paid_memory_value(&base),(b"1".to_vec(),0));
+    assert!(base.audit.iter().any(|e|e.step>=dry_start&&
+        matches!(&e.action,Some(Action::IndexVersionRefs{..}))&&e.result.code==Code::Ok));
+    assert!(base.audit.iter().any(|e|e.step>=dry_start&&
+        matches!(&e.action,Some(Action::ReclaimIndexedVersion{..}))&&e.result.code==Code::Conflict));
+    let idx=versions.iter().position(|h|h==&target).unwrap();
+    let target_len=base.state.objects[&version_key(&target)].bytes.len() as u64;
+    let pin=format!("/self/pins/s29-dry-{idx}");
+    let released=arm!="PINNED";
+    alter(&mut base,&pin,if released{vec![b'-';64]}else{target.as_bytes().to_vec()},0);
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    quota_wait_next_grant(&mut base);
+    let base_hash=base.state_hash();
+    let after=spend(&base);
+    let installed=lifetime_extra_versions(&base);
+    let configs=if arm=="STALE_CAS"{vec![(1,false),(1,true)]}
+        else{vec![(0,false),(1,false)]};
+    let mut start_a=None;
+    let mut start_step=None;
+    for (i,race) in configs{
+        let root=&roots[i];
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        lifetime_set_active(&mut w,root);
+        let start=w.state.step;
+        let a=w.state.nodes[&NodeId::A].gas_available;
+        if let Some(prev)=start_a{assert_eq!(a,prev);}else{start_a=Some(a);}
+        if let Some(prev)=start_step{assert_eq!(start,prev);}else{start_step=Some(start);}
+        let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+        let (m,peak,exo)=recovery_revision_episode(&mut w,race,&target);
+        let (rm,rp,re)=recovery_revision_episode(&mut replay,race,&target);
+        assert_eq!(m,rm);assert_eq!(peak,rp);assert_eq!(exo,re);
+        assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+        assert_eq!(m.tasks[0].1,Code::Quota);
+        assert_eq!(m.tasks.len(),if released{2}else{1});
+        if released{assert_eq!(m.tasks[1].1,Code::Ok);}
+        assert_eq!(m.gc,if released{target_len}else{0});assert_eq!(m.indexes,1);
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(if released{1}else{0})));
+        assert_eq!(w.state.objects.contains_key(S29_LIFE_TASK),released);
+        for h in &installed{
+            assert_eq!(w.state.objects.contains_key(&version_key(h)),!(released&&h==&target));
+        }
+        assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+        let writes=m.memory_writes.iter().filter(|x|exo.map_or(true,|(step,_)|x.0!=step))
+            .collect::<Vec<_>>();
+        if !released{
+            assert_eq!(writes.len(),1);assert_eq!(writes[0].1,b"1");
+            assert_eq!(writes[0].2,Code::Ok);
+            assert_eq!(paid_memory_value(&w),(b"1".to_vec(),1));
+        }else if i==0{
+            assert!(writes.is_empty());
+            assert_eq!(paid_memory_value(&w),(b"1".to_vec(),0));
+        }else{
+            assert_eq!(writes.len(),1);
+            assert!(writes[0].0>m.tasks[1].0);
+            assert_eq!(writes[0].1,b"0");
+            if race{
+                assert_eq!(writes[0].2,Code::Conflict);
+                assert_eq!(paid_memory_value(&w),(b"1".to_vec(),1));
+            }else{
+                assert_eq!(writes[0].2,Code::Ok);
+                assert!(writes[0].3>0);
+                assert_eq!(paid_memory_value(&w),(b"0".to_vec(),1));
+            }
+        }
+        let exo_a=exo.map_or(0,|(_,fee)|fee);
+        println!("S29_REVISION_ROW arm={arm} policy={} race={race} root={root} start={start} metrics={m:?} exogenous={exo:?} non_task_A={} final_memory={:?} index_peak_unbilled={} storage_peak={} replay=true B=20",
+            if i==0{"STALE"}else{"REVISE"},m.vm+m.world-m.task_a-exo_a,paid_memory_value(&w),
+            peak.post_tick_peak,peak.storage_peak);
+    }
+    println!("S29_REVISION_DONE arm={arm} seed=129 base={base_hash} roots={roots:?} target={target} target_B={target_len} start_A={} setup_VM_A={} setup_world_A={}",
+        start_a.unwrap(),after.0-before.0,after.1-before.1);
+}
