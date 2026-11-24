@@ -5977,6 +5977,7 @@ fn offer_episode(w:&mut World,root:&str,pin:&str,target:&str,arrivals:bool)
 #[test]
 #[ignore="frozen public offer driven registered tool task pilot"]
 fn s29_public_offer_driven_native(){
+    use sha2::{Digest,Sha256};
     let arm=std::env::var("OCEE_S29_OFFER_ARM").unwrap();
     assert!(matches!(arm.as_str(),"ARRIVALS"|"DUPLICATE_ONLY"));
     let arrivals=arm=="ARRIVALS";
