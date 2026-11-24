@@ -1,0 +1,23 @@
+name: S29 Experience Transfer Limits
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-experience-transfer-limits.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [NEGATIVE_TRANSFER, ABSENT_EXPERIENCE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_EXPERIENCE_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_experience_transfer_limits_native -- --ignored --show-output

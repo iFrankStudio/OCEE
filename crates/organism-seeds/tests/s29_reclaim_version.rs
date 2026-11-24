@@ -7164,6 +7164,18 @@ fn experience_perception_root(use_experience:bool)->Program{
 #[test]
 #[ignore="frozen durable experience reuse versus ignored record"]
 fn s29_durable_perception_experience_native(){
+    durable_experience_impl("POSITIVE");
+}
+#[test]
+#[ignore="frozen negative transfer and naturally absent memory controls"]
+fn s29_experience_transfer_limits_native(){
+    let arm=std::env::var("OCEE_S29_EXPERIENCE_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"NEGATIVE_TRANSFER"|"ABSENT_EXPERIENCE"));
+    durable_experience_impl(&arm);
+}
+fn durable_experience_impl(arm:&str){
+    let absent=arm=="ABSENT_EXPERIENCE";
+    let negative=arm=="NEGATIVE_TRANSFER";
     let (mut base,_,target,_,registered)=lifetime_setup(129);
     let before=spend(&base);
     let roots=[false,true].into_iter().map(|enable|{
@@ -7183,6 +7195,7 @@ fn s29_durable_perception_experience_native(){
     quota_wait_next_grant(&mut base);
     let after=spend(&base);let inventory=lifetime_extra_versions(&base);
     let mut starts=Vec::new();
+    let mut absent_timeline=None;
     for (policy,(root,raw)) in roots.iter().enumerate(){
         let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
         for phase in 0..2{
@@ -7191,8 +7204,14 @@ fn s29_durable_perception_experience_native(){
             assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
             let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
             if policy==0{starts.push((start,start_a));}else{assert_eq!(starts[phase],(start,start_a));}
-            let tape=if phase==0{vec![(0,0),(7,1),(9,0)]}else{vec![(0,2),(9,3),(11,2)]};
-            let expected=if phase==0{vec![0,1]}else if policy==0{vec![2]}else{vec![2,3]};
+            let tape=if phase==0{
+                if absent{vec![(0,0)]}else{vec![(0,0),(7,1),(9,0)]}
+            }else if negative{vec![(0,2),(40,3)]}
+            else{vec![(0,2),(9,3),(11,2)]};
+            let expected=if phase==0{
+                if absent{vec![0]}else{vec![0,1]}
+            }else if absent||(negative&&policy==1)||(!negative&&policy==0){vec![2]}
+            else{vec![2,3]};
             let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
             let (peak,pubs,finished)=paced_episode(&mut w,root,&tape);
             let (rp,rpubs,rf)=paced_episode(&mut replay,root,&tape);
@@ -7212,8 +7231,8 @@ fn s29_durable_perception_experience_native(){
                         reads.push((e.step,slot));
                     },
                     Some(Action::Read{key,..}) if key==EXPERIENCE_KEY=>{
-                        assert_eq!(e.result.code,if phase==0{Code::NotFound}else{Code::Ok});
-                        if phase==1{assert_eq!(e.result.payload,b"1");assert_eq!(e.result.gas_charged,2);}
+                        assert_eq!(e.result.code,if phase==0||absent{Code::NotFound}else{Code::Ok});
+                        if phase==1&&!absent{assert_eq!(e.result.payload,b"1");assert_eq!(e.result.gas_charged,2);}
                         marker_reads.push(e.step);marker_a+=e.result.gas_charged;
                     },
                     Some(Action::Observe{..})=>{assert_eq!(e.result.code,Code::Ok);observations.push(e.step);},
@@ -7228,7 +7247,7 @@ fn s29_durable_perception_experience_native(){
                     Some(Action::Write{key,bytes,expected_version,..})=>{
                         assert_eq!(*expected_version,None);assert_eq!(e.result.code,Code::Ok);
                         if key==EXPERIENCE_KEY{
-                            assert_eq!(phase,0);assert_eq!(tasks.len(),2);assert_eq!(bytes,b"1");
+                            assert!(!absent);assert_eq!(phase,0);assert_eq!(tasks.len(),2);assert_eq!(bytes,b"1");
                             marker_writes.push(e.step);marker_a+=e.result.gas_charged;
                         }else{
                             let slot=expected[tasks.len()];
@@ -7243,24 +7262,37 @@ fn s29_durable_perception_experience_native(){
                 }
             }
             let latencies=tasks.iter().map(|(at,slot)|at-start-tape.iter().find(|(_,s)|s==slot).unwrap().0).collect::<Vec<_>>();
+            println!("S29_EXPERIENCE_ARM arm={arm} policy={policy} phase={phase}");
             println!("S29_EXPERIENCE policy={policy} phase={phase} root={root} root_B={} start={start} start_A={start_a} final_A={} finished={finished:?} return={:?} pubs={pubs:?} reads={reads:?} observes={observations:?} execs={execs:?} tasks={tasks:?} latency={latencies:?} marker_reads={marker_reads:?} marker_writes={marker_writes:?} marker_A={marker_a} VM_A={vm} world_A={world} task_A={task_a} non_task_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
                 raw.len(),w.state.nodes[&NodeId::A].gas_available,w.state.organisms[&ORGANISM_ID].last_return,
                 vm+world-task_a,after.0-before.0,after.1-before.1,peak.storage_peak,peak.post_tick_peak);
             assert!(finished.is_some());
             assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(4*expected.len() as u32+1)));
             assert_eq!(execs.len(),expected.len());assert_eq!(tasks.len(),expected.len());
-            assert_eq!(marker_reads,vec![start]);assert_eq!(marker_writes.len(),usize::from(phase==0));
-            let marker=&w.state.objects[EXPERIENCE_KEY];assert_eq!(marker.version,0);assert_eq!(marker.bytes,b"1");
+            assert_eq!(marker_reads,vec![start]);assert_eq!(marker_writes.len(),usize::from(phase==0&&!absent));
+            if absent{assert!(!w.state.objects.contains_key(EXPERIENCE_KEY));}
+            else{let marker=&w.state.objects[EXPERIENCE_KEY];assert_eq!(marker.version,0);assert_eq!(marker.bytes,b"1");}
             for slot in 0..4{
                 let key=format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8);
-                let exists=slot<2||phase==1&&expected.contains(&slot);
+                let exists=slot<if absent{1}else{2}||phase==1&&expected.contains(&slot);
                 assert_eq!(w.state.objects.contains_key(&key),exists);
                 if exists{let o=&w.state.objects[&key];assert_eq!(o.version,0);assert_bound_artifact(&o.bytes,slot);}
             }
             for h in &inventory{assert!(w.state.objects.contains_key(&version_key(h)));}
             assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
             assert!(!w.state.objects.contains_key(S29_DRY_KEY));
-            if phase==1&&policy==1{assert!(observations.is_empty());}
+            if phase==1&&policy==1&&!absent{assert!(observations.is_empty());}
+            if phase==1&&negative{
+                if policy==1{assert!(finished.unwrap()<start+40);}
+                else{assert!(reads.iter().any(|(_,s)|*s==3));}
+            }
+            if phase==1&&absent{
+                let timeline=w.audit.iter().filter(|e|e.step>=start)
+                    .map(|e|(e.step,e.action.clone(),e.result.code,e.result.payload.clone(),e.result.gas_charged))
+                    .collect::<Vec<_>>();
+                if policy==0{absent_timeline=Some(timeline);}
+                else{assert_eq!(timeline,*absent_timeline.as_ref().unwrap());}
+            }
         }
     }
 }
