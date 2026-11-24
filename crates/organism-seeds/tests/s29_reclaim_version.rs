@@ -6484,25 +6484,25 @@ fn assert_bound_artifact(bytes:&[u8],slot:usize){
 #[test]
 #[ignore="frozen durable receipt identity and continuation caching"]
 fn s29_content_bound_receipt_native(){
-    receipt_native_impl(32,false,false);
+    receipt_native_impl(32,false,false,false);
 }
 
 #[test]
 #[ignore="frozen bounded receipt polling budget revision"]
 fn s29_bounded_receipt_poll_native(){
-    receipt_native_impl(20,false,false);
+    receipt_native_impl(20,false,false,false);
 }
 
 #[test]
 #[ignore="original receipt cache independently observed"]
 fn s29_original_receipt_cache_native(){
-    receipt_native_impl(32,true,false);
+    receipt_native_impl(32,true,false,false);
 }
 
 #[test]
 #[ignore="frozen generic own-prefix receipt observation"]
 fn s29_paid_prefix_receipt_native(){
-    receipt_native_impl(32,false,true);
+    receipt_native_impl(32,false,true,false);
 }
 
 fn prefix_receipt_root(cache:bool)->Program{
@@ -6532,12 +6532,68 @@ fn prefix_receipt_root(cache:bool)->Program{
     p.validate().expect("typed generic prefix receipt verifier");p
 }
 
-fn receipt_native_impl(poll_limit:u32,cache_only:bool,prefix:bool){
+#[test]
+#[ignore="frozen exact public payload memo at unchanged sensing cadence"]
+fn s29_public_payload_memo_native(){
+    receipt_native_impl(32,false,true,true);
+}
+
+fn public_payload_memo_root()->Program{
+    let mut p=prefix_receipt_root(true);
+    let f=&mut p.functions[0];
+    let yields=f.blocks.iter().filter_map(|b|match &b.terminator{
+        Terminator::Yield{next,..}=>Some(next.clone()),_=>None
+    }).collect::<std::collections::BTreeSet<_>>();
+    for b in &mut f.blocks{
+        assert!(b.params.iter().all(|p|p.id!=94)&&b.instructions.iter().all(|i|i.id!=94));
+        if b.id=="entry"{b.instructions.push(Instruction{id:94,op:lit(b"")});}
+        else{
+            let pos=if yields.contains(&b.id){b.params.len()-1}else{b.params.len()};
+            b.params.insert(pos,Param{id:94,ty:Type::Bytes});
+        }
+        match &mut b.terminator{
+            Terminator::Jump{args,..}=>args.push(94),
+            Terminator::Branch{true_args,false_args,..}=>{true_args.push(94);false_args.push(94);},
+            Terminator::RepeatBounded{body_args,done_args,..}|
+            Terminator::RepeatScoped{body_args,done_args,..}=>{body_args.push(94);done_args.push(94);},
+            Terminator::Yield{next_args,..}=>next_args.push(94),
+            Terminator::Return{..}=>{}
+        }
+    }
+    let ctx=||vec![Param{id:99,ty:Type::U32},Param{id:97,ty:Type::Bytes},
+        Param{id:98,ty:Type::Bytes},Param{id:96,ty:Type::U32},Param{id:94,ty:Type::Bytes}];
+    let with_payload=||{let mut ps=ctx();ps.push(Param{id:11,ty:Type::Bytes});ps};
+    let b=f.blocks.iter_mut().find(|b|b.id=="offer_parse").unwrap();
+    assert_eq!(b.instructions.iter().map(|i|i.id).collect::<Vec<_>>(),vec![10,11,12,13,14]);
+    let parse_ops=b.instructions[2..].to_vec();
+    let mut parse_term=b.terminator.clone();
+    if let Terminator::Branch{true_args,false_args,..}=&mut parse_term{
+        assert_eq!(true_args.pop(),Some(94));assert_eq!(false_args.pop(),Some(94));
+        true_args.push(11);false_args.push(11);
+    }else{panic!("expected exact original offer parser");}
+    b.instructions.truncate(2);
+    b.instructions.push(Instruction{id:15,op:Op::EqBytes(11,94)});
+    b.terminator=Terminator::Branch{condition:15,if_true:"memo_check_status".into(),
+        true_args:vec![99,97,98,96,94,11],if_false:"memo_parse".into(),
+        false_args:vec![99,97,98,96,94,11]};
+    f.blocks.extend([
+        Block{id:"memo_check_status".into(),params:with_payload(),instructions:vec![
+            Instruction{id:10,op:Op::ConstU32(0)},Instruction{id:12,op:Op::EqU32(96,10)}
+        ],terminator:Terminator::Branch{condition:12,if_true:"memo_parse".into(),
+            true_args:vec![99,97,98,96,94,11],if_false:"offer_poll_header".into(),
+            false_args:vec![99,97,98,96,94]}},
+        Block{id:"memo_parse".into(),params:with_payload(),instructions:parse_ops,terminator:parse_term}
+    ]);
+    p.validate().expect("typed exact public payload memo");p
+}
+
+fn receipt_native_impl(poll_limit:u32,cache_only:bool,prefix:bool,memo:bool){
     let arm=std::env::var("OCEE_S29_RECEIPT_ARM").unwrap();
     assert!(matches!(arm.as_str(),"SPACE"|"REORDER"|"ID_CONFLICT"));
     let (mut base,_,target,_,registered)=lifetime_setup(129);
     let before=spend(&base);
-    let roots=(if prefix{[prefix_receipt_root(false),prefix_receipt_root(true)]}
+    let roots=(if memo{[prefix_receipt_root(true),public_payload_memo_root()]}
+        else if prefix{[prefix_receipt_root(false),prefix_receipt_root(true)]}
         else{[bound_receipt_root(false),bound_receipt_root(true)]}).into_iter()
         .map(|mut p|{
             if poll_limit!=32{
@@ -6565,6 +6621,7 @@ fn receipt_native_impl(poll_limit:u32,cache_only:bool,prefix:bool){
     let after=spend(&base);let base_hash=base.state_hash();
     let inventory=lifetime_extra_versions(&base);
     let mut measurements=Vec::new();
+    let mut baseline=Vec::new();
     for (policy,(root,raw)) in roots.iter().enumerate(){
         if cache_only&&policy==0{continue;}
         let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
@@ -6677,6 +6734,18 @@ fn receipt_native_impl(poll_limit:u32,cache_only:bool,prefix:bool){
             assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
             let ok_reads=lookups.iter().filter(|(_,_,c)|*c==Code::Ok).count();
             let non_task=vm+world-task_a;
+            if memo{
+                let timeline=w.audit.iter().filter(|e|e.step>=start)
+                    .map(|e|(e.step,e.action.clone(),e.result.code,e.result.payload.clone(),e.result.gas_charged))
+                    .collect::<Vec<_>>();
+                if policy==0{baseline.push((timeline,non_task));}
+                else{
+                    assert_eq!(timeline,baseline[phase].0,"exact world timeline must be preserved");
+                    assert!(non_task<baseline[phase].1,"memo must reduce cost at equal world trajectory");
+                }
+                println!("S29_PUBLIC_MEMO arm={arm} phase={phase} policy={policy} root_B={} non_task_A={non_task} VM_A={vm} world_A={world} task_A={task_a} final_A={} matched={}",
+                    raw.len(),w.state.nodes[&NodeId::A].gas_available,policy==1);
+            }
             if arm=="SPACE"{measurements.push((ok_reads,non_task));}
             if arm!="SPACE"{
                 // At least one real on-disk lookup of a repeated identity
@@ -6687,11 +6756,12 @@ fn receipt_native_impl(poll_limit:u32,cache_only:bool,prefix:bool){
                     key==&format!("{OFFER_OUTCOME}61")&&*code==Code::Ok));}
             }
             println!("S29_RECEIPT_DONE arm={arm} phase={phase} policy={} root={root} root_B={} base={base_hash} start={start} start_A={start_a} pubs={pubs:?} tasks={tasks:?} execs={execs:?} lookups={lookups:?} receipt_status={terminal} VM_A={vm} world_A={world} poll_A={poll_a} lookup_A={lookup_a} exec_A={exec_a} task_A={task_a} non_task_A={non_task} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
-                if policy==0{"VERIFY"}else{"CACHE"},raw.len(),after.0-before.0,after.1-before.1,
+                if memo{if policy==0{"CACHE_BASE"}else{"PUBLIC_MEMO"}}
+                else if policy==0{"VERIFY"}else{"CACHE"},raw.len(),after.0-before.0,after.1-before.1,
                 peak.storage_peak,peak.post_tick_peak);
         }
     }
-    if arm=="SPACE"&&!cache_only{
+    if arm=="SPACE"&&!cache_only&&!memo{
         assert_eq!(measurements.len(),2);
         assert!(measurements[1].0<measurements[0].0);
         assert!(measurements[1].1<measurements[0].1);
