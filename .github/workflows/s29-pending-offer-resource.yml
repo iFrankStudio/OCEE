@@ -1,0 +1,27 @@
+name: S29 Pending Offer Resource Retry
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-pending-offer-resource.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-pending-offer-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  pending-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [SPACE, NO_SPACE, ID_CONFLICT]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_PENDING_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native pending offer resource retry and duplicate controls
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_pending_offer_resource_native -- --ignored --show-output
