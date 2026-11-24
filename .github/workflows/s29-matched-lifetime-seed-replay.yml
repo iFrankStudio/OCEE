@@ -1,9 +1,7 @@
 name: S29 Matched Lifetime Three-Seed Replication and Index High-Water
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-matched-lifetime-seed-replay.yml'
+  # Initial fixed-Len multi-seed fixture was 2/6 at #45308566833; archived red.
+  # Replay manually only; do not fan out historical expensive P2 jobs.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-seed-replay-${{ github.ref }}
