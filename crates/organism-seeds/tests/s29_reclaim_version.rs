@@ -6085,3 +6085,226 @@ fn s29_public_offer_driven_native(){
     println!("S29_OFFER_DONE arm={arm} root={root} root_B={root_b} base={base} start={start} start_A={start_a} schedule={schedule_hash} publications={publications:?} reads={reads:?} execs={execs:?} tasks={tasks:?} marks={marks:?} indexes={indexes:?} gc_B={gc} VM_A={vm} world_A={world} poll_A={poll_a} exec_A={exec_a} task_A={task_a} external_A={external} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
         setup.0-before.0,setup.1-before.1,peak.storage_peak,peak.post_tick_peak);
 }
+
+
+// Distinguish attempted ID from actually committed artifact. Retained input
+// binds same-ID retry; real current space is paid and read, not guessed.
+fn pending_offer_root()->Program{
+    let mut p=public_offer_root();
+    let f=&mut p.functions[0];
+    let parse=f.blocks.iter_mut().find(|b|b.id=="offer_parse").unwrap();
+    if let Terminator::Branch{if_true,true_args,..}=&mut parse.terminator{
+        assert_eq!(if_true,"offer_poll_header");
+        *if_true="pending_same_input".into();*true_args=vec![99,97,98,11];
+    }else{panic!("expected actual same ID branch");}
+    let context=||vec![Param{id:99,ty:Type::U32},
+        Param{id:97,ty:Type::Bytes},Param{id:98,ty:Type::Bytes}];
+    let reply=||{
+        let mut v=context();v.push(Param{id:2,ty:Type::Bytes});v
+    };
+    f.blocks.extend([
+        Block{id:"pending_same_input".into(),params:reply(),instructions:vec![
+            Instruction{id:10,op:lit(b"held_out_input")},
+            Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:12,op:Op::EqBytes(11,97)}
+        ],terminator:Terminator::Branch{condition:12,if_true:"pending_artifact".into(),
+            true_args:vec![99,97,98],if_false:"offer_poll_header".into(),
+            false_args:vec![99,97,98]}},
+        Block{id:"pending_artifact".into(),params:context(),instructions:vec![
+            Instruction{id:10,op:lit(OFFER_OUTCOME.as_bytes())},
+            Instruction{id:11,op:Op::HexEncode(98)},
+            Instruction{id:12,op:Op::Concat(10,11)}
+        ],terminator:Terminator::Yield{call:WorldCall::Read,args:vec![12],
+            next:"pending_artifact_reply".into(),next_args:vec![99,97,98]}},
+        Block{id:"pending_artifact_reply".into(),params:reply(),instructions:vec![
+            Instruction{id:20,op:lit(b"code")},
+            Instruction{id:21,op:Op::JsonFieldString(2,20)},
+            Instruction{id:22,op:lit(b"NotFound")},
+            Instruction{id:23,op:Op::EqBytes(21,22)}
+        ],terminator:Terminator::Branch{condition:23,if_true:"pending_resources".into(),
+            true_args:vec![99,97,98],if_false:"offer_poll_header".into(),
+            false_args:vec![99,97,98]}},
+        Block{id:"pending_resources".into(),params:context(),
+            instructions:vec![Instruction{id:10,op:lit(b"/sys/resource-status")}],
+            terminator:Terminator::Yield{call:WorldCall::Read,args:vec![10],
+                next:"pending_resource_reply".into(),next_args:vec![99,97,98]}},
+        Block{id:"pending_resource_reply".into(),params:reply(),instructions:vec![
+            Instruction{id:20,op:lit(b"code")},
+            Instruction{id:21,op:Op::JsonFieldString(2,20)},
+            Instruction{id:22,op:lit(b"Ok")},
+            Instruction{id:23,op:Op::EqBytes(21,22)}
+        ],terminator:Terminator::Branch{condition:23,if_true:"pending_space".into(),
+            true_args:vec![99,97,98,2],if_false:"offer_poll_header".into(),
+            false_args:vec![99,97,98]}},
+        Block{id:"pending_space".into(),params:reply(),instructions:vec![
+            Instruction{id:10,op:lit(b"payload")},
+            Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:12,op:lit(b"capacity")},
+            Instruction{id:13,op:Op::JsonFieldU32(11,12)},
+            Instruction{id:14,op:lit(b"used")},
+            Instruction{id:15,op:Op::JsonFieldU32(11,14)},
+            Instruction{id:16,op:Op::Sub(13,15)},
+            Instruction{id:17,op:Op::ConstU32(280)},
+            Instruction{id:18,op:Op::Div(16,17)},
+            Instruction{id:19,op:Op::ConstU32(0)},
+            Instruction{id:20,op:Op::EqU32(18,19)}
+        ],terminator:Terminator::Branch{condition:20,if_true:"offer_poll_header".into(),
+            true_args:vec![99,97,98],if_false:"episode_task".into(),
+            false_args:vec![99,97,98]}}
+    ]);
+    p.validate().expect("typed same-ID pending recovery");
+    p
+}
+fn pending_offer_publish(w:&mut World,conflict:bool){
+    offer_publish(w,0);
+    if conflict{
+        let obj=w.state.objects.get_mut(OFFER_PUBLIC).unwrap();
+        let mut offer=offer_fixture(0);
+        offer.held_out_input=offer_fixture(1).held_out_input;
+        obj.bytes=serde_json::to_vec(&offer).unwrap();
+    }
+}
+fn pending_offer_episode(w:&mut World,root:&str,arm:&str)
+    ->(LifetimeIndexProbe,Vec<(u64,u64,u64,String)>){
+    let start=w.state.step;
+    let mut peak=LifetimeIndexProbe::default();peak.sample(w);
+    let mut publications=Vec::new();
+    while w.state.step<start+180{
+        let offset=w.state.step-start;
+        if offset==0 || offset==28{
+            if offset==28{
+                assert_eq!(paid_memory_value(w),(b"1".to_vec(),0));
+                if arm!="NO_SPACE"{
+                    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity+=512;
+                }
+            }
+            pending_offer_publish(w,offset==28&&arm=="ID_CONFLICT");
+            publications.push((w.state.step,w.state.objects[OFFER_PUBLIC].version,
+                w.state.nodes[&NodeId::A].storage_capacity,w.state_hash()));
+            peak.sample(w);
+        }
+        if w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished){
+            w.tick(None);peak.sample(w);
+        }else{
+            let r=w.tick_autonomous(ORGANISM_ID);peak.sample(w);
+            assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        }
+        assert_eq!(w.state.organisms[&ORGANISM_ID].active_program_hash.as_deref(),Some(root));
+    }
+    assert_eq!(b_gas(w),20);
+    (peak,publications)
+}
+#[test]
+#[ignore="frozen same-ID pending outcome and resource retry"]
+fn s29_pending_offer_resource_native(){
+    let arm=std::env::var("OCEE_S29_PENDING_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"SPACE"|"NO_SPACE"|"ID_CONFLICT"));
+    let (mut base,_,target,_,registered)=lifetime_setup(129);
+    let setup_before=spend(&base);
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+65_536;
+    let mut roots=Vec::new();
+    for (i,p) in [public_offer_root(),pending_offer_root()].into_iter().enumerate(){
+        let bytes=p.canonical_bytes();
+        assert!(!bytes.windows(64).any(|x|x==target.as_bytes()||x==registered.as_bytes()));
+        let h=p.content_hash().unwrap();
+        let len=bytes.len();
+        put(&mut base,version_key(&h),bytes);
+        put(&mut base,format!("/self/pins/s29-pending-root-{i}"),h.as_bytes().to_vec());
+        roots.push((h,len));
+    }
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    quota_wait_next_grant(&mut base);
+    let setup_after=spend(&base);let base_hash=base.state_hash();
+    let installed=lifetime_extra_versions(&base);
+    let key=format!("{OFFER_OUTCOME}61");
+    let input=offer_fixture(0).held_out_input;
+    let mut common_start=None;
+    for (i,(root,len)) in roots.iter().enumerate(){
+        let pending=i==1;
+        let success=pending&&arm=="SPACE";
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        lifetime_set_active(&mut w,root);
+        let start=w.state.step;
+        let start_a=w.state.nodes[&NodeId::A].gas_available;
+        if let Some(prev)=common_start{assert_eq!((start,start_a),prev);}
+        else{common_start=Some((start,start_a));}
+        let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+        let (peak,pubs)=pending_offer_episode(&mut w,root,&arm);
+        let (rp,rpubs)=pending_offer_episode(&mut replay,root,&arm);
+        assert_eq!(peak,rp);assert_eq!(pubs,rpubs);
+        assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(if success{2}else{1})));
+        let mut vm=0u64;let mut world=0u64;let mut task_a=0u64;
+        let mut poll_a=0u64;let mut lookup_a=0u64;let mut sensor_a=0u64;let mut exec_a=0u64;
+        let mut reads=0;let mut lookups=Vec::new();let mut sensors=Vec::new();
+        let mut execs=Vec::new();let mut tasks=Vec::new();let mut marks=Vec::new();
+        let mut indexes=0;
+        for e in w.audit.iter().filter(|e|e.step>=start){
+            vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+            match &e.action{
+                Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
+                    assert_eq!(e.result.code,Code::Ok);poll_a+=e.result.gas_charged;reads+=1;
+                    let mut expected=offer_fixture(0);
+                    if arm=="ID_CONFLICT"&&e.step>=start+28{
+                        expected.held_out_input=offer_fixture(1).held_out_input;
+                    }
+                    assert_eq!(serde_json::from_slice::<TransformTask>(&e.result.payload).unwrap(),expected);
+                },
+                Some(Action::Read{key:k,..}) if k==&key=>{
+                    assert!(pending);assert!(matches!(e.result.code,Code::Ok|Code::NotFound));
+                    lookup_a+=e.result.gas_charged;lookups.push((e.step,e.result.code));
+                },
+                Some(Action::Read{key,..}) if key=="/sys/resource-status"=>{
+                    assert_eq!(e.result.code,Code::Ok);sensor_a+=e.result.gas_charged;
+                    let p:serde_json::Value=serde_json::from_slice(&e.result.payload).unwrap();
+                    let free=p["capacity"].as_u64().unwrap()-p["used"].as_u64().unwrap();
+                    sensors.push((e.step,free));
+                },
+                Some(Action::Exec{program_hash,input:actual,..})=>{
+                    assert_eq!(program_hash,&registered);assert_eq!(actual,&input);
+                    assert_eq!(e.result.code,Code::Ok);
+                    assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),
+                        Value::U32(hidden_transform(129,&input)));
+                    execs.push(e.step);exec_a+=e.result.gas_charged;
+                },
+                Some(Action::Write{key:k,bytes,..})=>{
+                    assert_ne!(k,"/self/active");
+                    if k.starts_with(OFFER_OUTCOME){
+                        assert_eq!(k,&key);assert_eq!(bytes.len(),280);
+                        assert_eq!(bytes[0],hidden_transform(129,&input) as u8);
+                        assert!(bytes[1..].iter().all(|x|*x==0x55));
+                        tasks.push((e.step,e.result.code,e.result.gas_charged));task_a+=e.result.gas_charged;
+                    }else if k==S29_DRY_KEY{
+                        assert_eq!(e.result.code,Code::Ok);assert_eq!(bytes,b"1");
+                        marks.push(e.step);
+                    }
+                },
+                Some(Action::IndexVersionRefs{..})=>{
+                    assert_eq!(e.result.code,Code::Ok);indexes+=1;
+                },
+                Some(Action::ReclaimIndexedVersion{..})=>assert_eq!(e.result.code,Code::Conflict),
+                _=>{}
+            }
+        }
+        assert_eq!(tasks.len(),if success{2}else{1});assert_eq!(execs.len(),tasks.len());
+        assert_eq!(tasks[0].1,Code::Quota);assert_eq!(indexes,1);assert_eq!(marks.len(),1);
+        assert_eq!(paid_memory_value(&w),(b"1".to_vec(),0));
+        assert_eq!(w.state.objects.contains_key(&key),success);
+        if success{
+            assert_eq!(tasks[1].1,Code::Ok);assert!(tasks[1].0>=start+28);
+            assert!(sensors.iter().any(|(step,free)|*step>=start+28&&*step<execs[1]&&*free>=280));
+            assert!(lookups.iter().any(|(step,code)|*step>tasks[1].0&&*code==Code::Ok));
+        }
+        if pending&&arm=="NO_SPACE"{assert!(sensors.iter().all(|(_,free)|*free<280));}
+        if arm=="ID_CONFLICT"{assert!(execs.iter().all(|step|*step<start+28));}
+        if !pending{assert!(lookups.is_empty());assert_eq!(sensors.len(),1);}
+        for h in &installed{assert!(w.state.objects.contains_key(&version_key(h)));}
+        assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+        println!("S29_PENDING_DONE arm={arm} policy={} root={root} root_B={len} base={base_hash} start={start} start_A={start_a} publications={pubs:?} reads={reads} lookups={lookups:?} sensors={sensors:?} execs={execs:?} tasks={tasks:?} marks={marks:?} VM_A={vm} world_A={world} poll_A={poll_a} lookup_A={lookup_a} sensor_A={sensor_a} exec_A={exec_a} task_A={task_a} non_task_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
+            if pending{"PENDING"}else{"LAST_ID"},vm+world-task_a,setup_after.0-setup_before.0,
+            setup_after.1-setup_before.1,peak.storage_peak,peak.post_tick_peak);
+    }
+}
