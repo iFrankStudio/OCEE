@@ -946,3 +946,8 @@
 ### 2026-11-24 — 真实反馈驱动的感知节奏与机会成本（待验收）
 - 先冻结[配对感知协议](./experiments/E001/DEV-S29-FEEDBACK-PACED-PERCEPTION.md) @9ec81d2f，源/工作流 @cedaa628，[原生CI #45336375358](https://github.com/iFrankStudio/OCEE/actions/runs/45336375358) 已触发。DENSE复用已通过的prefix CACHE 32/96，PACED仅在VM真实见到相同ID/input且已验证状态1/2时真付费Observe三次再poll，单scope/aggregate改12/36；pending分支不延迟。不新增内核/VM原语，不由host控制个体行动，不称自主学会阈值。
 - seed129真实P2 B20、共同付费安装两个root、同1200B空闲、自然A grant、等价激活、120tick。三预冻结tape都+0发布a：STABLE +16发布持续b，预测两者完成a,b且PACED少花非任务A；PULSE +7发布b/+9恢复a，预测PACED漏b而DENSE观测并完成；LATE +40发布持续b，预测DENSE已结束而PACED仍能观测。真实独立计算、内容绑定产物、没有重复执行/写入、正常结束、实际费用、感知与完成时间、安装/峰值、完整snapshot/audit及环境publication hash复演均需验收。比较的是轮询数量与间隔联合策略，不是隔离单因素，也非一般最优。CI尚未验收，继续先读真实日志并保留红例。G0 GO/G1,G2 NO-GO；正式E001尚未校准/预注册。
+
+
+### 2026-11-24 — 等感知频率的公共数据精确记忆（待验收）
+- 在感知节奏#45336375358仍运行时，独立冻结[精确公共payload记忆协议](./experiments/E001/DEV-S29-PUBLIC-PAYLOAD-MEMO.md) @db69c785，源码/工作流 @03a08fe2，[CI #45336719723](https://github.com/iFrankStudio/OCEE/actions/runs/45336719723) 已触发。两策略均复用已通过prefix CACHE 32/96，MEMO只在真实付费公开Read的payload与continuation上一份真实payload字节完全相等且当前收据状态非0时跳过重复字段解析；状态0继续原pending路径，环境数据变化继续完整解析。没有内核权限/VM原语变更，使用已有有界EqBytes及原计费模型，不宣称一般CPU成本。
+- 原SPACE/REORDER/ID_CONFLICT三tape、真实seed129/P2、共同付费安装、原自然grant/180tick与所有原有收据/安全/重启/复演判据不变。新增严格配对断言：每阶段两策略实际世界动作序列（step/action/code/payload/world fee，包括空闲步）完全相同，且MEMO非任务A严格更少。避免将减少感知次数带来的机会损失与纯计算节省混淆。两根均为研究者编写，无自主学习或一般并发缓存保证。两个CI尚未验收，继续先核查实时HEAD及实际日志。G0 GO/G1,G2 NO-GO；正式E001未校准/预注册。
