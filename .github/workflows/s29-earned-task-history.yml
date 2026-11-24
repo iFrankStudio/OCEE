@@ -1,0 +1,27 @@
+name: S29 Earned Task History Causal Transfer
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-earned-task-history.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-earned-history-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  history-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [RELEASED, PINNED]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_HISTORY_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native earned task history and matched physical transfer
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_earned_task_history_native -- --ignored --show-output
