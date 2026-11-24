@@ -1,6 +1,6 @@
 # DEV S29 — Earned task-recovery history and subsequent decision: causal transfer pilot
 
-**Frozen before implementation; native results pending.** Baseline actual own-task Quota override 3/3 #45318054188. This test addresses its stale b1 memory and lack of true history dependence. Single seed129; bounded simulated world; task and roots researcher-authored. No self-generated objective, generalized learning, or autonomy outside this sandbox.
+**Frozen before implementation; native results verified.** Baseline actual own-task Quota override 3/3 #45318054188. This test addresses its stale b1 memory and lack of true history dependence. Single seed129; bounded simulated world; task and roots researcher-authored. No self-generated objective, generalized learning, or autonomy outside this sandbox.
 
 ## Training and matched normalization
 
@@ -13,3 +13,20 @@ Before probing, researcher normalizes physical inventory by legal paid operation
 Two frozen environments RELEASED and PINNED, each has both earned histories and both policy roots (four branches per environment). Both probe roots attempt a new 280B task at a DIFFERENT fixed path, with actual first Quota, 90-tick horizon. History-conditioned uses existing fixed cooldown decision b1→paid reset b0 and skip, b0→paid dynamic search. History-blind uses existing override (b0 or b1 enters same search). Both same root bytes across the histories within each policy; true GC and retry same task only when actual GC succeeds. The probe decision is a researcher-authored binary interpretation of earned experience, not proof of learned policy invention. No future event schedule information supplied to VM.
 
 Predicted falsifiable outcomes: RELEASED: history-conditioned after positive training completes new task, after negative training skips/fails; blind completes for both histories. PINNED: neither history nor policy can complete, history-conditioned after negative history skips and saves A vs positive history, blind scans in both. Safety: no live version deletion, true P2 B20 unchanged, exact snapshot/audit replay for each training/probe execution, identical real task bytes and matched physical input, no hidden reference answer, no host selecting policy within a VM. Report each branch actual paid training and normalization A, task and non-task A, index counts and unbilled post-tick high-water, task outcomes, memory bytes/version, exact root/base hashes. Expected adverse transfer under changed environments is evidence, not an error to remove. Do not adjust 195B, 280B, seed, history encoding, or horizons after observing outcomes. Restore CI manual only after results. Formal E001 uncalibrated/unpreregistered, G0 GO/G1,G2 NO-GO.
+
+## Native evidence — 2026-11-24
+
+[Run 45318793560](https://github.com/iFrankStudio/OCEE/actions/runs/45318793560) at ac986f79bd9510e47283027063047c541e50607c: **2/2 native jobs passed**, both full logs inspected. No failed attempt. Both training histories started step3076, true prior P2 B20. Positive: Quota then Ok step3085/20A, actual GC276B, 3 Conflict, VM1014/world2583A; own b0/v0 creation step3086/3A. Negative: Quota, 8 Conflict, no GC, VM1379/world2557A; own b1/v0 creation step3090/4A. Normalization paid world A28/12 respectively; no direct memory edits, same current node resources, inventory, object maps except memory byte, transport queues and step; probe activation matched within policy. All audit/snapshot/peak replay assertions passed. Three-root installation world2792A separately.
+
+| Environment | History | Policy | Task | Non-task A | Index | GC B | Final memory |
+|---|---|---|---|---:|---:|---:|---|
+| RELEASED | SUCCESS | CONDITIONED | Ok |3594|1|276|0/v0|
+| RELEASED | FAILURE | CONDITIONED | Quota |137|0|0|0/v1|
+| RELEASED | SUCCESS | BLIND | Ok |3594|1|276|0/v0|
+| RELEASED | FAILURE | BLIND | Ok |3590|1|276|1/v0|
+| PINNED | SUCCESS | CONDITIONED | Quota |3994|1|0|1/v1|
+| PINNED | FAILURE | CONDITIONED | Quota |137|0|0|0/v1|
+| PINNED | SUCCESS | BLIND | Quota |3994|1|0|1/v1|
+| PINNED | FAILURE | BLIND | Quota |3990|1|0|1/v1|
+
+All probes first Quota at step4099; successful probes retry Ok at4108, additional task fee20A. Positive-training memory is causal for the researcher-authored conditioned branch, whereas blind ignores it for the scan decision. Prior negative history saves 3853A vs blind in PINNED, but loses a task in RELEASED. Not a learned predictor. Conditioned skip resets b1 to b0 even without success: this is a cooldown marker, not a faithful last-outcome record; the initial b0 means earned successful recovery, but after skip it cannot be interpreted as successful recovery. Follow-up must separate outcome from scheduling state. Unbilled index peaks 3927B successful, 4087B full failure, zero skipped; physical storage peak 172747/172743B respectively. Source logs include exact root/snapshot hashes. No generalization beyond seed129, no endogenous activation, no formal E001 claim. G0 GO/G1,G2 NO-GO.
