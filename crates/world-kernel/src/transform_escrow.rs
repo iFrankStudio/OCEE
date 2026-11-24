@@ -1235,4 +1235,118 @@ mod autonomous_pilot{
         assert!(observed.contains(&1));assert!(observed.contains(&2));
     }
 
+
+    #[test]
+    fn s29_cost_fit_transfer_limits_native(){
+        let mut observed=std::collections::BTreeSet::new();let mut paired=Vec::new();
+        let mut negative=Vec::new();let mut insufficient=Vec::new();
+        for tape in ["DENSE_TO_SPARSE","SPARSE_TO_DENSE"]{
+        for grant in [768u64,896,1024,1152,1280,1408,1536,1664,1792]{
+            let mut outcomes=Vec::new();
+            for estimate in [false,true]{
+                let p=two_sample_fit_root(estimate);let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+                let mut tasks=chain_tasks(1);
+                let byte=if tape=="DENSE_TO_SPARSE"{255}else{7};
+                tasks[1].0.held_out_input=vec![byte;128];tasks[2].0.held_out_input=vec![if byte==255{7}else{255};255];
+                let mut w=World::with_transform_sequence(Config{seed:129,epoch_length:16,
+                    a_gas_per_epoch:12000,..Config::default()},tasks.clone(),1400).unwrap();
+                for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                    let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                    assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+                }
+                let paid=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+                w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                    kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:grant}});
+                while w.state.step<16{w.tick(None);}
+                let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+                let mut balance=grant;let mut remaining=1400u64;let mut fees=0u64;
+                let mut received=0u64;let mut settlements=Vec::new();let mut reads=Vec::new();let mut gas=0;
+                let mut fitted=None;let mut sensors=Vec::new();let mut intervals=Vec::new();let mut last_sensor:Option<(u64,u64,u64)>=None;
+                for _ in 0..15{
+                    let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                    let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                    let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                    assert_eq!(r,rr);
+                    let fee=r.gas_charged+r.vm_gas_charged;
+                    balance=balance.checked_sub(fee).unwrap().checked_add(r.a_credited).unwrap();
+                    remaining=remaining.checked_sub(r.a_credited).unwrap();
+                    received+=r.a_credited;fees+=fee;
+                    assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                    let escrow=w.state.transform_escrow.as_ref().unwrap();
+                    assert_eq!(remaining,escrow.remaining_a);assert_eq!(balance+remaining,grant+1400-fees);
+                    let e=w.audit.last().unwrap();
+                    if r.code==Code::Gas{gas+=1;}
+                    if matches!(&e.action,Some(Action::Read{key,..}) if key=="/sys/resource-status")&&r.code==Code::Ok{
+                        assert_eq!(r.gas_charged,2);
+                        let v:serde_json::Value=serde_json::from_slice(&r.payload).unwrap();
+                        assert_eq!(v["a_available"].as_u64(),Some(balance));
+                        assert_eq!(v["capacity"].as_u64(),Some(w.state.nodes[&NodeId::A].storage_capacity));
+                        assert_eq!(v["used"].as_u64(),Some(w.state.organisms[&ORGANISM_ID].storage_used));
+                        if let Some((old,credit,spent))=last_sensor{
+                            let cost=old+(received-credit)-balance;
+                            assert_eq!(cost,fees-spent);assert!(cost>0);
+                            intervals.push((cost,balance,balance/cost));
+                        }
+                        last_sensor=Some((balance,received,fees));sensors.push((e.step,balance));
+                    }
+                    if matches!(&e.action,Some(Action::Read{key,..}) if key==OFFER)&&r.code==Code::Ok{
+                        let slot=settlements.len();
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&r.payload).unwrap(),tasks[slot].0);
+                        reads.push((e.step,slot));
+                        if slot==2{
+                            assert_eq!(intervals.len(),2);
+                            let delta=125u64;
+                            let coefficient=if intervals[1].0>=intervals[0].0+delta+delta/2{2}else{1};
+                            let c=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().unwrap();
+                            assert_eq!(c.registers.get(&96),Some(&Value::U32(coefficient)));
+                            observed.insert(coefficient);fitted=Some(coefficient);
+                        }
+                    }
+                    if r.a_credited>0{
+                        let slot=settlements.len();let (task,price)=&tasks[slot];
+                        let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                        assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,20);
+                        assert!(reads.iter().any(|(step,i)|*step<e.step&&*i==slot));
+                        assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                        settlements.push((e.step,slot,*price));
+                        let ledger=&escrow.sequence.as_ref().unwrap().settled;
+                        assert_eq!(ledger.len(),slot+1);
+                        assert_eq!(ledger[slot],TransformSettlement{outcome_key:key,offer_version:slot as u64,step:e.step,price_a:*price});
+                    }
+                }
+                println!("S29_FIT_TRANSFER tape={tape} grant={grant} estimate={estimate} root={hash} root_B={} install_A={paid} settlements={settlements:?} reads={reads:?} sensors={sensors:?} intervals={intervals:?} fitted={fitted:?} credit={received} fees={fees} final_A={balance} payer_A={remaining} gas={gas} return={:?} replay=true",raw.len(),w.state.organisms[&ORGANISM_ID].last_return);
+                assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+                let expected=settlements.len();
+                assert!(expected<=3);
+                assert_eq!(received,tasks.iter().take(expected).map(|(_,p)|*p).sum::<u64>());
+                assert!(sensors.len()<=expected+1);
+                assert_eq!(intervals.len(),sensors.len().saturating_sub(1));
+                for (slot,(task,_)) in tasks.iter().enumerate(){
+                    let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                    assert_eq!(w.state.objects.contains_key(&key),slot<expected);
+                    if slot<expected{
+                        let o=&w.state.objects[&key];assert_eq!(o.owner,ORGANISM_ID);assert_eq!(o.version,0);
+                        assert_eq!(o.bytes.len(),280);assert_eq!(o.bytes[0],task.held_out_input.len() as u8);
+                        assert_eq!(&o.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                        assert!(o.bytes[33..].iter().all(|b|*b==0x55));
+                    }
+                }
+                outcomes.push((expected,intervals.into_iter().take(2).collect::<Vec<_>>(),fitted,gas,balance,fees,paid,w.state.organisms[&ORGANISM_ID].last_return.clone()));
+            }
+            assert_eq!(outcomes[0].1,outcomes[1].1,"identical pre-fit measurements");
+            assert_eq!(outcomes[0].2,outcomes[1].2,"same actual coefficient at third offer");
+            let (fixed,fit)=(&outcomes[0],&outcomes[1]);
+            if tape=="DENSE_TO_SPARSE"&&fit.2==Some(2)&&fit.0==2&&fit.3==0&&fit.7==Some(Value::U32(2))&&fixed.0==3&&fixed.3==0{
+                negative.push(grant);
+            }
+            if tape=="SPARSE_TO_DENSE"&&fit.2==Some(1)&&fit.0==2&&fit.3>0&&fit.1.len()==2&&fit.1[1].1>=fit.1[1].0+127{
+                insufficient.push(grant);
+            }
+            paired.push((tape,grant,fixed.0,fit.0,fixed.3,fit.3,fixed.4,fit.4));
+        }
+        }
+        println!("S29_FIT_TRANSFER_RESULTS observed={observed:?} negative={negative:?} insufficient={insufficient:?} pairs={paired:?}");
+        assert!(observed.contains(&1));assert!(observed.contains(&2));
+        assert!(!negative.is_empty());assert!(!insufficient.is_empty());
+    }
 }
