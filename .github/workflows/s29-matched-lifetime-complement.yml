@@ -1,0 +1,29 @@
+name: S29 Matched P2 Complementary Reference and Pruned Inventory Tapes
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-matched-lifetime-complement.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-complement-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  complementary-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [129, 130, 131]
+        tape: [MIXED_MULTIHOLDER_TRANSPORT, NO_RECLAIMABLE_PRUNED]
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      OCEE_S29_LIFE_SEED: ${{ matrix.seed }}
+      OCEE_S29_EXTRA_TAPE: ${{ matrix.tape }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native genuine multiholder lease and pruned version inventory
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_lifetime_complement_native -- --ignored --show-output
