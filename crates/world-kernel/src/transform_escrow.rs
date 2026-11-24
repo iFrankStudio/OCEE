@@ -13,7 +13,18 @@ pub struct TransformEscrow{
     pub outcome_key:String,
     pub paid_at:Option<u64>,
     pub paid_a:u64,
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub sequence:Option<TransformSequence>,
 }
+#[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
+pub struct TransformSequence{
+    pending:Vec<TransformTerms>,
+    settled:Vec<TransformSettlement>,
+}
+#[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
+struct TransformTerms{offer:Vec<u8>,outcome_key:String,price_a:u64}
+#[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
+struct TransformSettlement{outcome_key:String,offer_version:u64,step:u64,price_a:u64}
 impl World{
     /// Trusted environment construction only; no corresponding VM call.
     /// The explicitly allocated payer endowment is independent of epoch grants.
@@ -30,7 +41,30 @@ impl World{
         w.state.objects.insert(OFFER.into(),Object{owner:0,version:0,bytes:offer.clone()});
         w.state.transform_escrow=Some(TransformEscrow{
             initial_a:endowment,remaining_a:endowment,price_a:price,offer,
-            outcome_key,paid_at:None,paid_a:0
+            outcome_key,paid_at:None,paid_a:0,sequence:None
+        });
+        Ok(w)
+    }
+
+    /// Bounded, trusted sequential demand; not a live second organism.
+    pub fn with_transform_sequence(config:Config,tasks:Vec<(TransformTask,u64)>,endowment:u64)->Result<Self,Code>{
+        if !(2..=3).contains(&tasks.len()){return Err(Code::BadRequest);}
+        let mut keys=std::collections::BTreeSet::new();
+        let mut total=0u64;
+        let mut terms=Vec::new();
+        // Reuse exactly the single-offer validator, not a weaker path.
+        for (task,price) in &tasks{
+            let checked=Self::with_transform_escrow(config.clone(),task.clone(),endowment,*price)?;
+            let e=checked.state.transform_escrow.unwrap();
+            if !keys.insert(e.outcome_key.clone()){return Err(Code::BadRequest);}
+            total=total.checked_add(*price).ok_or(Code::BadRequest)?;
+            terms.push(TransformTerms{offer:e.offer,outcome_key:e.outcome_key,price_a:*price});
+        }
+        if total>endowment{return Err(Code::BadRequest);}
+        let mut w=Self::with_transform_escrow(config,tasks[0].0.clone(),endowment,tasks[0].1)?;
+        terms.remove(0);
+        w.state.transform_escrow.as_mut().unwrap().sequence=Some(TransformSequence{
+            pending:terms,settled:vec![]
         });
         Ok(w)
     }
@@ -41,9 +75,16 @@ impl World{
         let Some(escrow)=self.state.transform_escrow.as_ref() else{return 0;};
         if actor!=ORGANISM_ID || escrow.paid_at.is_some() || escrow.paid_a!=0 ||
             escrow.price_a==0 || escrow.price_a>escrow.remaining_a ||
-            escrow.remaining_a!=escrow.initial_a || key!=escrow.outcome_key{return 0;}
+            key!=escrow.outcome_key{return 0;}
+        let (version,already_paid)=if let Some(seq)=&escrow.sequence{
+            if seq.settled.len()>2 || seq.pending.len()+seq.settled.len()>2 ||
+                seq.settled.iter().any(|r|r.outcome_key==key){return 0;}
+            let Some(sum)=seq.settled.iter().try_fold(0u64,|sum,r|sum.checked_add(r.price_a)) else{return 0;};
+            (seq.settled.len() as u64,sum)
+        }else{(0,0)};
+        if escrow.initial_a.checked_sub(already_paid)!=Some(escrow.remaining_a){return 0;}
         let Some(offer)=self.state.objects.get(OFFER) else{return 0;};
-        if offer.owner!=0 || offer.version!=0 || offer.bytes!=escrow.offer{return 0;}
+        if offer.owner!=0 || offer.version!=version || offer.bytes!=escrow.offer{return 0;}
         let Ok(task)=serde_json::from_slice::<TransformTask>(&escrow.offer) else{return 0;};
         let Some(receipt)=self.state.objects.get(key) else{return 0;};
         if receipt.owner!=actor || receipt.version!=0 || receipt.bytes.len()!=280{return 0;}
@@ -59,6 +100,16 @@ impl World{
         self.state.nodes.get_mut(&NodeId::A).unwrap().gas_available=balance;
         let e=self.state.transform_escrow.as_mut().unwrap();
         e.remaining_a=remaining;e.paid_at=Some(step);e.paid_a=price;
+        let next=if let Some(seq)=e.sequence.as_mut(){
+            seq.settled.push(TransformSettlement{outcome_key:key.into(),offer_version:version,step,price_a:price});
+            if seq.pending.is_empty(){None}else{Some(seq.pending.remove(0))}
+        }else{None};
+        if let Some(next)=next{
+            e.offer=next.offer.clone();e.outcome_key=next.outcome_key;e.price_a=next.price_a;
+            e.paid_at=None;e.paid_a=0;
+            self.state.objects.insert(OFFER.into(),Object{owner:0,version:version+1,bytes:next.offer});
+            self.state.version_ref_index=None;
+        }
         price
     }
 }
@@ -276,5 +327,161 @@ mod autonomous_pilot{
                 }
             }
         }
+    }
+
+    fn chain_root()->Program{
+        let mut p=root();let f=&mut p.functions[0];
+        f.blocks.retain(|b|!matches!(b.id.as_str(),"workspace"|"worked"|"done"));
+        let ctx=vec![Param{id:90,ty:Type::U32}];
+        for b in &mut f.blocks{
+            if b.id=="entry"{
+                b.instructions=vec![Instruction{id:90,op:Op::ConstU32(0)}];
+                b.terminator=Terminator::Jump{target:"chain_header".into(),args:vec![90]};
+            }else{
+                b.params.insert(0,ctx[0].clone());
+                match &mut b.terminator{
+                    Terminator::Branch{true_args,false_args,..}=>{true_args.insert(0,90);false_args.insert(0,90);},
+                    Terminator::Yield{next_args,..}=>next_args.insert(0,90),
+                    Terminator::Return{value}=>{*value=90;b.instructions.clear();},
+                    _=>panic!("unexpected root structure")
+                }
+            }
+        }
+        let b=f.blocks.iter_mut().find(|b|b.id=="submitted").unwrap();
+        b.terminator=Terminator::Branch{condition:13,if_true:"chain_credit".into(),true_args:vec![90,2],
+            if_false:"failed".into(),false_args:vec![90]};
+        // Missing credit is omitted by ActionResult serialization, so use
+        // the actual JSON object field via a total string/bytes test? The
+        // contracted paid sequence emits a positive U32 field on every Ok
+        // receipt. For no-credit Ok, use a generic field extraction guard
+        // in the existing VM; see the explicit failure path below.
+        let mut feedback=ctx.clone();feedback.push(Param{id:2,ty:Type::Bytes});
+        f.blocks.extend([
+            Block{id:"chain_header".into(),params:ctx.clone(),instructions:vec![],
+                terminator:Terminator::RepeatBounded{limit:3,body:"chain_read".into(),body_args:vec![90],
+                    done:"failed".into(),done_args:vec![90]}},
+            Block{id:"chain_read".into(),params:ctx.clone(),instructions:vec![Instruction{id:10,op:literal(OFFER.as_bytes())}],
+                terminator:Terminator::Yield{call:WorldCall::Read,args:vec![10],next:"offer".into(),next_args:vec![90]}},
+            Block{id:"chain_credit".into(),params:feedback,instructions:vec![
+                Instruction{id:10,op:literal(b"a_credited")},Instruction{id:11,op:Op::JsonFieldU32(2,10)},
+                Instruction{id:12,op:Op::ConstU32(0)},Instruction{id:13,op:Op::EqU32(11,12)}
+            ],terminator:Terminator::Branch{condition:13,if_true:"failed".into(),true_args:vec![90],
+                if_false:"chain_advance".into(),false_args:vec![90]}},
+            Block{id:"chain_advance".into(),params:ctx,instructions:vec![
+                Instruction{id:10,op:Op::ConstU32(1)},Instruction{id:11,op:Op::Add(90,10)}
+            ],terminator:Terminator::Jump{target:"chain_header".into(),args:vec![11]}}
+        ]);
+        p.validate().expect("bounded sequential productive root");p
+    }
+    fn chain_tasks(first:u64)->Vec<(TransformTask,u64)>{
+        [("a",vec![44,7,2],first),("b",vec![13,9,4,8,2],200),
+            ("c",vec![27,2,1,4,8,6],200)].into_iter().map(|(id,input,price)|
+                (TransformTask{task_id:id.into(),examples:vec![],held_out_input:input},price)).collect()
+    }
+    #[test]
+    fn finite_escrow_productive_chain_native(){
+        let p=chain_root();let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+        let mut install=None;
+        for first in [1,1000]{
+            let tasks=chain_tasks(first);
+            let mut w=World::with_transform_sequence(Config{seed:129,epoch_length:16,
+                a_gas_per_epoch:12000,..Config::default()},tasks.clone(),1400).unwrap();
+            for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+            }
+            let paid=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+            if let Some(v)=install{assert_eq!(paid,v);}else{install=Some(paid);}
+            w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:256}});
+            while w.state.step<16{w.tick(None);}
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let mut balance=256u64;let mut remaining=1400u64;let mut fees=0u64;
+            let mut received=0u64;let mut settlements=Vec::new();let mut reads=Vec::new();let mut gas=0;
+            for _ in 0..12{
+                let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                assert_eq!(r,rr);
+                let fee=r.gas_charged+r.vm_gas_charged;
+                balance=balance.checked_sub(fee).unwrap().checked_add(r.a_credited).unwrap();
+                remaining=remaining.checked_sub(r.a_credited).unwrap();
+                received+=r.a_credited;fees+=fee;
+                assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                let escrow=w.state.transform_escrow.as_ref().unwrap();
+                assert_eq!(remaining,escrow.remaining_a);assert_eq!(balance+remaining,1656-fees);
+                let e=w.audit.last().unwrap();
+                if r.code==Code::Gas{gas+=1;}
+                if matches!(&e.action,Some(Action::Read{key,..}) if key==OFFER)&&r.code==Code::Ok{
+                    let slot=settlements.len();
+                    assert_eq!(serde_json::from_slice::<TransformTask>(&r.payload).unwrap(),tasks[slot].0);
+                    reads.push((e.step,slot));
+                }
+                if r.a_credited>0{
+                    let slot=settlements.len();let (task,price)=&tasks[slot];
+                    let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                    assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,20);
+                    assert!(reads.iter().any(|(step,i)|*step<e.step&&*i==slot));
+                    assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                    settlements.push((e.step,slot,*price));
+                    let ledger=&escrow.sequence.as_ref().unwrap().settled;
+                    assert_eq!(ledger.len(),slot+1);
+                    assert_eq!(ledger[slot],TransformSettlement{outcome_key:key,offer_version:slot as u64,step:e.step,price_a:*price});
+                    let public=&w.state.objects[OFFER];
+                    let next=(slot+1).min(2);
+                    assert_eq!(public.version,next as u64);
+                    assert_eq!(serde_json::from_slice::<TransformTask>(&public.bytes).unwrap(),tasks[next].0);
+                }
+            }
+            println!("S29_PRODUCTIVE_CHAIN first={first} root={hash} root_B={} install_A={paid} settlements={settlements:?} reads={reads:?} credit={received} fees={fees} final_A={balance} payer_A={remaining} gas={gas} return={:?} replay=true",raw.len(),w.state.organisms[&ORGANISM_ID].last_return);
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            let expected=if first==1000{3}else{1};
+            assert_eq!(settlements.len(),expected);
+            assert_eq!(received,if first==1000{1400}else{1});
+            for (slot,(task,_)) in tasks.iter().enumerate(){
+                let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                assert_eq!(w.state.objects.contains_key(&key),slot<expected);
+                if slot<expected{
+                    let o=&w.state.objects[&key];assert_eq!(o.owner,ORGANISM_ID);assert_eq!(o.version,0);
+                    assert_eq!(o.bytes.len(),280);assert_eq!(o.bytes[0],task.held_out_input.len() as u8);
+                    assert_eq!(&o.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                    assert!(o.bytes[33..].iter().all(|b|*b==0x55));
+                }
+            }
+            if first==1000{
+                assert_eq!(gas,0);assert!(fees>257);assert_eq!(remaining,0);
+                assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(3)));
+            }else{assert!(gas>0);assert_eq!(remaining,1399);}
+        }
+    }
+    #[test]
+    fn finite_escrow_productive_chain_negative(){
+        let cfg=Config{seed:129,a_gas_per_epoch:256,epoch_length:16,..Config::default()};
+        let mut duplicate=chain_tasks(1000);duplicate[1].0.task_id="a".into();
+        assert!(matches!(World::with_transform_sequence(cfg.clone(),duplicate,1400),Err(Code::BadRequest)));
+        assert!(matches!(World::with_transform_sequence(cfg.clone(),chain_tasks(1000),1399),Err(Code::BadRequest)));
+        let tasks=chain_tasks(1000);
+        let write=|task:&TransformTask,wrong:bool|{
+            let mut bytes=vec![task.held_out_input.len() as u8^u8::from(wrong)];
+            bytes.extend_from_slice(Sha256::digest(&task.held_out_input).as_slice());bytes.extend_from_slice(&[0x55;247]);
+            Action::Write{actor:ORGANISM_ID,key:format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]),bytes,expected_version:None}
+        };
+        let mut bad=World::with_transform_sequence(cfg.clone(),tasks.clone(),1400).unwrap();
+        assert_eq!(bad.tick(Some(write(&tasks[0].0,true))).a_credited,0);
+        assert_eq!(bad.state.objects[OFFER].version,0);
+        assert_eq!(bad.state.transform_escrow.as_ref().unwrap().remaining_a,1400);
+        let mut w=World::with_transform_sequence(cfg,tasks.clone(),1400).unwrap();
+        assert_eq!(w.tick(Some(write(&tasks[0].0,false))).a_credited,1000);
+        let r=w.tick(Some(write(&tasks[0].0,false)));
+        assert_eq!(r.code,Code::Conflict);assert_eq!(r.a_credited,0);
+        assert_eq!(w.state.objects[OFFER].version,1);
+        while w.state.step<17{w.tick(None);}
+        assert_eq!(w.state.nodes[&NodeId::A].gas_available,256);
+        assert_eq!(w.state.transform_escrow.as_ref().unwrap().remaining_a,400);
+        assert_eq!(w.tick(Some(write(&tasks[1].0,false))).a_credited,200);
+        assert_eq!(w.tick(Some(write(&tasks[2].0,false))).a_credited,200);
+        assert_eq!(w.state.transform_escrow.as_ref().unwrap().remaining_a,0);
+        assert_eq!(w.state.objects[OFFER].version,2);
+        println!("S29_CHAIN_NEGATIVE duplicate=true overcommitted=true wrong_no_advance=true stale_no_credit=true epoch_preserved=true");
     }
 }
