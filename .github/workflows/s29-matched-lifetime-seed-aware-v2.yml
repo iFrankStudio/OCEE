@@ -1,0 +1,29 @@
+name: S29 True P2 Seed-Aware Orphan Matched Lifetime v2
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-matched-lifetime-seed-aware-v2.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-seed-aware-v2-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  paid-seed-matched-v2:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [129, 130, 131]
+        tape: [ALL_PINNED, RELEASE_BEFORE_SECOND, RELEASE_AFTER_COOLDOWN]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OCEE_S29_LIFE_SEED: ${{ matrix.seed }}
+      OCEE_S29_LIFE_TAPE: ${{ matrix.tape }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native paid P2 selected-orphan branch utility and unbilled index high-water
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_lifetime_matched_pilot_native -- --ignored --show-output
