@@ -1,0 +1,27 @@
+name: S29 Own Task Quota Feedback Override Pilot
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-task-quota-override.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-quota-override-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  quota-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [RELEASED, PINNED, SPACE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OCEE_S29_TASK_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native matched own-task receipt-conditioned maintenance
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_task_quota_override_native -- --ignored --show-output
