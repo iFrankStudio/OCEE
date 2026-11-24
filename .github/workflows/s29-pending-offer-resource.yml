@@ -1,9 +1,6 @@
 name: S29 Pending Offer Resource Retry
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-pending-offer-resource.yml'
+  # Native evidence verified; manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-pending-offer-${{ github.ref }}
