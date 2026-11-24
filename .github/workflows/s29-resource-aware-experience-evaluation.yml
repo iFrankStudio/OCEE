@@ -1,0 +1,23 @@
+name: S29 Resource Aware Experience Evaluation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-resource-aware-experience-evaluation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [RESERVE_LATE, RESERVE_PULSE, RETAIN_EARLY]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_EVALUATION_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_resource_aware_experience_evaluation_native -- --ignored --show-output

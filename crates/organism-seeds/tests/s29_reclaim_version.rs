@@ -8203,3 +8203,192 @@ fn s29_paid_delayed_exploration_bounded_native(){
     }
     if arm=="SILENT"{assert!(costs[1]>costs[0]);}
 }
+
+
+
+// Compare equal paid resource observations, with and without use of the
+// observed reserve. This is a fixed reserve preference, not inferred utility.
+fn resource_aware_experience_root(use_floor:bool)->Program{
+    let mut p=bounded_delayed_exploration_root(true);
+    let f=&mut p.functions[0];
+    let b=f.blocks.iter_mut().find(|b|b.id=="experience_absent").unwrap();
+    let ctx=b.params.clone();let args=vec![99,97,98,96,93,90,91];
+    assert_eq!(ctx.iter().map(|p|p.id).collect::<Vec<_>>(),args);
+    if let Terminator::Branch{if_false,..}=&mut b.terminator{
+        assert_eq!(if_false,"experience_return");*if_false="reserve_loaded_check".into();
+    }else{panic!("expected absence branch");}
+    f.blocks.push(Block{id:"reserve_loaded_check".into(),params:ctx.clone(),instructions:vec![
+        Instruction{id:10,op:Op::ConstU32(1)},Instruction{id:11,op:Op::EqU32(90,10)}
+    ],terminator:Terminator::Branch{condition:11,if_true:"reserve_read".into(),
+        true_args:args.clone(),if_false:"experience_return".into(),false_args:args.clone()}});
+    f.blocks.push(Block{id:"reserve_read".into(),params:ctx.clone(),
+        instructions:vec![Instruction{id:10,op:lit(b"/sys/resource-status")}],
+        terminator:Terminator::Yield{call:WorldCall::Read,args:vec![10],next:"reserve_reply".into(),next_args:args.clone()}});
+    let mut rp=ctx.clone();rp.push(Param{id:2,ty:Type::Bytes});
+    let mut feedback_args=args.clone();feedback_args.push(2);
+    if use_floor{
+        f.blocks.push(Block{id:"reserve_reply".into(),params:rp.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"code")},Instruction{id:11,op:Op::JsonFieldString(2,10)},
+            Instruction{id:12,op:lit(b"Ok")},Instruction{id:13,op:Op::EqBytes(11,12)}
+        ],terminator:Terminator::Branch{condition:13,if_true:"reserve_evaluate".into(),
+            true_args:feedback_args,if_false:"experience_return".into(),false_args:args.clone()}});
+        f.blocks.push(Block{id:"reserve_evaluate".into(),params:rp,instructions:vec![
+            Instruction{id:10,op:lit(b"payload")},Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:12,op:lit(b"a_available")},Instruction{id:13,op:Op::JsonFieldU32(11,12)},
+            Instruction{id:14,op:Op::ConstU32(9000)},Instruction{id:15,op:Op::Div(13,14)},
+            Instruction{id:16,op:Op::ConstU32(0)},Instruction{id:17,op:Op::EqU32(15,16)}
+        ],terminator:Terminator::Branch{condition:17,if_true:"experience_revoke".into(),
+            true_args:args.clone(),if_false:"experience_return".into(),false_args:args}});
+    }else{
+        f.blocks.push(Block{id:"reserve_reply".into(),params:rp,instructions:vec![],
+            terminator:Terminator::Jump{target:"experience_return".into(),args}});
+    }
+    p.validate().expect("typed actual resource evaluation");p
+}
+#[test]
+#[ignore="frozen real resource-aware experience evaluation"]
+fn s29_resource_aware_experience_evaluation_native(){
+    let arm=std::env::var("OCEE_S29_EVALUATION_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"RESERVE_LATE"|"RESERVE_PULSE"|"RETAIN_EARLY"));
+    let (mut base,_,target,_,registered)=lifetime_setup(129);
+    let before=spend(&base);
+    let roots=[false,true].into_iter().map(|r|{
+        let p=resource_aware_experience_root(r);(p.content_hash().unwrap(),p.canonical_bytes())
+    }).collect::<Vec<_>>();
+    let total=roots.iter().map(|(_,b)|b.len() as u64+64).sum::<u64>();
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+total;
+    quota_wait_next_grant(&mut base);
+    for (i,(h,b)) in roots.iter().enumerate(){
+        assert!(!b.windows(64).any(|x|x==registered.as_bytes()||x==target.as_bytes()));
+        put(&mut base,version_key(h),b.clone());
+        put(&mut base,format!("/self/pins/s29-evaluation-{i}"),h.as_bytes().to_vec());
+    }
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+2000;
+    quota_wait_next_grant(&mut base);
+    let after=spend(&base);let base_hash=base.state_hash();
+    let inventory=lifetime_extra_versions(&base);let mut starts=Vec::new();let mut costs=Vec::new();
+    for (policy,(root,raw)) in roots.iter().enumerate(){
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        let mut committed=Vec::new();
+        for phase in 0..3{
+            if phase>0{quota_wait_next_grant(&mut w);}
+            lifetime_set_active(&mut w,root);
+            assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+            let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
+            if policy==0{starts.push((start,start_a));}else{assert_eq!(starts[phase],(start,start_a));}
+            let tape=match phase{
+                0=>vec![(0,0),(7,1),(9,0)],
+                1=>if arm=="RETAIN_EARLY"{vec![(0,2),(9,3),(11,2)]}else{vec![(0,2),(40,3)]},
+                _=>if arm=="RESERVE_LATE"{vec![(0,4),(40,5)]}else{vec![(0,4),(9,5),(11,4)]}
+            };
+            let prior_revoked=policy==1&&arm!="RETAIN_EARLY"&&phase==2;
+            let expected=match phase{
+                0=>vec![0,1],1=>vec![2,3],
+                _=>if prior_revoked&&arm=="RESERVE_PULSE"{vec![4]}else{vec![4,5]}
+            };
+            let revise_now=phase>=1&&!prior_revoked&&policy==1&&arm!="RETAIN_EARLY";
+            let revoked=prior_revoked||revise_now;
+            let expected_sensor=phase>=1&&!prior_revoked;
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let (peak,pubs,finished)=paced_episode_horizon(&mut w,root,&tape,180);
+            let (rp,rpubs,rf)=paced_episode_horizon(&mut replay,root,&tape,180);
+            assert_eq!(peak,rp);assert_eq!(pubs,rpubs);assert_eq!(finished,rf);
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            let mut reads=Vec::new();let mut execs=Vec::new();let mut tasks=Vec::new();
+            let mut observations=Vec::new();let mut marker_reads=Vec::new();let mut marker_writes=Vec::new();
+            let mut vm=0u64;let mut world=0u64;let mut task_a=0u64;let mut marker_a=0u64;let mut reserves=Vec::new();
+            for e in w.audit.iter().filter(|e|e.step>=start){
+                vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+                assert_ne!(e.result.code,Code::Gas);
+                match &e.action{
+                    Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
+                        assert_eq!(e.result.code,Code::Ok);
+                        let slot=tape.iter().rev().find(|(at,_)|start+*at<=e.step).unwrap().1;
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&e.result.payload).unwrap(),offer_fixture(slot));
+                        reads.push((e.step,slot));
+                    },
+                    Some(Action::Read{key,..}) if key==EXPERIENCE_KEY=>{
+                        assert_eq!(e.result.code,if phase==0{Code::NotFound}else{Code::Ok});
+                        if phase>0{
+                            assert_eq!(e.result.payload,if prior_revoked{b"0"}else{b"1"});
+                            assert_eq!(e.result.gas_charged,2);
+                        }
+                        marker_reads.push(e.step);marker_a+=e.result.gas_charged;
+                    },
+                    Some(Action::Read{key,..}) if key=="/sys/resource-status"=>{
+                        assert_eq!(e.result.code,Code::Ok);assert_eq!(e.result.gas_charged,2);
+                        assert_eq!(tasks.len(),2);
+                        let v:serde_json::Value=serde_json::from_slice(&e.result.payload).unwrap();
+                        let available=start_a-vm-world;
+                        assert_eq!(v["a_available"].as_u64(),Some(available));
+                        assert_eq!(v["capacity"].as_u64(),Some(w.state.nodes[&NodeId::A].storage_capacity));
+                        // At this read, both task receipts already exist. Later marker update is same-sized.
+                        assert_eq!(v["used"].as_u64(),Some(w.state.organisms[&ORGANISM_ID].storage_used));
+                        reserves.push((e.step,available));
+                    },
+                    Some(Action::Observe{..})=>{assert_eq!(e.result.code,Code::Ok);assert_eq!(e.result.gas_charged,1);observations.push(e.step);},
+                    Some(Action::Exec{program_hash,input,..})=>{
+                        assert_eq!(program_hash,&registered);assert_eq!(e.result.code,Code::Ok);
+                        let slot=expected[execs.len()];
+                        assert_eq!(input,&offer_fixture(slot).held_out_input);
+                        assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),Value::U32(hidden_transform(129,input)));
+                        assert!(reads.iter().any(|(at,s)|*at<e.step&&*s==slot));
+                        execs.push((e.step,slot));
+                    },
+                    Some(Action::Write{key,bytes,expected_version,..})=>{
+                        assert_eq!(e.result.code,Code::Ok);
+                        if key==EXPERIENCE_KEY{
+                            assert!(phase==0||revise_now);
+                            assert_eq!(tasks.len(),2);
+                            assert_eq!(*expected_version,if phase==0{None}else{Some(0)});
+                            assert_eq!(bytes,if phase==0{b"1"}else{b"0"});
+                            assert_eq!(e.result.gas_charged,3);
+                            marker_writes.push((e.step,*expected_version,bytes.clone()));
+                            marker_a+=e.result.gas_charged;
+                        }else{
+                            assert_eq!(*expected_version,None);
+                            let slot=expected[tasks.len()];
+                            assert_eq!(key,&format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8));
+                            assert_eq!(e.result.gas_charged,20);assert_bound_artifact(bytes,slot);
+                            tasks.push((e.step,slot));task_a+=e.result.gas_charged;
+                        }
+                    },
+                    Some(Action::IndexVersionRefs{..})|Some(Action::ReclaimIndexedVersion{..})=>
+                        panic!("roomy revision tape must not maintain"),
+                    _=>{}
+                }
+            }
+            let latencies=tasks.iter().map(|(at,slot)|at-start-tape.iter().find(|(_,s)|s==slot).unwrap().0).collect::<Vec<_>>();
+            println!("S29_RESOURCE_EVALUATION arm={arm} policy={policy} phase={phase} root={root} root_B={} base={base_hash} start={start} start_A={start_a} final_A={} finished={finished:?} return={:?} pubs={pubs:?} reads={reads:?} observes={observations:?} execs={execs:?} tasks={tasks:?} latency={latencies:?} marker_reads={marker_reads:?} marker_writes={marker_writes:?} marker_A={marker_a} reserves={reserves:?} VM_A={vm} world_A={world} task_A={task_a} non_task_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
+                raw.len(),w.state.nodes[&NodeId::A].gas_available,w.state.organisms[&ORGANISM_ID].last_return,
+                vm+world-task_a,after.0-before.0,after.1-before.1,peak.storage_peak,peak.post_tick_peak);
+            assert!(finished.is_some());
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(4*expected.len() as u32+1)));
+            assert_eq!(execs.len(),expected.len());assert_eq!(tasks.len(),expected.len());
+            assert_eq!(marker_reads,vec![start]);assert_eq!(marker_writes.len(),usize::from(phase==0||revise_now));
+            let marker=&w.state.objects[EXPERIENCE_KEY];assert_eq!(marker.version,u64::from(revoked));
+            assert_eq!(marker.bytes,if revoked{b"0"}else{b"1"});
+            committed.extend(expected.iter().copied());
+            for slot in 0..6{
+                let key=format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8);
+                let exists=committed.contains(&slot);
+                assert_eq!(w.state.objects.contains_key(&key),exists);
+                if exists{let o=&w.state.objects[&key];assert_eq!(o.version,0);assert_bound_artifact(&o.bytes,slot);}
+            }
+            for h in &inventory{assert!(w.state.objects.contains_key(&version_key(h)));}
+            assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+            assert!(!w.state.objects.contains_key(S29_DRY_KEY));
+            assert_eq!(start_a-vm-world,w.state.nodes[&NodeId::A].gas_available);
+            assert_eq!(reserves.len(),usize::from(expected_sensor));
+            if expected_sensor{
+                let low=arm!="RETAIN_EARLY"&&(phase==1||arm=="RESERVE_LATE");
+                assert_eq!(reserves[0].1<9000,low);
+            }
+            if phase==2{costs.push(vm+world-task_a);}
+
+        }
+    }
+    if arm=="RESERVE_LATE"{assert!(costs[1]<costs[0]);}
+}
