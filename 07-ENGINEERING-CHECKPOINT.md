@@ -912,3 +912,8 @@
 
 ### 2026-11-24 — 公共任务驱动首轮编译红，原协议重试
 - [CI #45324803189](https://github.com/iFrankStudio/OCEE/actions/runs/45324803189) @ae1753ce 两臂0/2，均 E0433 测试schedule hash缺Sha256作用域，尚未执行实验。既有dev dependency sha2不变，仅补局部Digest/Sha256导入 @1703198d；原协议、输入、时序、资源与断言全部不变。触发[原生重试 #45325604541](https://github.com/iFrankStudio/OCEE/actions/runs/45325604541) @a81f560e，尚未验收。保留红例。G0 GO/G1,G2 NO-GO。
+
+### 2026-11-24 — 同ID待完成任务的资源反馈重试（待验收）
+- [独立冻结协议](./experiments/E001/DEV-S29-PENDING-OFFER-RESOURCE-RETRY.md) @760f706d、实现 @08f38889、[CI #45325877503](https://github.com/iFrankStudio/OCEE/actions/runs/45325877503) @d82c0af0；在上一原协议重试#45325604541仍运行时启动。seed129真P2、同一付费预装两个根LAST_ID/PENDING，等价激活后固定180tick。初次同a/[44,7,2]真实Quota、真干扫描b1/v0，始终不解绑任何版本；+28环境重复发布原a或同ID不同输入，SPACE/ID_CONFLICT物理capacity+512B，NO_SPACE不增。无actor余额编辑、无研究者任务/记忆写入。
+- PENDING同ID先比较实际公开输入与continuation保存输入，真Read自己的结果对象，仅NotFound再付费读/sys/resource-status、真实free>=280才允许原任务重试；已有产物或输入冲突不重复执行。三环境每个与LAST_ID同物理初态对照，预测SPACE仅PENDING正确重试提交（不把直接成功误写成维护正反馈），另两环境均无额外Exec/GC。严格区分轮询、lookup、sensor、Exec、任务费用、安装和实际存储/index峰，完整snapshot/audit与环境发布hash复演。仍仅同ID有限continuation语义，不宣称全局去重或跨重启持久队列。
+- **两个新run仍未验收**，后续先读#45325604541和#45325877503实际日志及实时HEAD，保留红例，不改变冻结事件时序/阈值。G0 GO/G1,G2 NO-GO；正式E001未校准/预注册。
