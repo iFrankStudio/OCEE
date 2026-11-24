@@ -991,3 +991,8 @@
 
 ### 2026-11-24 — 双向经验修订编译失败与纯重复定义修复
 - [原双向CAS #45389246393](https://github.com/iFrankStudio/OCEE/actions/runs/45389246393) @f045d14 0/1，rustc E0428：EXPERIENCE_META/repeated_experience_root完全重复定义（7518/7519与7751/7752），未实际执行实验。已确认两个builder文本逐字相同，仅删除尾部重复副本6647字符，保留首个builder及完整冻结测试；调整workflow step名称重触发，源码 @ec7e58c，[CI #45390225834](https://github.com/iFrankStudio/OCEE/actions/runs/45390225834)。未更改策略、事件、资源、判据、预期或世界内核；原编译红保留。先读新CI真实结果，未验收不能将双向修订视为已实现能力。G0 GO/G1,G2 NO-GO。
+
+
+### 2026-11-24 — 独立观察不可区分性反例（待验收）
+- 双向CAS重跑[45390225834](https://github.com/iFrankStudio/OCEE/actions/runs/45390225834) @ec7e58c 当前in_progress / 未验收；原重复定义编译红保留。
+- 独立冻结[观察不可区分性协议](./experiments/E001/DEV-S29-OBSERVATION-ALIASING.md) @11368f7，源码/工作流 @23d7779，[CI #45391665473](https://github.com/iFrankStudio/OCEE/actions/runs/45391665473)。仅复用已验收REVISE根（非待验收双向根），seed129/P2/B20、付费安装、free2000B、自然grant、原训练a/+7 b/+9 a实际成功及创建1/v0。随后同一真实重启快照克隆成SILENT（只有c）与LATE（c/+40 d持续）两臂，固定180tick。预测两臂实际动作及全部ActionResult（包括VM/world费、payload）逐项完全相等、都仅成功c且自行CAS0→0/v1、终止早于+40、私有状态与资源账户相等；但外界public发布1/2次、最终公共对象内容/版本和世界摘要不同。分别完整snapshot/audit/publication复演，真实任务正确性、保留、费用、无Gas和B20严格验收。若通过，是单次观察轨迹不可区分的反例，说明成功数不足以识别未观测机会，不等于证明所有学习不可能。无oracle、无root/内核修改。待实测后再研究付费探索与评价，G0 GO/G1,G2 NO-GO。
