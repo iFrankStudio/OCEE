@@ -6909,9 +6909,13 @@ fn paced_tape(arm:&str)->Vec<(u64,usize)>{
 }
 fn paced_episode(w:&mut World,root:&str,tape:&[(u64,usize)])
     ->(LifetimeIndexProbe,Vec<(u64,usize,u64,String)>,Option<u64>){
+    paced_episode_horizon(w,root,tape,120)
+}
+fn paced_episode_horizon(w:&mut World,root:&str,tape:&[(u64,usize)],horizon:u64)
+    ->(LifetimeIndexProbe,Vec<(u64,usize,u64,String)>,Option<u64>){
     let start=w.state.step;let mut peak=LifetimeIndexProbe::default();peak.sample(w);
     let mut pubs=Vec::new();let mut finished=None;
-    while w.state.step<start+120{
+    while w.state.step<start+horizon{
         let offset=w.state.step-start;
         if let Some((_,slot))=tape.iter().find(|(at,_)|*at==offset){
             offer_publish(w,*slot);
@@ -7173,7 +7177,17 @@ fn s29_experience_transfer_limits_native(){
     assert!(matches!(arm.as_str(),"NEGATIVE_TRANSFER"|"ABSENT_EXPERIENCE"));
     durable_experience_impl(&arm);
 }
+#[test]
+#[ignore="frozen resource-accounted experience transfer follow-up"]
+fn s29_experience_transfer_accounted_native(){
+    let arm=std::env::var("OCEE_S29_EXPERIENCE_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"NEGATIVE_TRANSFER"|"ABSENT_EXPERIENCE"));
+    durable_experience_impl_accounted(&arm,true);
+}
 fn durable_experience_impl(arm:&str){
+    durable_experience_impl_accounted(arm,false);
+}
+fn durable_experience_impl_accounted(arm:&str,accounted:bool){
     let absent=arm=="ABSENT_EXPERIENCE";
     let negative=arm=="NEGATIVE_TRANSFER";
     let (mut base,_,target,_,registered)=lifetime_setup(129);
@@ -7213,8 +7227,9 @@ fn durable_experience_impl(arm:&str){
             }else if absent||(negative&&policy==1)||(!negative&&policy==0){vec![2]}
             else{vec![2,3]};
             let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
-            let (peak,pubs,finished)=paced_episode(&mut w,root,&tape);
-            let (rp,rpubs,rf)=paced_episode(&mut replay,root,&tape);
+            let horizon=if accounted&&negative&&phase==1{180}else{120};
+            let (peak,pubs,finished)=paced_episode_horizon(&mut w,root,&tape,horizon);
+            let (rp,rpubs,rf)=paced_episode_horizon(&mut replay,root,&tape,horizon);
             assert_eq!(peak,rp);assert_eq!(pubs,rpubs);assert_eq!(finished,rf);
             assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
             let mut reads=Vec::new();let mut execs=Vec::new();let mut tasks=Vec::new();
@@ -7262,7 +7277,7 @@ fn durable_experience_impl(arm:&str){
                 }
             }
             let latencies=tasks.iter().map(|(at,slot)|at-start-tape.iter().find(|(_,s)|s==slot).unwrap().0).collect::<Vec<_>>();
-            println!("S29_EXPERIENCE_ARM arm={arm} policy={policy} phase={phase}");
+            println!("S29_EXPERIENCE_ARM arm={arm} policy={policy} phase={phase} horizon={horizon} accounted={accounted}");
             println!("S29_EXPERIENCE policy={policy} phase={phase} root={root} root_B={} start={start} start_A={start_a} final_A={} finished={finished:?} return={:?} pubs={pubs:?} reads={reads:?} observes={observations:?} execs={execs:?} tasks={tasks:?} latency={latencies:?} marker_reads={marker_reads:?} marker_writes={marker_writes:?} marker_A={marker_a} VM_A={vm} world_A={world} task_A={task_a} non_task_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
                 raw.len(),w.state.nodes[&NodeId::A].gas_available,w.state.organisms[&ORGANISM_ID].last_return,
                 vm+world-task_a,after.0-before.0,after.1-before.1,peak.storage_peak,peak.post_tick_peak);
@@ -7287,9 +7302,28 @@ fn durable_experience_impl(arm:&str){
                 else{assert!(reads.iter().any(|(_,s)|*s==3));}
             }
             if phase==1&&absent{
+                let mut balance=start_a;
+                let mut checked=0;
                 let timeline=w.audit.iter().filter(|e|e.step>=start)
-                    .map(|e|(e.step,e.action.clone(),e.result.code,e.result.payload.clone(),e.result.gas_charged))
-                    .collect::<Vec<_>>();
+                    .map(|e|{
+                        let mut payload=e.result.payload.clone();
+                        if accounted{
+                            balance=balance.checked_sub(e.result.vm_gas_charged+e.result.gas_charged).unwrap();
+                            if matches!(&e.action,Some(Action::Observe{..})){
+                                assert_eq!(e.result.code,Code::Ok);assert_eq!(e.result.gas_charged,1);
+                                let mut v:serde_json::Value=serde_json::from_slice(&payload).unwrap();
+                                assert_eq!(v[0].as_u64(),Some(e.step));assert_eq!(v[1].as_u64(),Some(balance));
+                                v[1]=serde_json::Value::Null;
+                                payload=serde_json::to_vec(&v).unwrap();checked+=1;
+                            }
+                        }
+                        (e.step,e.action.clone(),e.result.code,payload,e.result.gas_charged)
+                    }).collect::<Vec<_>>();
+                if accounted{
+                    assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                    assert_eq!(checked,observations.len());
+                    println!("S29_EXPERIENCE_BALANCE policy={policy} checked_observes={checked} final_A={balance}");
+                }
                 if policy==0{absent_timeline=Some(timeline);}
                 else{assert_eq!(timeline,*absent_timeline.as_ref().unwrap());}
             }
