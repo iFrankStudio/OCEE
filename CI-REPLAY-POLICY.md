@@ -200,3 +200,6 @@ Native [45318793560](https://github.com/iFrankStudio/OCEE/actions/runs/453187935
 
 ## 2026-11-24 — Continuous three-task history
 [45320513669](https://github.com/iFrankStudio/OCEE/actions/runs/45320513669) @2066d50f completed/success 2/2, exact log archive in continuous outcome report; narrow native only, restore workflow manual-only. New independent registered-tool utility matrix #45320955049 pending, not evidence of success.
+
+## 2026-11-24 — Continuous registered-tool utility
+[45320955049](https://github.com/iFrankStudio/OCEE/actions/runs/45320955049) @1e595f3e completed/success 6/6, 21 actual correct Exec receipts and 3 committed distinct tasks; [full native record](./experiments/E001/DEV-S29-CONTINUOUS-REGISTERED-TOOL-UTILITY.md). Narrow native only. Restore workflow manual-only.
