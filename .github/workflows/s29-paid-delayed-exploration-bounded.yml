@@ -1,0 +1,23 @@
+name: S29 Bounded Delayed Exploration
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-paid-delayed-exploration-bounded.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [SILENT, LATE, MID_PULSE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_EXPLORATION_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_paid_delayed_exploration_bounded_native -- --ignored --show-output
