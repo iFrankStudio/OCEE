@@ -5794,3 +5794,293 @@ fn s29_continuous_registered_tool_native(){
         world-task_a-exec_a-read_a-external,setup_after.0-setup_before.0,
         setup_after.1-setup_before.1,peak.storage_peak,peak.post_tick_peak,paid_memory_value(&w));
 }
+
+
+// Bounded polling of ordinary world-owned offers. The input and identity
+// travel in the continuation, not in host-selected VM calls or baked literals.
+const OFFER_PUBLIC:&str="/public/E001/transform";
+const OFFER_OUTCOME:&str="/self/outcomes/s29-offer-";
+fn public_offer_root()->Program{
+    let mut p=continuous_semantic_root();
+    let f=&mut p.functions[0];
+    let header=f.blocks.iter_mut().find(|b|b.id=="episode_header").unwrap();
+    if let Terminator::RepeatBounded{body,..}=&mut header.terminator{
+        *body="offer_poll_header".into();
+    }else{panic!("expected bounded opportunity loop");}
+    let end=f.blocks.iter_mut().find(|b|b.id=="episode_end").unwrap();
+    end.instructions.clear();
+    end.terminator=Terminator::Jump{target:"episode_next".into(),args:vec![99]};
+    f.blocks.retain(|b|!matches!(b.id.as_str(),
+        "episode_delay"|"episode_observe"|"episode_observe_reply"));
+    for suffix in ["initial","retry"]{
+        let b=f.blocks.iter_mut().find(|b|b.id==format!("semantic_{suffix}_exec")).unwrap();
+        b.instructions=vec![
+            Instruction{id:10,op:lit(b"payload")},
+            Instruction{id:11,op:Op::JsonFieldBytes(2,10)}
+        ];
+        if let Terminator::Yield{args,..}=&mut b.terminator{*args=vec![11,97];}
+        else{panic!("expected actual EXEC");}
+        let b=f.blocks.iter_mut().find(|b|b.id==format!("semantic_{suffix}_write")).unwrap();
+        b.instructions=vec![
+            Instruction{id:10,op:lit(OFFER_OUTCOME.as_bytes())},
+            Instruction{id:15,op:Op::HexEncode(98)},
+            Instruction{id:16,op:Op::Concat(10,15)},
+            Instruction{id:17,op:Op::PackByte(2)},
+            Instruction{id:18,op:lit(&[0x55;279])},
+            Instruction{id:11,op:Op::Concat(17,18)},
+            Instruction{id:12,op:Op::ConstU32(u32::MAX)}
+        ];
+    }
+    // Preserve the exact received input and identity across all yields,
+    // including a real GC and retry. Feedback remains the last parameter.
+    let yield_targets=f.blocks.iter().filter_map(|b|match &b.terminator{
+        Terminator::Yield{next,..}=>Some(next.clone()),_=>None
+    }).collect::<std::collections::BTreeSet<_>>();
+    for b in &mut f.blocks{
+        if b.id=="entry"{
+            b.instructions.extend([
+                Instruction{id:97,op:lit(b"")},Instruction{id:98,op:lit(b"")}
+            ]);
+        }else{
+            let pos=if yield_targets.contains(&b.id){b.params.len()-1}else{b.params.len()};
+            b.params.insert(pos,Param{id:97,ty:Type::Bytes});
+            b.params.insert(pos+1,Param{id:98,ty:Type::Bytes});
+        }
+        match &mut b.terminator{
+            Terminator::Jump{args,..}=>args.extend([97,98]),
+            Terminator::Branch{true_args,false_args,..}=>{
+                true_args.extend([97,98]);false_args.extend([97,98]);
+            },
+            Terminator::RepeatBounded{body_args,done_args,..} |
+            Terminator::RepeatScoped{body_args,done_args,..}=>{
+                body_args.extend([97,98]);done_args.extend([97,98]);
+            },
+            Terminator::Yield{next_args,..}=>next_args.extend([97,98]),
+            Terminator::Return{..}=>{}
+        }
+    }
+    let context=||vec![Param{id:99,ty:Type::U32},Param{id:97,ty:Type::Bytes},
+        Param{id:98,ty:Type::Bytes}];
+    let feedback=||{
+        let mut v=context();v.push(Param{id:2,ty:Type::Bytes});v
+    };
+    f.blocks.extend([
+        Block{id:"offer_poll_header".into(),params:context(),instructions:vec![],
+            terminator:Terminator::RepeatScoped{limit:32,aggregate_limit:96,scope:99,
+                body:"offer_read".into(),body_args:vec![99,97,98],
+                done:"episode_return".into(),done_args:vec![99,97,98]}},
+        Block{id:"offer_read".into(),params:context(),
+            instructions:vec![Instruction{id:10,op:lit(OFFER_PUBLIC.as_bytes())}],
+            terminator:Terminator::Yield{call:WorldCall::Read,args:vec![10],
+                next:"offer_reply".into(),next_args:vec![99,97,98]}},
+        Block{id:"offer_reply".into(),params:feedback(),instructions:vec![
+            Instruction{id:20,op:lit(b"code")},
+            Instruction{id:21,op:Op::JsonFieldString(2,20)},
+            Instruction{id:22,op:lit(b"Ok")},
+            Instruction{id:23,op:Op::EqBytes(21,22)}
+        ],terminator:Terminator::Branch{condition:23,if_true:"offer_parse".into(),
+            true_args:vec![99,97,98,2],if_false:"offer_poll_header".into(),
+            false_args:vec![99,97,98]}},
+        Block{id:"offer_parse".into(),params:feedback(),instructions:vec![
+            Instruction{id:10,op:lit(b"payload")},
+            Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:12,op:lit(b"task_id")},
+            Instruction{id:13,op:Op::JsonFieldString(11,12)},
+            Instruction{id:14,op:Op::EqBytes(13,98)}
+        ],terminator:Terminator::Branch{condition:14,if_true:"offer_poll_header".into(),
+            true_args:vec![99,97,98],if_false:"offer_fresh".into(),
+            false_args:vec![99,97,98,11,13]}},
+        Block{id:"offer_fresh".into(),params:{
+            let mut v=context();v.extend([Param{id:1,ty:Type::Bytes},Param{id:2,ty:Type::Bytes}]);v
+        },instructions:vec![
+            Instruction{id:10,op:Op::Len(2)},
+            Instruction{id:11,op:Op::ConstU32(1)},
+            Instruction{id:12,op:Op::EqU32(10,11)}
+        ],terminator:Terminator::Branch{condition:12,if_true:"offer_input".into(),
+            true_args:vec![99,97,98,1,2],if_false:"offer_poll_header".into(),
+            false_args:vec![99,97,98]}},
+        Block{id:"offer_input".into(),params:{
+            let mut v=context();v.extend([Param{id:1,ty:Type::Bytes},Param{id:2,ty:Type::Bytes}]);v
+        },instructions:vec![
+            Instruction{id:10,op:lit(b"held_out_input")},
+            Instruction{id:11,op:Op::JsonFieldBytes(1,10)},
+            Instruction{id:12,op:Op::Len(11)},
+            Instruction{id:13,op:Op::ConstU32(0)},
+            Instruction{id:14,op:Op::EqU32(12,13)}
+        ],terminator:Terminator::Branch{condition:14,if_true:"offer_poll_header".into(),
+            true_args:vec![99,97,98],if_false:"offer_input_bound".into(),
+            false_args:vec![99,97,98,11,2]}},
+        Block{id:"offer_input_bound".into(),params:{
+            let mut v=context();v.extend([Param{id:1,ty:Type::Bytes},Param{id:2,ty:Type::Bytes}]);v
+        },instructions:vec![
+            Instruction{id:10,op:Op::Len(1)},
+            Instruction{id:11,op:Op::ConstU32(256)},
+            Instruction{id:12,op:Op::Div(10,11)},
+            Instruction{id:13,op:Op::ConstU32(0)},
+            Instruction{id:14,op:Op::EqU32(12,13)}
+        ],terminator:Terminator::Branch{condition:14,if_true:"episode_task".into(),
+            true_args:vec![99,1,2],if_false:"offer_poll_header".into(),
+            false_args:vec![99,97,98]}}
+    ]);
+    p.validate().expect("bounded offer polling, retained input and identity");
+    p
+}
+fn offer_fixture(slot:usize)->TransformTask{
+    let (id,input)=match slot{
+        0=>("a",vec![44,7,2]),1=>("b",vec![13,9,4,8]),
+        2=>("c",vec![27,2,1,4,8]),_=>panic!("unknown frozen offer")
+    };
+    TransformTask{task_id:id.into(),examples:vec![],held_out_input:input}
+}
+fn offer_publish(w:&mut World,slot:usize){
+    // Explicit environment-only fixture publication, not an organism action.
+    let old=w.state.objects.get(OFFER_PUBLIC).expect("real public object");
+    assert_eq!(old.owner,0);
+    let version=old.version+1;
+    w.state.version_ref_index=None;
+    w.state.objects.insert(OFFER_PUBLIC.into(),ocee_world_kernel::Object{
+        owner:0,version,bytes:serde_json::to_vec(&offer_fixture(slot)).unwrap()
+    });
+}
+fn offer_episode(w:&mut World,root:&str,pin:&str,target:&str,arrivals:bool)
+    ->(LifetimeIndexProbe,u64,Vec<(u64,u64,usize,String)>){
+    let start=w.state.step;
+    let mut peak=LifetimeIndexProbe::default();peak.sample(w);
+    let mut external=None;let mut publications=Vec::new();
+    while w.state.step<start+150{
+        let offset=w.state.step-start;
+        if [0,28,48].contains(&offset){
+            let slot=if arrivals{match offset{0=>0,28=>1,48=>2,_=>unreachable!()}}else{0};
+            offer_publish(w,slot);
+            let obj=&w.state.objects[OFFER_PUBLIC];
+            publications.push((w.state.step,obj.version,slot,w.state_hash()));
+            peak.sample(w);
+        }
+        if offset==22{
+            assert_eq!(paid_memory_value(w),(b"1".to_vec(),0));
+            let r=lifetime_external_write(w,pin,vec![b'-';64],Some(0),&mut peak);
+            assert_eq!(r.code,Code::Ok);assert!(r.gas_charged>0);
+            external=Some(r.gas_charged);
+        }else if w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished){
+            w.tick(None);peak.sample(w);
+        }else{
+            let r=w.tick_autonomous(ORGANISM_ID);peak.sample(w);
+            assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        }
+        assert_eq!(w.state.organisms[&ORGANISM_ID].active_program_hash.as_deref(),Some(root));
+    }
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+        Some(Value::U32(if arrivals{3}else{1})));
+    assert_eq!(b_gas(w),20);
+    (peak,external.expect("fixed pin release"),publications)
+}
+#[test]
+#[ignore="frozen public offer driven registered tool task pilot"]
+fn s29_public_offer_driven_native(){
+    let arm=std::env::var("OCEE_S29_OFFER_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"ARRIVALS"|"DUPLICATE_ONLY"));
+    let arrivals=arm=="ARRIVALS";
+    let (mut w,versions,target,_,registered)=lifetime_setup(129);
+    let before=spend(&w);
+    let p=public_offer_root();let raw=p.canonical_bytes();let root_b=raw.len();
+    assert!(!raw.windows(64).any(|x|x==target.as_bytes()||x==registered.as_bytes()));
+    let root=p.content_hash().unwrap();
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+65_536;
+    put(&mut w,version_key(&root),raw);
+    put(&mut w,"/self/pins/s29-public-offer-root".into(),root.as_bytes().to_vec());
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    quota_wait_next_grant(&mut w);
+    let setup=spend(&w);let base=w.state_hash();
+    let installed=lifetime_extra_versions(&w);
+    let idx=versions.iter().position(|h|h==&target).unwrap();
+    let pin=format!("/self/pins/s29-dry-{idx}");
+    let target_len=w.state.objects[&version_key(&target)].bytes.len() as u64;
+    lifetime_set_active(&mut w,&root);
+    let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
+    let schedule=serde_json::json!({"arm":arm,"start":start,"publications":[
+        [0,0],[28,if arrivals{1}else{0}],[48,if arrivals{2}else{0}]],
+        "offers":[offer_fixture(0),offer_fixture(1),offer_fixture(2)],
+        "release_offset":22,"pin":pin,"target":target,"horizon":150});
+    let schedule_hash=format!("{:x}",Sha256::digest(serde_json::to_vec(&schedule).unwrap()));
+    let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+    let (peak,external,publications)=offer_episode(&mut w,&root,&pin,&target,arrivals);
+    let (rp,re,rpub)=offer_episode(&mut replay,&root,&pin,&target,arrivals);
+    assert_eq!(peak,rp);assert_eq!(external,re);assert_eq!(publications,rpub);
+    assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+    let mut reads=Vec::new();let mut execs=Vec::new();let mut tasks=Vec::new();
+    let mut marks=Vec::new();let mut indexes=Vec::new();let mut gc=0;let mut gc_step=None;
+    let mut vm=0u64;let mut world=0u64;let mut poll_a=0u64;let mut exec_a=0u64;let mut task_a=0u64;
+    for e in w.audit.iter().filter(|e|e.step>=start){
+        vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+        match &e.action{
+            Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
+                assert_eq!(e.result.code,Code::Ok);
+                let offer:TransformTask=serde_json::from_slice(&e.result.payload).unwrap();
+                assert!(offer.examples.is_empty());
+                let slot=if arrivals&&e.step>=start+48{2}else if arrivals&&e.step>=start+28{1}else{0};
+                assert_eq!(offer,offer_fixture(slot));
+                reads.push((e.step,offer.task_id));poll_a+=e.result.gas_charged;
+            },
+            Some(Action::Exec{program_hash,input,..})=>{
+                assert_eq!(program_hash,&registered);assert_eq!(e.result.code,Code::Ok);
+                let slot=execs.len().min(2);
+                let offer=offer_fixture(slot);
+                assert_eq!(input,&offer.held_out_input);
+                let expected=hidden_transform(129,input);
+                assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),Value::U32(expected));
+                assert!(reads.iter().any(|(step,id)|*step<e.step&&id==&offer.task_id));
+                execs.push((e.step,slot,expected));exec_a+=e.result.gas_charged;
+            },
+            Some(Action::Write{key,bytes,..})=>{
+                assert_ne!(key,"/self/active");
+                if key.starts_with(OFFER_OUTCOME){
+                    let slot=tasks.len().min(2);let offer=offer_fixture(slot);
+                    assert_eq!(key,&format!("{OFFER_OUTCOME}{:02x}",offer.task_id.as_bytes()[0]));
+                    assert_eq!(bytes.len(),280);assert_eq!(bytes[0],hidden_transform(129,&offer.held_out_input) as u8);
+                    assert!(bytes[1..].iter().all(|x|*x==0x55));
+                    assert_eq!(execs.last().unwrap().1,slot);
+                    tasks.push((e.step,slot,e.result.code,e.result.gas_charged));
+                    task_a+=e.result.gas_charged;
+                }else if key==S29_DRY_KEY{
+                    assert_eq!(e.result.code,Code::Ok);assert!(e.result.gas_charged>0);
+                    marks.push((e.step,bytes.clone(),e.result.gas_charged));
+                }
+            },
+            Some(Action::IndexVersionRefs{..})=>{
+                assert_eq!(e.result.code,Code::Ok);indexes.push(e.step);
+            },
+            Some(Action::ReclaimIndexedVersion{program_hash,..}) if e.result.code==Code::Ok=>{
+                assert_eq!(program_hash,&target);
+                gc+=u64::from_le_bytes(e.result.payload.as_slice().try_into().unwrap());gc_step=Some(e.step);
+            },
+            _=>{}
+        }
+    }
+    assert_eq!(tasks.len(),if arrivals{4}else{1});
+    assert_eq!(execs.len(),tasks.len());
+    assert!(reads.len()>tasks.len());
+    assert_eq!(indexes.len(),if arrivals{2}else{1});
+    assert_eq!(marks.len(),if arrivals{3}else{1});
+    assert_eq!(marks[0].1,b"1");assert!(marks[0].0<start+22);
+    if arrivals{
+        assert_eq!(tasks[0].2,Code::Quota);assert_eq!(tasks[1].2,Code::Quota);
+        assert_eq!(tasks[2].2,Code::Quota);assert_eq!(tasks[3].2,Code::Ok);
+        assert!(tasks[1].0>=start+28&&tasks[2].0>=start+48);
+        assert_eq!(marks[1].1,b"2");assert_eq!(marks[2].1,b"0");
+        assert!(indexes[1]<gc_step.unwrap()&&gc_step.unwrap()<execs[3].0&&tasks[3].0<marks[2].0);
+    }else{assert_eq!(tasks[0].2,Code::Quota);}
+    assert_eq!(gc,if arrivals{target_len}else{0});
+    assert_eq!(paid_memory_value(&w),if arrivals{(b"0".to_vec(),2)}else{(b"1".to_vec(),0)});
+    for slot in 0..3{
+        let offer=offer_fixture(slot);
+        let key=format!("{OFFER_OUTCOME}{:02x}",offer.task_id.as_bytes()[0]);
+        assert_eq!(w.state.objects.contains_key(&key),arrivals&&slot==2);
+        if arrivals&&slot==2{assert_eq!(w.state.objects[&key].bytes[0],5);}
+    }
+    for h in &installed{assert_eq!(w.state.objects.contains_key(&version_key(h)),!(arrivals&&h==&target));}
+    assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+    println!("S29_OFFER_DONE arm={arm} root={root} root_B={root_b} base={base} start={start} start_A={start_a} schedule={schedule_hash} publications={publications:?} reads={reads:?} execs={execs:?} tasks={tasks:?} marks={marks:?} indexes={indexes:?} gc_B={gc} VM_A={vm} world_A={world} poll_A={poll_a} exec_A={exec_a} task_A={task_a} external_A={external} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
+        setup.0-before.0,setup.1-before.1,peak.storage_peak,peak.post_tick_peak);
+}
