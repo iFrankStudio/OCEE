@@ -4919,3 +4919,253 @@ fn s29_task_quota_override_native(){
     println!("S29_QUOTA_DONE arm={arm} seed=129 base={base_hash} target={target} target_B={target_len} free={free} start_A={} setup_VM_A={} setup_world_A={} roots={roots:?}",
         start_a.unwrap(),end.0-before.0,end.1-before.1);
 }
+
+
+// Earned binary history causal transfer: training branches get their memory
+// from real task/GC receipts, not researcher writes. The probe's task path is
+// distinct, and physical object maps are normalized by actual paid actions.
+const S29_HISTORY_PROBE_TASK:&str="/self/outcomes/s29-history-probe";
+fn history_training_root()->Program{
+    let mut p=quota_task_root(true);
+    let f=&mut p.functions[0];
+    let reply=f.blocks.iter_mut().find(|b|b.id=="task_retry_reply").unwrap();
+    if let Terminator::Branch{if_true,..}=&mut reply.terminator{
+        assert_eq!(if_true,"task_ok");
+        *if_true="record_recovery".into();
+    }else{panic!("expected actual successful task receipt");}
+    f.blocks.extend([
+        Block{
+            id:"record_recovery".into(),params:vec![],
+            instructions:vec![
+                Instruction{id:10,op:lit(S29_DRY_KEY.as_bytes())},
+                Instruction{id:11,op:lit(b"0")},
+                Instruction{id:12,op:Op::ConstU32(u32::MAX)}
+            ],
+            terminator:Terminator::Yield{
+                call:WorldCall::Write,args:vec![10,11,12],
+                next:"record_recovery_reply".into(),next_args:vec![]
+            }
+        },
+        Block{
+            id:"record_recovery_reply".into(),
+            params:vec![Param{id:2,ty:Type::Bytes}],
+            instructions:vec![
+                Instruction{id:20,op:lit(b"code")},
+                Instruction{id:21,op:Op::JsonFieldString(2,20)},
+                Instruction{id:22,op:lit(b"Ok")},
+                Instruction{id:23,op:Op::EqBytes(21,22)}
+            ],
+            terminator:Terminator::Branch{
+                condition:23,if_true:"task_ok".into(),true_args:vec![],
+                if_false:"failed".into(),false_args:vec![]
+            }
+        }
+    ]);
+    p.validate().expect("real retry success can create paid positive history");
+    p
+}
+fn history_probe_root(blind:bool)->Program{
+    let mut p=quota_task_root(blind);
+    for id in ["entry","task_retry"]{
+        let b=p.functions[0].blocks.iter_mut().find(|b|b.id==id).unwrap();
+        assert_eq!(b.instructions[0].id,10);
+        b.instructions[0].op=lit(S29_HISTORY_PROBE_TASK.as_bytes());
+    }
+    p.validate().unwrap();
+    p
+}
+#[derive(Debug,PartialEq,Eq)]
+struct HistoryReceiptMetrics{
+    tasks:Vec<(u64,Code,u64)>,
+    vm:u64,world:u64,task_a:u64,
+    gc:u64,indexes:usize,conflicts:usize,
+    memory_writes:Vec<(u64,Vec<u8>,Code,u64)>,
+}
+fn history_measure(w:&World,start:u64,task:&str,target:&str)->HistoryReceiptMetrics{
+    let mut m=HistoryReceiptMetrics{
+        tasks:vec![],vm:0,world:0,task_a:0,gc:0,indexes:0,conflicts:0,
+        memory_writes:vec![]
+    };
+    for e in w.audit.iter().filter(|e|e.step>=start){
+        m.vm+=e.result.vm_gas_charged;
+        m.world+=e.result.gas_charged;
+        if let Some(Action::Write{key,bytes,..})=&e.action{
+            if key==task{
+                assert_eq!(bytes,&vec![0x55;280]);
+                m.tasks.push((e.step,e.result.code,e.result.gas_charged));
+                m.task_a+=e.result.gas_charged;
+            }
+            if key==S29_DRY_KEY{
+                m.memory_writes.push((e.step,bytes.clone(),e.result.code,e.result.gas_charged));
+            }
+        }
+        if matches!(&e.action,Some(Action::IndexVersionRefs{..})){
+            assert_eq!(e.result.code,Code::Ok);m.indexes+=1;
+        }
+        if let Some(Action::ReclaimIndexedVersion{program_hash,..})=&e.action{
+            if e.result.code==Code::Ok{
+                assert_eq!(program_hash,target);
+                m.gc+=u64::from_le_bytes(e.result.payload.as_slice().try_into().unwrap());
+            }else if e.result.code==Code::Conflict{m.conflicts+=1;}
+        }
+    }
+    m
+}
+fn history_replay_episode(w:&mut World,task:&str,target:&str)
+    ->(HistoryReceiptMetrics,LifetimeIndexProbe){
+    let start=w.state.step;
+    let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+    let mut peak=LifetimeIndexProbe::default();
+    peak.sample(w);
+    let mut replay_peak=peak.clone();
+    lifetime_finish_remaining(w,&mut peak,start+90);
+    lifetime_finish_remaining(&mut replay,&mut replay_peak,start+90);
+    assert_eq!(w.snapshot_json(),replay.snapshot_json());
+    assert_eq!(w.audit,replay.audit);
+    assert_eq!(peak,replay_peak);
+    assert_eq!(b_gas(w),20);
+    (history_measure(w,start,task,target),peak)
+}
+fn history_same_physical(a:&World,b:&World){
+    assert_eq!(a.state.step,b.state.step);
+    assert_eq!(a.state.nodes,b.state.nodes);
+    assert_eq!(a.state.pending_deliveries,b.state.pending_deliveries);
+    assert_eq!(a.state.mailboxes,b.state.mailboxes);
+    assert_eq!(a.state.organisms[&ORGANISM_ID].storage_used,
+        b.state.organisms[&ORGANISM_ID].storage_used);
+    assert_eq!(lifetime_extra_versions(a),lifetime_extra_versions(b));
+    let mut ao=a.state.objects.clone();
+    let mut bo=b.state.objects.clone();
+    let am=ao.remove(S29_DRY_KEY).unwrap();
+    let bm=bo.remove(S29_DRY_KEY).unwrap();
+    assert_eq!(am.owner,bm.owner);
+    assert_eq!(am.version,bm.version);
+    assert_eq!(am.bytes.len(),bm.bytes.len());
+    assert_ne!(am.bytes,bm.bytes);
+    assert_eq!(ao,bo,"all other actual object bytes and versions must match");
+    assert_eq!(a.state.version_ref_index,b.state.version_ref_index);
+}
+#[test]
+#[ignore="frozen earned task repair history causal probe at matched physical state"]
+fn s29_earned_task_history_native(){
+    let arm=std::env::var("OCEE_S29_HISTORY_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"RELEASED"|"PINNED"));
+    let (mut base,versions,target,_,registered)=lifetime_setup(129);
+    assert!(!base.state.objects.contains_key(S29_DRY_KEY));
+    assert!(!base.state.objects.contains_key(S29_LIFE_TASK));
+    assert!(!base.state.objects.contains_key(S29_HISTORY_PROBE_TASK));
+    let initial_spend=spend(&base);
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+65_536;
+    let mut roots=Vec::new();
+    for (i,p) in [history_training_root(),history_probe_root(false),
+        history_probe_root(true)].into_iter().enumerate(){
+        let raw=p.canonical_bytes();
+        assert!(!raw.windows(64).any(|x|x==target.as_bytes()));
+        let h=p.content_hash().unwrap();
+        put(&mut base,version_key(&h),raw);
+        put(&mut base,format!("/self/pins/s29-history-root-{i}"),h.as_bytes().to_vec());
+        roots.push(h);
+    }
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    quota_wait_next_grant(&mut base);
+    let install_spend=spend(&base);
+    let base_hash=base.state_hash();
+    let pin_idx=versions.iter().position(|x|x==&target).unwrap();
+    let pin=format!("/self/pins/s29-dry-{pin_idx}");
+    let target_bytes=base.state.objects[&version_key(&target)].bytes.clone();
+    let target_len=target_bytes.len() as u64;
+    let installed=lifetime_extra_versions(&base);
+    let mut histories=Vec::new();
+    let mut training_start=None;
+    for good in [true,false]{
+        let label=if good{"SUCCESS"}else{"FAILURE"};
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        alter(&mut w,&pin,if good{vec![b'-';64]}else{target.as_bytes().to_vec()},0);
+        lifetime_set_active(&mut w,&roots[0]);
+        if let Some(prev)=training_start{
+            assert_eq!(w.state.step,prev);
+        }else{training_start=Some(w.state.step);}
+        let (m,peak)=history_replay_episode(&mut w,S29_LIFE_TASK,&target);
+        assert_eq!(m.tasks[0].1,Code::Quota);
+        assert_eq!(m.tasks.len(),if good{2}else{1});
+        assert_eq!(m.gc,if good{target_len}else{0});
+        assert_eq!(m.indexes,1);
+        assert_eq!(m.memory_writes.len(),1);
+        assert_eq!(m.memory_writes[0].2,Code::Ok);
+        assert!(m.memory_writes[0].3>0);
+        if good{
+            assert_eq!(m.tasks[1].1,Code::Ok);
+            assert!(m.memory_writes[0].0>m.tasks[1].0);
+        }
+        assert_eq!(paid_memory_value(&w),(if good{b"0".to_vec()}else{b"1".to_vec()},0));
+        assert_eq!(w.state.objects.contains_key(S29_LIFE_TASK),good);
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+            Some(Value::U32(if good{1}else{0})));
+        for h in &installed{
+            assert_eq!(w.state.objects.contains_key(&version_key(h)),
+                !(good&&h==&target));
+        }
+        let pre=spend(&w);
+        let before_hash=w.state_hash();
+        // Paid normalization of actual objects, never the memory.
+        if good{
+            alter(&mut w,S29_LIFE_TASK,vec![],0);
+            put(&mut w,version_key(&target),target_bytes.clone());
+        }else{
+            put(&mut w,S29_LIFE_TASK.into(),vec![]);
+            alter(&mut w,S29_LIFE_TASK,vec![],0);
+        }
+        alter(&mut w,&pin,if arm=="RELEASED"{vec![b'-';64]}else{target.as_bytes().to_vec()},1);
+        assert_eq!(w.state.objects[S29_LIFE_TASK].version,1);
+        assert_eq!(w.state.objects[S29_LIFE_TASK].bytes,Vec::<u8>::new());
+        assert_eq!(w.state.objects[&version_key(&target)].bytes,target_bytes);
+        assert_eq!(lifetime_extra_versions(&w),installed);
+        let used=w.state.organisms[&ORGANISM_ID].storage_used;
+        w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+        quota_wait_next_grant(&mut w);
+        let post=spend(&w);
+        assert_eq!(paid_memory_value(&w),(if good{b"0".to_vec()}else{b"1".to_vec()},0));
+        println!("S29_HISTORY_TRAIN arm={arm} history={label} metrics={m:?} memory={:?} training_end={before_hash} normalized={} normalize_VM_A={} normalize_world_A={} index_peak_unbilled={} storage_peak={} replay=true",
+            paid_memory_value(&w),w.state_hash(),post.0-pre.0,post.1-pre.1,
+            peak.post_tick_peak,peak.storage_peak);
+        histories.push(w);
+    }
+    // Training spent different resources, and left a different real memory;
+    // the probe begins at the same current physical condition.
+    history_same_physical(&histories[0],&histories[1]);
+    for (policy,root) in [("CONDITIONED",&roots[1]),("BLIND",&roots[2])]{
+        let mut positive=World::from_snapshot(&histories[0].snapshot_json()).unwrap();
+        let mut negative=World::from_snapshot(&histories[1].snapshot_json()).unwrap();
+        lifetime_set_active(&mut positive,root);
+        lifetime_set_active(&mut negative,root);
+        history_same_physical(&positive,&negative);
+        let start=positive.state.step;
+        for (good,w) in [(true,&mut positive),(false,&mut negative)]{
+            let history=if good{"SUCCESS"}else{"FAILURE"};
+            assert_eq!(w.state.step,start);
+            let before_hash=w.state_hash();
+            let (m,peak)=history_replay_episode(w,S29_HISTORY_PROBE_TASK,&target);
+            let scans=good||policy=="BLIND";
+            let success=arm=="RELEASED"&&scans;
+            assert_eq!(m.tasks[0].1,Code::Quota);
+            assert_eq!(m.tasks.len(),if success{2}else{1});
+            if success{assert_eq!(m.tasks[1].1,Code::Ok);}
+            assert_eq!(m.indexes,usize::from(scans));
+            assert_eq!(m.gc,if success{target_len}else{0});
+            assert_eq!(w.state.objects.contains_key(S29_HISTORY_PROBE_TASK),success);
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
+                Some(Value::U32(if success{1}else{0})));
+            assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+            for h in &installed{
+                assert_eq!(w.state.objects.contains_key(&version_key(h)),
+                    !(success&&h==&target));
+            }
+            println!("S29_HISTORY_PROBE arm={arm} policy={policy} history={history} root={root} base={before_hash} start={start} success={success} metrics={m:?} non_task_A={} memory={:?} index_peak_unbilled={} storage_peak={} replay=true B=20",
+                m.vm+m.world-m.task_a,paid_memory_value(w),peak.post_tick_peak,peak.storage_peak);
+        }
+    }
+    println!("S29_HISTORY_DONE arm={arm} seed=129 base={base_hash} target={target} target_B={target_len} roots={roots:?} install_VM_A={} install_world_A={} normalized_objects_match_except_earned_memory=true",
+        install_spend.0-initial_spend.0,install_spend.1-initial_spend.1);
+}
