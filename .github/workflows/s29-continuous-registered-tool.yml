@@ -1,9 +1,6 @@
 name: S29 Continuous Registered Tool Utility
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-continuous-registered-tool.yml'
+  # Native 6/6 verified at #45320955049; manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-continuous-registered-tool-${{ github.ref }}
