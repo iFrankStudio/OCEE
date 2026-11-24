@@ -6484,12 +6484,38 @@ fn assert_bound_artifact(bytes:&[u8],slot:usize){
 #[test]
 #[ignore="frozen durable receipt identity and continuation caching"]
 fn s29_content_bound_receipt_native(){
+    receipt_native_impl(32,false);
+}
+
+#[test]
+#[ignore="frozen bounded receipt polling budget revision"]
+fn s29_bounded_receipt_poll_native(){
+    receipt_native_impl(20,false);
+}
+
+#[test]
+#[ignore="original receipt cache independently observed"]
+fn s29_original_receipt_cache_native(){
+    receipt_native_impl(32,true);
+}
+
+fn receipt_native_impl(poll_limit:u32,cache_only:bool){
     let arm=std::env::var("OCEE_S29_RECEIPT_ARM").unwrap();
     assert!(matches!(arm.as_str(),"SPACE"|"REORDER"|"ID_CONFLICT"));
     let (mut base,_,target,_,registered)=lifetime_setup(129);
     let before=spend(&base);
     let roots=[bound_receipt_root(false),bound_receipt_root(true)].into_iter()
-        .map(|p|(p.content_hash().unwrap(),p.canonical_bytes())).collect::<Vec<_>>();
+        .map(|mut p|{
+            if poll_limit!=32{
+                let b=p.functions[0].blocks.iter_mut().find(|b|b.id=="offer_poll_header").unwrap();
+                if let Terminator::RepeatScoped{limit,aggregate_limit,..}=&mut b.terminator{
+                    assert_eq!((*limit,*aggregate_limit),(32,96));
+                    *limit=poll_limit;*aggregate_limit=3*poll_limit;
+                }else{panic!("expected bounded polling header");}
+                p.validate().expect("typed revised polling root");
+            }
+            (p.content_hash().unwrap(),p.canonical_bytes())
+        }).collect::<Vec<_>>();
     let total=roots.iter().map(|(_,b)|b.len() as u64+64).sum::<u64>();
     let used=base.state.organisms[&ORGANISM_ID].storage_used;
     base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+total;
@@ -6506,6 +6532,7 @@ fn s29_content_bound_receipt_native(){
     let inventory=lifetime_extra_versions(&base);
     let mut measurements=Vec::new();
     for (policy,(root,raw)) in roots.iter().enumerate(){
+        if cache_only&&policy==0{continue;}
         let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
         for phase in 0..if arm=="SPACE"{1}else{2}{
             if phase==1{quota_wait_next_grant(&mut w);}
@@ -6620,7 +6647,7 @@ fn s29_content_bound_receipt_native(){
                 peak.storage_peak,peak.post_tick_peak);
         }
     }
-    if arm=="SPACE"{
+    if arm=="SPACE"&&!cache_only{
         assert_eq!(measurements.len(),2);
         assert!(measurements[1].0<measurements[0].0);
         assert!(measurements[1].1<measurements[0].1);
