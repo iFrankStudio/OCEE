@@ -1,0 +1,27 @@
+name: S29 Public Offer Driven Tasks
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-public-offer-driven.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-public-offer-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  offer-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [ARRIVALS, DUPLICATE_ONLY]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_OFFER_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native public offers and duplicate identity control
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_public_offer_driven_native -- --ignored --show-output
