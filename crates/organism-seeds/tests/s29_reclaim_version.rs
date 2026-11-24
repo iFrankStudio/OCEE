@@ -3977,6 +3977,7 @@ fn lifetime_setup(seed:u64)->(World,Vec<String>,String,[String;3],String){
 struct LifetimeIndexProbe{
     samples:u64,
     post_tick_peak:usize,
+    storage_peak:u64,
 }
 impl LifetimeIndexProbe{
     fn sample(&mut self,w:&World){
@@ -3984,6 +3985,8 @@ impl LifetimeIndexProbe{
             .map(|cert|serde_json::to_vec(cert).unwrap().len())
             .unwrap_or(0);
         self.post_tick_peak=self.post_tick_peak.max(len);
+        self.storage_peak=self.storage_peak.max(
+            w.state.organisms[&ORGANISM_ID].storage_used);
         self.samples+=1;
     }
 }
@@ -4406,4 +4409,302 @@ fn s29_crossseed_p2_baseline_native(){
     assert_eq!(b,20,"P2 service must have real correct B20 result");
     assert_eq!(w.state_hash(),World::from_snapshot(
         &w.snapshot_json()).unwrap().state_hash());
+}
+
+
+// Complementary seed-aware matched tapes. External actions are driven by
+// fixed step offsets, NOT the policy's actual response times.
+const LIFE_SECOND_PIN:&str="/self/pins/s29-lifetime-secondary";
+const LIFE_SECOND_TASK:&str="/self/outcomes/s29-lifetime-second-artifact";
+
+fn lifetime_extra_versions(w:&World)->Vec<String>{
+    w.state.objects.iter().filter_map(|(k,o)|{
+        let h=k.strip_prefix("/self/versions/")?;
+        (o.owner==ORGANISM_ID&&h.len()==64).then_some(h.to_owned())
+    }).collect()
+}
+fn lifetime_external_write(w:&mut World,key:&str,bytes:Vec<u8>,
+    expected:Option<u64>,probe:&mut LifetimeIndexProbe)->ocee_world_kernel::ActionResult{
+    let r=w.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:key.into(),bytes,expected_version:expected
+    }));
+    probe.sample(w);
+    r
+}
+fn lifetime_has_transport(w:&World,target:&str)->bool{
+    w.state.pending_deliveries.iter()
+        .chain(w.state.mailboxes.values().flatten())
+        .any(|m|m.bytes.windows(64).any(|b|b==target.as_bytes()))
+}
+fn lifetime_finish_remaining(w:&mut World,probe:&mut LifetimeIndexProbe,horizon:u64){
+    while w.state.step<horizon && !w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().is_some_and(|c|c.finished){
+        let r=w.tick_autonomous(ORGANISM_ID);
+        probe.sample(w);
+        assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+    }
+    assert!(w.state.organisms[&ORGANISM_ID]
+        .vm_continuation.as_ref().is_some_and(|c|c.finished));
+    lifetime_pad_to(w,horizon,probe);
+}
+fn lifetime_due_task(w:&mut World,key:&str,probe:&mut LifetimeIndexProbe)
+    ->(Code,u64){
+    let r=lifetime_external_write(w,key,vec![0x55;280],None,probe);
+    assert!(matches!(r.code,Code::Ok|Code::Quota),
+        "frozen useful task must receive real acceptance or quota refusal");
+    assert_eq!(w.state.objects.contains_key(key),r.code==Code::Ok);
+    (r.code,r.gas_charged)
+}
+fn lifetime_prune_setup(w:&mut World,versions:&[String],registered:&str)
+    ->(u64,u64,Vec<String>){
+    let start=spend(w);
+    let mut candidates=vec![wrong_tool().content_hash().unwrap()];
+    candidates.extend(extra_unreferenced_tools().into_iter()
+        .map(|p|p.content_hash().unwrap()));
+    candidates.retain(|h|h!=registered);
+    candidates.sort();
+    candidates.dedup();
+    assert!(candidates.len()>=2);
+    for h in &candidates{
+        let idx=versions.iter().position(|x|x==h).unwrap();
+        alter(w,&format!("/self/pins/s29-dry-{idx}"),vec![b'-';64],0);
+    }
+    assert_eq!(index_refs(w).code,Code::Ok);
+    let mut bytes=0u64;
+    for h in &candidates{
+        let len=w.state.objects[&version_key(h)].bytes.len() as u64;
+        let r=fast_reclaim(w,h);
+        assert_eq!(r.code,Code::Ok,
+            "actual preregistered nonregistered candidate must be prunable: {h}");
+        assert_eq!(u64::from_le_bytes(r.payload.as_slice().try_into().unwrap()),len);
+        assert!(!w.state.objects.contains_key(&version_key(h)));
+        bytes+=len;
+    }
+    let end=spend(w);
+    assert_eq!(start.0,end.0);
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    // Natural epoch grant, never set a balance. Use the actual next epoch,
+    // with one real tick at the boundary to receive its ordinary allocation.
+    let epoch=w.state.config.epoch_length;
+    let next=(w.state.step/epoch+1)*epoch;
+    while w.state.step<=next{w.tick(None);}
+    assert_eq!(w.state.nodes[&NodeId::A].gas_available,
+        w.state.nodes[&NodeId::A].gas_per_epoch);
+    assert_eq!(b_gas(w),20);
+    (bytes,end.1-start.1,candidates)
+}
+fn lifetime_extra_run(w:&mut World,p:usize,tape:&str,
+    first_pin:&str,target:&str,start:u64,probe:&mut LifetimeIndexProbe)
+    ->(Vec<(Code,u64)>,u64,u64){
+    let mut tasks=Vec::new();
+    let mut exo_a=0u64;
+    let mut exo_c=0u64;
+    let mixed=tape=="MIXED_MULTIHOLDER_TRANSPORT";
+    let target_key=version_key(target);
+    lifetime_pad_to(w,start+90,probe);
+    assert_eq!(w.state.objects[first_pin].bytes,target.as_bytes());
+    let r=lifetime_external_write(w,first_pin,
+        if mixed{vec![b'-';64]}else{target.as_bytes().to_vec()},
+        Some(0),probe);
+    assert_eq!(r.code,Code::Ok);exo_a+=r.gas_charged;
+    if mixed{
+        assert_eq!(w.state.step,start+91);
+        assert_eq!(w.state.objects[LIFE_SECOND_PIN].bytes,target.as_bytes());
+        let sent=w.tick(Some(Action::Send{
+            actor:ORGANISM_ID,destination:NodeId::C,
+            bytes:target.as_bytes().to_vec()
+        }));
+        probe.sample(w);
+        assert_eq!(sent.code,Code::Ok);
+        exo_a+=sent.gas_charged;exo_c+=sent.bandwidth_charged;
+        assert_eq!(exo_c,64);
+        assert_eq!(w.state.step,start+92);
+        let r=lifetime_external_write(w,LIFE_SECOND_PIN,vec![b'-';64],Some(0),probe);
+        assert_eq!(r.code,Code::Ok);exo_a+=r.gas_charged;
+        assert!(w.state.pending_deliveries.iter().any(|m|m.bytes==target.as_bytes()));
+        assert!(w.state.objects.contains_key(&target_key));
+        if p==0{
+            let mut certified=false;
+            let mut conflicted=false;
+            let mut marked=false;
+            // Actual active VM must try the candidate during transport.
+            while w.state.step<start+155{
+                let r=w.tick_autonomous(ORGANISM_ID);probe.sample(w);
+                assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+                let e=w.audit.last().unwrap();
+                if matches!(&e.action,Some(Action::IndexVersionRefs{..})){
+                    assert_eq!(r.code,Code::Ok);
+                    let idx=w.state.version_ref_index.as_ref().unwrap();
+                    assert!(idx.transport_refs.contains(target));
+                    assert!(idx.referenced.contains(target));
+                    certified=true;
+                }
+                if matches!(&e.action,Some(Action::ReclaimIndexedVersion{program_hash,..})
+                    if program_hash==target){
+                    assert_eq!(r.code,Code::Conflict);
+                    assert!(w.state.pending_deliveries.iter()
+                        .any(|m|m.bytes==target.as_bytes()));
+                    conflicted=true;
+                }
+                if matches!(&e.action,Some(Action::Write{key,bytes,..})
+                    if key==S29_DRY_KEY&&bytes==b"1"&&r.code==Code::Ok){
+                    marked=true;break;
+                }
+            }
+            assert!(certified&&conflicted&&marked,
+                "real second-round VM index and candidate veto must occur before due task");
+        }else if p==1{
+            lifetime_advance_to_action(w,"COOLDOWN_RESET",60,probe);
+        }
+        assert!(w.state.objects.contains_key(&target_key));
+        lifetime_pad_to(w,start+155,probe);
+        assert!(lifetime_has_transport(w,target));
+        let first=lifetime_due_task(w,S29_LIFE_TASK,probe);
+        assert_eq!(first.0,Code::Quota);
+        exo_a+=first.1;tasks.push(first);
+        lifetime_pad_to(w,start+205,probe);
+        assert!(!lifetime_has_transport(w,target),
+            "frozen real transport must have cleared before third episode");
+        assert_eq!(b_gas(w),20,"malformed raw hash must not cause another B charge");
+        if p<2{
+            lifetime_advance_to_action(w,"GC_SUCCESS",60,probe);
+            assert!(!w.state.objects.contains_key(&target_key));
+        }else{
+            assert!(w.state.objects.contains_key(&target_key));
+        }
+        lifetime_pad_to(w,start+270,probe);
+        let second=lifetime_due_task(w,LIFE_SECOND_TASK,probe);
+        assert_eq!(second.0,if p<2{Code::Ok}else{Code::Quota});
+        exo_a+=second.1;tasks.push(second);
+        lifetime_finish_remaining(w,probe,start+335);
+    }else{
+        assert_eq!(tape,"NO_RECLAIMABLE_PRUNED");
+        if p==0{
+            lifetime_advance_to_action(w,"DRY_MARK",60,probe);
+        }else if p==1{
+            lifetime_advance_to_action(w,"COOLDOWN_RESET",60,probe);
+        }
+        lifetime_pad_to(w,start+155,probe);
+        let result=lifetime_due_task(w,S29_LIFE_TASK,probe);
+        assert_eq!(result.0,Code::Quota);
+        exo_a+=result.1;tasks.push(result);
+        lifetime_finish_remaining(w,probe,start+245);
+    }
+    assert_eq!(b_gas(w),20);
+    (tasks,exo_a,exo_c)
+}
+#[test]
+#[ignore="frozen complementary matched P2 lifetime tapes across fixed seeds"]
+fn s29_lifetime_complement_native(){
+    use sha2::{Digest,Sha256};
+    let seed:u64=std::env::var("OCEE_S29_LIFE_SEED").unwrap().parse().unwrap();
+    assert!([129,130,131].contains(&seed));
+    let tape=std::env::var("OCEE_S29_EXTRA_TAPE").unwrap();
+    assert!(matches!(tape.as_str(),"MIXED_MULTIHOLDER_TRANSPORT"|"NO_RECLAIMABLE_PRUNED"));
+    let mixed=tape=="MIXED_MULTIHOLDER_TRANSPORT";
+    let (mut base,original_versions,orphan,roots,registered)=lifetime_setup(seed);
+    let (pruned_bytes,pruned_a,removed)=if mixed{
+        put(&mut base,LIFE_SECOND_PIN.into(),orphan.as_bytes().to_vec());
+        base.state.config.message_delay=95;
+        let used=base.state.organisms[&ORGANISM_ID].storage_used;
+        base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+        (0,0,Vec::new())
+    }else{
+        lifetime_prune_setup(&mut base,&original_versions,&registered)
+    };
+    let target=if mixed{orphan}else{registered.clone()};
+    let pin_idx=original_versions.iter().position(|h|h==&target).unwrap();
+    let first_pin=format!("/self/pins/s29-dry-{pin_idx}");
+    let target_bytes=base.state.objects[&version_key(&target)].bytes.len() as u64;
+    let installed=lifetime_extra_versions(&base);
+    let base_hash=base.state_hash();
+    let initial_used=base.state.organisms[&ORGANISM_ID].storage_used;
+    let capacity=base.state.nodes[&NodeId::A].storage_capacity;
+    assert_eq!(capacity-initial_used,195);
+    let mut branch_a=None;
+    let mut branch_start=None;
+    let mut rows=Vec::new();
+    for (p,policy) in ["ALWAYS_RETRY","NEGATIVE_COOLDOWN","NO_MAINTENANCE"]
+        .iter().enumerate(){
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        lifetime_set_active(&mut w,&roots[p]);
+        let start=w.state.step;
+        let a=w.state.nodes[&NodeId::A].gas_available;
+        if let Some(prev)=branch_a{assert_eq!(a,prev);}else{branch_a=Some(a);}
+        if let Some(prev)=branch_start{assert_eq!(start,prev);}else{branch_start=Some(start);}
+        if !mixed{
+            // Actual full-index refusal for all *remaining* installed
+            // versions, including entries outside the VM's first page.
+            let mut verify=World::from_snapshot(&w.snapshot_json()).unwrap();
+            assert_eq!(index_refs(&mut verify).code,Code::Ok);
+            for h in &installed{
+                assert_eq!(fast_reclaim(&mut verify,h).code,Code::Conflict,
+                    "pruned-inventory control must have no reclaimable version");
+            }
+            assert_eq!(lifetime_extra_versions(&verify),installed);
+        }
+        let mut probe=LifetimeIndexProbe::default();
+        probe.sample(&w);
+        if p<2{
+            lifetime_advance_to_action(&mut w,"DRY_MARK",80,&mut probe);
+            assert_eq!(paid_memory_value(&w),(b"1".to_vec(),0));
+        }else{
+            lifetime_advance_to_action(&mut w,"NO_OP",10,&mut probe);
+        }
+        let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+        let mut replay_probe=probe.clone();
+        let results=lifetime_extra_run(&mut w,p,&tape,&first_pin,&target,start,&mut probe);
+        let replay_results=lifetime_extra_run(&mut replay,p,&tape,&first_pin,&target,start,&mut replay_probe);
+        assert_eq!(results,replay_results);
+        assert_eq!(probe,replay_probe);
+        assert_eq!(w.snapshot_json(),replay.snapshot_json());
+        assert_eq!(w.audit,replay.audit);
+        assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+        let (tasks,external_a,external_c)=results;
+        let mut vm=0u64;let mut world=0u64;
+        let mut gc=0u64;let mut indexes=0usize;let mut attempts=0usize;
+        for e in w.audit.iter().filter(|e|e.step>=start){
+            vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+            if matches!(&e.action,Some(Action::IndexVersionRefs{..})){indexes+=1;}
+            if let Some(Action::ReclaimIndexedVersion{program_hash,..})=&e.action{
+                attempts+=1;
+                if e.result.code==Code::Ok{
+                    assert!(mixed&&p<2&&program_hash==&target);
+                    assert!(e.step>=start+205,"cannot reclaim during transport lease");
+                    gc+=u64::from_le_bytes(e.result.payload.as_slice().try_into().unwrap());
+                }
+            }
+        }
+        assert_eq!(gc,if mixed&&p<2{target_bytes}else{0});
+        if p==2{assert_eq!(indexes,0);assert_eq!(attempts,0);}
+        else{assert!(indexes>0);assert!(probe.post_tick_peak>0);}
+        assert!(removed.iter().all(|h|!w.state.objects.contains_key(&version_key(h))));
+        let maintenance=vm+world-external_a;
+        println!("S29_COMPLEMENT_ROW seed={seed} tape={tape} policy={policy} \
+            tasks={tasks:?} VM_A={vm} maintenance_action_A={} maintenance_total_A={maintenance} \
+            external_A={external_a} external_C={external_c} gc_bytes={gc} index_count={indexes} \
+            gc_attempts={attempts} storage_peak={} storage_final={} index_peak_unbilled={} \
+            A_remaining={} replay=true B=20",
+            world-external_a,probe.storage_peak,w.state.organisms[&ORGANISM_ID].storage_used,
+            probe.post_tick_peak,w.state.nodes[&NodeId::A].gas_available);
+        rows.push((maintenance,indexes));
+    }
+    if !mixed{
+        assert!(rows[1].0<rows[0].0);
+    }
+    let schedule=serde_json::json!({
+        "seed":seed,"tape":tape,"start":branch_start.unwrap(),
+        "target":target,"first_pin":first_pin,"second_pin":LIFE_SECOND_PIN,
+        "message_delay":base.state.config.message_delay,
+        "event_offsets":if mixed{vec![90,91,92,155,205,270,335]}else{vec![90,155,245]},
+        "task_bytes":280,"task_keys":[S29_LIFE_TASK,LIFE_SECOND_TASK],
+        "release_bytes_hex":"2d repeated 64 times",
+        "mixed_send_bytes":if mixed{Some(target.as_str())}else{None}
+    });
+    let tape_sha=format!("{:x}",Sha256::digest(serde_json::to_vec(&schedule).unwrap()));
+    println!("S29_COMPLEMENT_DONE seed={seed} tape={tape} base={base_hash} tape_sha={tape_sha} \
+        roots={roots:?} registered={registered} installed={} pruned_bytes={pruned_bytes} \
+        pruned_setup_A={pruned_a} removed={removed:?} initial_used={initial_used} capacity={capacity} \
+        start_A={} rows={rows:?}",installed.len(),branch_a.unwrap());
 }
