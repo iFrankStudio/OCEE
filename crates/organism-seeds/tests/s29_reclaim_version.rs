@@ -5585,3 +5585,212 @@ fn s29_continuous_task_history_native(){
         vm+world-task_a-external,after.0-before.0,after.1-before.1,
         peak.storage_peak,peak.post_tick_peak,paid_memory_value(&w));
 }
+
+
+// Actual execution of the tool earned by the P2 baseline, not a supplied
+// answer. Retry re-reads registry and re-executes; a correct computation
+// only counts as useful task completion after the actual storage commit.
+fn continuous_semantic_root()->Program{
+    let mut p=continuous_task_root();
+    let f=&mut p.functions[0];
+    for (entry,suffix) in [("episode_task","initial"),("task_retry","retry")]{
+        let old=f.blocks.iter_mut().find(|b|b.id==entry).unwrap();
+        let reg=format!("semantic_{suffix}_registry");
+        let exec=format!("semantic_{suffix}_exec");
+        let result=format!("semantic_{suffix}_result");
+        let store=format!("semantic_{suffix}_store");
+        let output_reply=match &old.terminator{
+            Terminator::Yield{next,..}=>next.clone(),
+            _=>panic!("original task is a real Write")
+        };
+        old.instructions=vec![Instruction{id:10,op:lit(REGISTRY.as_bytes())}];
+        old.terminator=Terminator::Yield{call:WorldCall::Read,args:vec![10],
+            next:reg.clone(),next_args:vec![99]};
+        let reply=||vec![Param{id:99,ty:Type::U32},Param{id:2,ty:Type::Bytes}];
+        let code=||vec![
+            Instruction{id:20,op:lit(b"code")},
+            Instruction{id:21,op:Op::JsonFieldString(2,20)},
+            Instruction{id:22,op:lit(b"Ok")},
+            Instruction{id:23,op:Op::EqBytes(21,22)}
+        ];
+        f.blocks.extend([
+            Block{id:reg,params:reply(),instructions:code(),
+                terminator:Terminator::Branch{condition:23,if_true:exec.clone(),
+                    true_args:vec![99,2],if_false:"failed".into(),false_args:vec![99]}},
+            Block{id:exec,params:reply(),instructions:vec![
+                Instruction{id:10,op:lit(b"payload")},
+                Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+                Instruction{id:12,op:Op::ConstU32(7)},
+                Instruction{id:13,op:Op::Add(99,12)},
+                Instruction{id:14,op:Op::PackByte(13)},
+                Instruction{id:15,op:lit(&[11,19,23,31])},
+                Instruction{id:16,op:Op::ConstU32(0)},
+                Instruction{id:17,op:Op::ConstU32(2)},
+                Instruction{id:18,op:Op::Add(99,17)},
+                Instruction{id:19,op:Op::Slice(15,16,18)},
+                Instruction{id:24,op:Op::Concat(14,19)}
+            ],terminator:Terminator::Yield{call:WorldCall::Exec,args:vec![11,24],
+                next:result.clone(),next_args:vec![99]}},
+            Block{id:result,params:reply(),instructions:code(),
+                terminator:Terminator::Branch{condition:23,if_true:store.clone(),
+                    true_args:vec![99,2],if_false:"failed".into(),false_args:vec![99]}},
+            Block{id:store,params:reply(),instructions:vec![
+                Instruction{id:10,op:lit(b"payload")},
+                Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+                Instruction{id:12,op:lit(b"U32")},
+                Instruction{id:13,op:Op::JsonFieldU32(11,12)},
+                Instruction{id:14,op:Op::ConstU32(256)},
+                Instruction{id:15,op:Op::Div(13,14)},
+                Instruction{id:16,op:Op::ConstU32(0)},
+                Instruction{id:17,op:Op::EqU32(15,16)}
+            ],terminator:Terminator::Branch{condition:17,if_true:format!("semantic_{suffix}_write"),
+                true_args:vec![99,13],if_false:"failed".into(),false_args:vec![99]}},
+            Block{id:format!("semantic_{suffix}_write"),
+                params:vec![Param{id:99,ty:Type::U32},Param{id:2,ty:Type::U32}],
+                instructions:vec![
+                    Instruction{id:10,op:lit(CONT_TASK_PREFIX.as_bytes())},
+                    Instruction{id:13,op:Op::ConstU32(48)},
+                    Instruction{id:14,op:Op::Add(99,13)},
+                    Instruction{id:15,op:Op::PackByte(14)},
+                    Instruction{id:16,op:Op::Concat(10,15)},
+                    Instruction{id:17,op:Op::PackByte(2)},
+                    Instruction{id:18,op:lit(&[0x55;279])},
+                    Instruction{id:11,op:Op::Concat(17,18)},
+                    Instruction{id:12,op:Op::ConstU32(u32::MAX)}
+                ],terminator:Terminator::Yield{call:WorldCall::Write,args:vec![16,11,12],
+                    next:output_reply,next_args:vec![99]}}
+        ]);
+    }
+    p.validate().expect("continuous registered-tool computation and actual Write");
+    p
+}
+fn semantic_input(slot:usize)->Vec<u8>{
+    let mut input=vec![7+slot as u8];
+    input.extend_from_slice(&[11,19,23,31][..2+slot]);
+    input
+}
+#[test]
+#[ignore="frozen continuous registered-tool utility across three actual P2 seeds"]
+fn s29_continuous_registered_tool_native(){
+    let seed:u64=std::env::var("OCEE_S29_LIFE_SEED").unwrap().parse().unwrap();
+    assert!([129,130,131].contains(&seed));
+    let arm=std::env::var("OCEE_S29_CONTINUOUS_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"RELEASED"|"PINNED"));
+    let released=arm=="RELEASED";
+    let (mut w,versions,target,_,registered)=lifetime_setup(seed);
+    let setup_before=spend(&w);
+    let p=continuous_semantic_root();
+    let raw=p.canonical_bytes();
+    assert!(!raw.windows(64).any(|x|x==target.as_bytes()||x==registered.as_bytes()));
+    let root=p.content_hash().unwrap();
+    let root_bytes=raw.len();
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+65_536;
+    put(&mut w,version_key(&root),raw);
+    put(&mut w,"/self/pins/s29-semantic-root".into(),root.as_bytes().to_vec());
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    quota_wait_next_grant(&mut w);
+    let setup_after=spend(&w);
+    let base=w.state_hash();
+    let installed=lifetime_extra_versions(&w);
+    let idx=versions.iter().position(|h|h==&target).unwrap();
+    let pin=format!("/self/pins/s29-dry-{idx}");
+    let target_len=w.state.objects[&version_key(&target)].bytes.len() as u64;
+    lifetime_set_active(&mut w,&root);
+    let start=w.state.step;
+    let start_a=w.state.nodes[&NodeId::A].gas_available;
+    let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+    let (peak,external)=continuous_task_episode(&mut w,&root,&pin,&target,released);
+    let (rp,re)=continuous_task_episode(&mut replay,&root,&pin,&target,released);
+    assert_eq!(peak,rp);assert_eq!(external,re);
+    assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+    let mut tasks=Vec::new();let mut execs=Vec::new();let mut marks=Vec::new();
+    let mut indexes=Vec::new();let mut reg_reads=Vec::new();
+    let mut gc=0u64;let mut gc_step=None;let mut vm=0u64;let mut world=0u64;
+    let mut task_a=0u64;let mut exec_a=0u64;let mut read_a=0u64;
+    for e in w.audit.iter().filter(|e|e.step>=start){
+        vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+        match &e.action{
+            Some(Action::Read{key,..}) if key==REGISTRY=>{
+                assert_eq!(e.result.code,Code::Ok);
+                assert_eq!(e.result.payload,registered.as_bytes());
+                read_a+=e.result.gas_charged;reg_reads.push(e.step);
+            },
+            Some(Action::Exec{program_hash,input,..})=>{
+                assert_eq!(program_hash,&registered);
+                let slot=execs.len().min(2);
+                assert_eq!(input,&semantic_input(slot));
+                assert_eq!(e.result.code,Code::Ok);
+                let actual:Value=serde_json::from_slice(&e.result.payload).unwrap();
+                let expected=hidden_transform(seed,input);
+                assert_eq!(actual,Value::U32(expected));
+                assert!(expected<=255);
+                exec_a+=e.result.gas_charged;
+                execs.push((e.step,slot,expected,e.result.gas_charged));
+            },
+            Some(Action::Write{key,bytes,..})=>{
+                assert_ne!(key,"/self/active");
+                if let Some(raw)=key.strip_prefix(CONT_TASK_PREFIX){
+                    let slot:usize=raw.parse().unwrap();
+                    assert!(slot<3);
+                    assert_eq!(bytes.len(),280);
+                    assert_eq!(bytes[0],hidden_transform(seed,&semantic_input(slot)) as u8);
+                    assert!(bytes[1..].iter().all(|v|*v==0x55));
+                    assert_eq!(execs.last().unwrap().1,slot);
+                    assert!(execs.last().unwrap().0<e.step);
+                    tasks.push((e.step,slot,e.result.code,e.result.gas_charged));
+                    task_a+=e.result.gas_charged;
+                }else if key==S29_DRY_KEY{
+                    assert_eq!(e.result.code,Code::Ok);
+                    assert!(e.result.gas_charged>0);
+                    marks.push((e.step,bytes.clone(),e.result.gas_charged));
+                }
+            },
+            Some(Action::IndexVersionRefs{..})=>{
+                assert_eq!(e.result.code,Code::Ok);indexes.push(e.step);
+            },
+            Some(Action::ReclaimIndexedVersion{program_hash,..}) if e.result.code==Code::Ok=>{
+                assert_eq!(program_hash,&target);
+                gc+=u64::from_le_bytes(e.result.payload.as_slice().try_into().unwrap());
+                gc_step=Some(e.step);
+            },
+            _=>{}
+        }
+    }
+    let expected_count=if released{4}else{3};
+    assert_eq!(tasks.len(),expected_count);
+    assert_eq!(execs.len(),expected_count);
+    assert_eq!(reg_reads.len(),expected_count);
+    for i in 0..expected_count{
+        assert!(reg_reads[i]<execs[i].0&&execs[i].0<tasks[i].0);
+        assert_eq!(tasks[i].1,i.min(2));
+        assert_eq!(tasks[i].2,if i==3{Code::Ok}else{Code::Quota});
+    }
+    assert_eq!(indexes.len(),2);assert_eq!(marks.len(),3);
+    assert_eq!(marks[0].1,b"1");assert_eq!(marks[1].1,b"2");
+    assert_eq!(marks[2].1,if released{b"0"}else{b"1"});
+    assert!(indexes[0]<marks[0].0&&marks[0].0<start+25);
+    assert!(start+25<tasks[1].0&&tasks[1].0<marks[1].0&&marks[1].0<tasks[2].0);
+    assert_eq!(gc,if released{target_len}else{0});
+    if released{assert!(indexes[1]<gc_step.unwrap()&&gc_step.unwrap()<execs[3].0
+        &&tasks[3].0<marks[2].0);}
+    assert_eq!(paid_memory_value(&w),(if released{b"0".to_vec()}else{b"1".to_vec()},2));
+    for slot in 0..3{
+        let key=format!("{CONT_TASK_PREFIX}{slot}");
+        assert_eq!(w.state.objects.contains_key(&key),released&&slot==2);
+        if released&&slot==2{
+            let bytes=&w.state.objects[&key].bytes;
+            assert_eq!(bytes.len(),280);
+            assert_eq!(bytes[0],hidden_transform(seed,&semantic_input(slot)) as u8);
+            assert!(bytes[1..].iter().all(|v|*v==0x55));
+        }
+    }
+    for h in &installed{
+        assert_eq!(w.state.objects.contains_key(&version_key(h)),!(released&&h==&target));
+    }
+    assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+    println!("S29_SEMANTIC_CONTINUOUS seed={seed} arm={arm} root={root} root_B={root_bytes} base={base} registered={registered} target={target} start={start} start_A={start_a} tasks={tasks:?} execs={execs:?} reads={reg_reads:?} marks={marks:?} indexes={indexes:?} gc_B={gc} gc_step={gc_step:?} VM_A={vm} world_A={world} task_A={task_a} exec_A={exec_a} registry_read_A={read_a} external_A={external} other_world_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} final_memory={:?} one_root=true replay=true B=20",
+        world-task_a-exec_a-read_a-external,setup_after.0-setup_before.0,
+        setup_after.1-setup_before.1,peak.storage_peak,peak.post_tick_peak,paid_memory_value(&w));
+}
