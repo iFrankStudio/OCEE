@@ -1,6 +1,6 @@
 # OCEE GitHub Actions 运行预算与实验复核制度
 
-**状态：2026-11-23。仓库改为public后GitHub-hosted runner已恢复；最新S29三策略配对生命周期效用专项初步2/2原生通过（完整多tape与多seed预注册仍未完成），历史工作流默认手动重放。此前编译/科学断言红运行均保留。以下2026-11-20私有仓库阻断记录为历史事实。**
+**状态：2026-11-24。仓库改为public后GitHub-hosted runner已恢复；最新独立修订v2三seed×三tape原生9/9成功（原固定工具候选v1跨seed两次红运行永久保留）。仍未完成全部五tape、内核引用索引收费与完整workspace回归，历史工作流默认手动重放。以下2026-11-20私有仓库阻断记录为历史事实。**
 
 ## 为什么调整
 - OCEE 目前约26个 `*.yml` 工作流。此前S28–S40的定向工作流往往把共享 `crates/world-kernel/src/lib.rs`、`crates/organism-seeds/src/lib.rs`、`crates/organism-vm/src/lib.rs` 列入 push triggers，一次研究小改动在私有仓库可能触发十余个独立Rust job、部分运行超过数十分钟。历史实验需要保留用于复核，但不应在每次main直接提交时同时执行。
@@ -178,3 +178,13 @@ Initial compile-only failure [#44991946675](https://github.com/iFrankStudio/OCEE
 - **[Run #45222742304](https://github.com/iFrankStudio/OCEE/actions/runs/45222742304)** 首轮两job在诊断println!缺format参数时Rust编译失败，已保留原日志。**[Run #45222915650](https://github.com/iFrankStudio/OCEE/actions/runs/45222915650)** 第二轮ALL_PINNED原生通过，RELEASE逆境因不合理地要求冷却对所有环境都更省A的测试断言失败；该断言与先冻H2逆境损失相悖，随后严格只将节约A判据应用于持续全pin对照；没有变更任何预测任务成功/失败的控制条件和固定事件时序，失败记录已永久写入协议。
 - **[Run #45223821160](https://github.com/iFrankStudio/OCEE/actions/runs/45223821160) @865fc750a9** 第三次完整定向矩阵，2个独立Ubuntu原生Rust jobs全部completed/success、1 passed/0 failed each，**2/2**。连续全pin时ALWAYS维护9611A/3Index/22GC Conflict，COOLDOWN维护6599A/2Index/16Conflict，NONE维护VM2A/无GC；冷却少3012A，但三者均未完成外部280B任务。第二轮前研究者合法释放相同276B目标时，ALWAYS维护6074A且按时提交任务成功；COOLDOWN维护6160A，虽晚些也真实回收276B但**按时的任务因Quota失败**，NONE无回收也失败。前置P2 B20全程不重复。研究者外部写入在存储可用时真实收20A，Quota拒绝0A；这部分与生命体维护A分账。结果与完整局限及两条event-tape SHA见[协议更新](./experiments/E001/MAINTENANCE-MATCHED-LIFETIME-UTILITY-PROTOCOL.md)。
 - 本轮是有用任务的**单种子双时序试点**，严格不能据此宣称完整预冻结五时序×三种子已完成，证书索引只量到最终（未收费）序列化状态0B、没有真实peak；维护root程序字节差异也还未纳入长程摊销。专项CI完成后恢复此workflow为**仅workflow_dispatch**，避免任何S29修改触发无关昂贵完整P2重复回归。**G0 GO / G1,G2 NO-GO、E001尚未正式校准/预注册、无全workspace新回归。**
+
+
+## 2026-11-24 — 首次跨种子回归失败、独立真实P2诊断及独立修订v2完整9/9
+
+- 从同一实时main最初`db84419ab353`继续前轮[五时序配对预注册协议](./experiments/E001/MAINTENANCE-MATCHED-LIFETIME-UTILITY-PROTOCOL.md)，先冻结seed129/130/131、post-tick可信证书序列化峰值采样。新`s29-matched-lifetime-seed-replay.yml`由**自身文件路径的唯一push**触发[原v1 6-job run #45308566833](https://github.com/iFrankStudio/OCEE/actions/runs/45308566833)：**2/6**，seed129两job通过；seed130/131四job在P2真实选出不同工具、而测试却固定断言其哈希必须等于seed129 Len时提前失败。独立增加第三时序`s29-matched-lifetime-postcool-release.yml`触发[原v1 run #45308748855](https://github.com/iFrankStudio/OCEE/actions/runs/45308748855)：**1/3**，仅seed129通过。这些是测试基线假设失败，不属于真正3seed×2tape策略比较的失败，也不是合法声明成功。原全部失败CI URL、SHA、原输出均保留，不覆盖、不删。
+- 在改动前先冻结独立真实P2诊断并新建定向`s29-crossseed-p2-baseline-diagnostic.yml`：[run #45309166319](https://github.com/iFrankStudio/OCEE/actions/runs/45309166319) **原生3/3**，seed129真实选Len、130真实选XorFold、131真实选ByteAt first，三个都是原活动P2根自行选择并通过实际PublishTool、原真实隐藏输入校验及B20，注册工具完全合法。因此新研究只能在**单独版本化、事先冻结的新协议**中按种子当前注册工具确定真正孤儿，不能回写历史v1的失败而称其通过。
+- **另立[种子感知实际孤儿v2协议](./experiments/E001/DEV-S29-MATCHED-SEEDED-ACTUAL-ORPHAN-UTILITY.md)**先冻结后实现：排除当前真实注册程序，从原三候选按(实际物理字节长度,hash)选首个研究用回收目标，若VM在P2真实过程已经生成了某候选，则不再对同一immutable路径重复收费写入。独立丢弃的研究者世界分支付费catalog/解绑pin/Index/GC校验候选安全；只有实际实验的活动VM用其自身受费目录、Index与有界GC发现真正目标，不携带其哈希。单个新`s29-matched-lifetime-seed-aware-v2.yml`仅自身文件push触发[run #45309723967](https://github.com/iFrankStudio/OCEE/actions/runs/45309723967) @92ad1693：**9个独立native Rust job全部1 passed/0 failed，首次9/9**；三种seed×三tape各自运行ALWAYS/COOLDOWN/NONE三个真实配对world、完整audit与snapshot逐字节重放。
+- v2真实数值：**全PIN无回收**seed129 ALWAYS9611A/COOLDOWN6599A、seed130/131 ALWAYS9585A/COOLDOWN6582A，节约**3012A或3003A**但任务均失败。**提前解绑逆境**seed129 ALWAYS6074A且任务成功/COOLDOWN6160A且任务失败；seed130 **6057/6143A**、seed131 **5969/6055A**，三个seed均冷却+86A却丢一项到期任务，即使后来真GC276/279B也不倒算成功。**冷却后解绑**seed129 ALWAYS9350A/COOLDOWN6161A，seed130 **9324/6144A**、seed131 **9236/6056A**，全seed两者均及时GC并完成280B外部任务，节省**3189A或3180A**。每个seed世界P2原任务B20不重复；外部同一时序pin-write研究者动作6A，任务通过则真正20A，否则Quota拒绝0A，单独分账。
+- **证书高水位首次实际采样**：可信引用索引在真实World.tick后的最大序列化体积seed129 **3382B**、seed130/131 **3155B**，维护结束后常因写入失效变成最终0B。此**不是OS内存分配峰值，亦未向个体物理存储Quota计费**，不得拿回收279B声称净存储盈利。所有v2测试仍只对有限原始64字节引用模型/不同研究者选择的孤儿、不是端到端任意指针GC；三个root程序同时安装使各arm初态严格相同，但并未摊销不同程序root字节数和研究者安装成本。
+- 研究边界：本轮v2是**独立修订协议9/9**，旧v1固定目标跨seed仍失败；完整5tape/3seed研究仍缺真正多来源+在途消息以及无孤儿时序，真实自适应冷却/内生维护动机/正式E001校准无证据。所有新专项workflow结束后恢复**仅`workflow_dispatch`**，不要把这9个专项Rust作业误记为全workspace Rust回归。**G0 GO/G1G2 NO-GO**。
