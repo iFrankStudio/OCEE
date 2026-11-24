@@ -6850,11 +6850,60 @@ fn feedback_paced_root()->Program{
     }
     p.validate().expect("typed feedback-paced perception");p
 }
+// A finite feedback-conditioned counter, reset by real fresh identity.
+fn adaptive_perception_root()->Program{
+    let mut p=feedback_paced_root();
+    let f=&mut p.functions[0];
+    let yields=f.blocks.iter().filter_map(|b|match &b.terminator{
+        Terminator::Yield{next,..}=>Some(next.clone()),_=>None
+    }).collect::<std::collections::BTreeSet<_>>();
+    for b in &mut f.blocks{
+        assert!(b.params.iter().all(|p|p.id!=93&&p.id!=92)&&
+            b.instructions.iter().all(|i|i.id!=93&&i.id!=92));
+        if b.id=="entry"{b.instructions.push(Instruction{id:93,op:Op::ConstU32(0)});}
+        else{
+            let pos=if yields.contains(&b.id){b.params.len()-1}else{b.params.len()};
+            b.params.insert(pos,Param{id:93,ty:Type::U32});
+        }
+        match &mut b.terminator{
+            Terminator::Jump{args,..}=>args.push(93),
+            Terminator::Branch{true_args,false_args,..}=>{true_args.push(93);false_args.push(93);},
+            Terminator::RepeatBounded{body_args,done_args,..}|
+            Terminator::RepeatScoped{body_args,done_args,..}=>{body_args.push(93);done_args.push(93);},
+            Terminator::Yield{next_args,..}=>next_args.push(93),
+            Terminator::Return{..}=>{}
+        }
+    }
+    let fresh=f.blocks.iter_mut().find(|b|b.id=="receipt_fresh_read").unwrap();
+    fresh.instructions.push(Instruction{id:92,op:Op::ConstU32(0)});
+    if let Terminator::Yield{next_args,..}=&mut fresh.terminator{
+        assert_eq!(next_args.pop(),Some(93));next_args.push(92);
+    }else{panic!("expected fresh receipt lookup");}
+    let cache=f.blocks.iter_mut().find(|b|b.id=="receipt_cached").unwrap();
+    if let Terminator::Branch{if_false,..}=&mut cache.terminator{
+        assert_eq!(if_false,"paced_wait_0");*if_false="adaptive_repeat".into();
+    }else{panic!("expected confirmed repeat");}
+    let ctx=cache.params.clone();
+    assert_eq!(ctx.iter().map(|p|p.id).collect::<Vec<_>>(),vec![99,97,98,96,93]);
+    f.blocks.extend([
+        Block{id:"adaptive_repeat".into(),params:ctx.clone(),instructions:vec![
+            Instruction{id:10,op:Op::ConstU32(2)},Instruction{id:11,op:Op::EqU32(93,10)}
+        ],terminator:Terminator::Branch{condition:11,if_true:"paced_wait_0".into(),
+            true_args:vec![99,97,98,96,93],if_false:"adaptive_increment".into(),
+            false_args:vec![99,97,98,96,93]}},
+        Block{id:"adaptive_increment".into(),params:ctx,instructions:vec![
+            Instruction{id:10,op:Op::ConstU32(1)},Instruction{id:11,op:Op::Add(93,10)}
+        ],terminator:Terminator::Jump{target:"offer_poll_header".into(),
+            args:vec![99,97,98,96,11]}}
+    ]);
+    p.validate().expect("typed finite perception backoff");p
+}
 fn paced_tape(arm:&str)->Vec<(u64,usize)>{
     match arm{
         "STABLE"=>vec![(0,0),(16,1)],
         "PULSE"=>vec![(0,0),(7,1),(9,0)],
         "LATE"=>vec![(0,0),(40,1)],
+        "SHIFTED_PULSE"=>vec![(0,0),(24,1),(26,0)],
         _=>panic!("unknown frozen tape")
     }
 }
@@ -6885,11 +6934,22 @@ fn paced_episode(w:&mut World,root:&str,tape:&[(u64,usize)])
 #[test]
 #[ignore="frozen matched feedback-paced perception"]
 fn s29_feedback_paced_perception_native(){
+    paced_perception_impl(false);
+}
+#[test]
+#[ignore="frozen finite feedback-conditioned perception backoff"]
+fn s29_adaptive_perception_native(){
+    paced_perception_impl(true);
+}
+fn paced_perception_impl(adaptive:bool){
     let arm=std::env::var("OCEE_S29_PACED_ARM").unwrap();
     let tape=paced_tape(&arm);
     let (mut base,_,target,_,registered)=lifetime_setup(129);
     let before=spend(&base);
-    let roots=[prefix_receipt_root(true),feedback_paced_root()].into_iter()
+    assert!(adaptive||arm!="SHIFTED_PULSE");
+    let mut programs=vec![prefix_receipt_root(true),feedback_paced_root()];
+    if adaptive{programs.push(adaptive_perception_root());}
+    let roots=programs.into_iter()
         .map(|p|(p.content_hash().unwrap(),p.canonical_bytes())).collect::<Vec<_>>();
     let total=roots.iter().map(|(_,b)|b.len() as u64+64).sum::<u64>();
     let used=base.state.organisms[&ORGANISM_ID].storage_used;
@@ -6907,8 +6967,11 @@ fn s29_feedback_paced_perception_native(){
     let inventory=lifetime_extra_versions(&base);
     let mut common_start=None;let mut costs=Vec::new();
     for (policy,(root,raw)) in roots.iter().enumerate(){
-        let paced=policy==1;
-        let expected_b=match arm.as_str(){"STABLE"=>true,"PULSE"=>!paced,"LATE"=>paced,_=>unreachable!()};
+        let paced=policy!=0;
+        let expected_b=match arm.as_str(){
+            "STABLE"=>true,"PULSE"=>policy!=1,"LATE"=>paced,
+            "SHIFTED_PULSE"=>policy!=2,_=>unreachable!()};
+        let label=["DENSE","PACED","ADAPT"][policy];
         let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
         lifetime_set_active(&mut w,root);
         let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
@@ -6971,7 +7034,7 @@ fn s29_feedback_paced_perception_native(){
         let latencies=tasks.iter().map(|(step,slot)|step-start-tape.iter().find(|(_,s)|s==slot).unwrap().0)
             .collect::<Vec<_>>();
         println!("S29_PACED arm={arm} policy={} root={root} root_B={} base={base_hash} start={start} start_A={start_a} final_A={} finished={finished:?} return={:?} pubs={pubs:?} reads={reads:?} observes={observations:?} lookups={lookups:?} execs={execs:?} tasks={tasks:?} latencies={latencies:?} gas={gas} VM_A={vm} world_A={world} task_A={task_a} non_task_A={non_task} poll_A={poll_a} observe_A={observe_a} lookup_A={lookup_a} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
-            if paced{"PACED"}else{"DENSE"},raw.len(),w.state.nodes[&NodeId::A].gas_available,
+            label,raw.len(),w.state.nodes[&NodeId::A].gas_available,
             w.state.organisms[&ORGANISM_ID].last_return,after.0-before.0,after.1-before.1,
             peak.storage_peak,peak.post_tick_peak);
         assert!(finished.is_some());assert_eq!(gas,0);
@@ -6980,6 +7043,13 @@ fn s29_feedback_paced_perception_native(){
         assert_eq!(execs.len(),expected);assert_eq!(tasks.len(),expected);
         assert_eq!(reads.iter().any(|(_,s)|*s==1),expected_b);
         if paced{assert!(!observations.is_empty());}else{assert!(observations.is_empty());}
+        if policy==2{
+            assert!(reads.iter().any(|(t,_)|*t==start+5));
+            assert!(reads.iter().any(|(t,_)|*t==start+6));
+            assert!(reads.iter().any(|(t,_)|*t==start+7));
+            println!("S29_ADAPTIVE arm={arm} first_reads={:?} first_wait={:?}",
+                &reads[..reads.len().min(8)],observations.first());
+        }
         for slot in 0..3{
             let key=format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8);
             assert_eq!(w.state.objects.contains_key(&key),slot<expected);
@@ -6990,5 +7060,5 @@ fn s29_feedback_paced_perception_native(){
         assert!(!w.state.objects.contains_key(S29_DRY_KEY));
         costs.push(non_task);
     }
-    if arm=="STABLE"{assert!(costs[1]<costs[0]);}
+    if arm=="STABLE"{assert!(costs[1]<costs[0]);if adaptive{assert!(costs[2]<costs[0]);}}
 }

@@ -1,0 +1,23 @@
+name: S29 Adaptive Perception Backoff
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-adaptive-perception.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [STABLE, PULSE, LATE, SHIFTED_PULSE]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_PACED_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_adaptive_perception_native -- --ignored --show-output
