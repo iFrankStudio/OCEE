@@ -1,0 +1,27 @@
+name: S29 Content Bound Offer Receipts
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-content-bound-receipts.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-content-receipts-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  receipt-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [SPACE, REORDER, ID_CONFLICT]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_RECEIPT_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native content-bound durable receipts and bounded cache
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_content_bound_receipt_native -- --ignored --show-output
