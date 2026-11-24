@@ -65,6 +65,9 @@ fn intended_len()->(String,Program){
     (p.content_hash().unwrap(),p)
 }
 fn boot_repaired()->(World,String,String,String){
+    boot_repaired_seed(129)
+}
+fn boot_repaired_seed(seed:u64)->(World,String,String,String){
     let p1=s19_p1_build_and_use_tool();
     let p2=s23_p2_remote_tool_transfer();
     let root=s29_atomic_publish_repair_root(
@@ -73,7 +76,7 @@ fn boot_repaired()->(World,String,String,String){
     let old=wrong_tool();let old_hash=old.content_hash().unwrap();
     let (new_hash,_)=intended_len();
     let mut w=World::with_protocol(Config{
-        seed:129,a_gas_per_epoch:12_000,..Config::default()
+        seed,a_gas_per_epoch:12_000,..Config::default()
     },Family::P2,42);
     for p in [p1,p2,root,old]{
         put(&mut w,format!("/self/versions/{}",
@@ -93,7 +96,7 @@ fn boot_repaired()->(World,String,String,String){
         &w.state.objects["/public/E001/transform"].bytes).unwrap();
     let pred:u32=serde_json::from_slice(
         &w.state.objects[PREDICTION].bytes).unwrap();
-    assert_eq!(pred,hidden_transform(129,&tr.held_out_input));
+    assert_eq!(pred,hidden_transform(seed,&tr.held_out_input));
     (w,old_hash,new_hash,root_hash)
 }
 /// A researcher preinstalls this static, audited maintenance routine.
@@ -3874,8 +3877,8 @@ fn lifetime_set_active(w:&mut World,root:&str){
     alter(w,"/self/active",root.as_bytes().to_vec(),
         info["version"].as_u64().unwrap());
 }
-fn lifetime_setup()->(World,Vec<String>,String,[String;3],String){
-    let (mut w,old_hash,new_hash,_)=boot_repaired();
+fn lifetime_setup(seed:u64)->(World,Vec<String>,String,[String;3],String){
+    let (mut w,old_hash,new_hash,_)=boot_repaired_seed(seed);
     let mut introduced=vec![old_hash];
     for p in extra_unreferenced_tools(){
         let h=p.content_hash().unwrap();
@@ -3916,12 +3919,27 @@ fn lifetime_setup()->(World,Vec<String>,String,[String;3],String){
     assert_eq!(b_gas(&w),20);
     (w,all,target,policy_hashes,new_hash)
 }
+#[derive(Debug,Clone,Default,Eq,PartialEq)]
+struct LifetimeIndexProbe{
+    samples:u64,
+    post_tick_peak:usize,
+}
+impl LifetimeIndexProbe{
+    fn sample(&mut self,w:&World){
+        let len=w.state.version_ref_index.as_ref()
+            .map(|cert|serde_json::to_vec(cert).unwrap().len())
+            .unwrap_or(0);
+        self.post_tick_peak=self.post_tick_peak.max(len);
+        self.samples+=1;
+    }
+}
 fn lifetime_advance_to_action(
-    w:&mut World,kind:&str,max:u64
+    w:&mut World,kind:&str,max:u64,probe:&mut LifetimeIndexProbe
 ){
     let mut hit=false;
     for _ in 0..max{
         let result=w.tick_autonomous(ORGANISM_ID);
+        probe.sample(w);
         assert!(!matches!(result.code,Code::Denied|Code::InvalidCode),
             "maintenance world calls must remain typed and authorized");
         let evt=w.audit.last().unwrap();
@@ -3945,18 +3963,22 @@ fn lifetime_advance_to_action(
     }
     assert!(hit,"VM must reach requested paid checkpoint {kind}");
 }
-fn lifetime_pad_to(w:&mut World,due:u64){
+fn lifetime_pad_to(w:&mut World,due:u64,probe:&mut LifetimeIndexProbe){
     assert!(w.state.step<=due,"VM missed the frozen exogenous event tick");
-    while w.state.step<due{w.tick(None);}
+    while w.state.step<due{
+        w.tick(None);
+        probe.sample(w);
+    }
     assert_eq!(w.state.step,due);
 }
 fn lifetime_finish(
     w:&mut World,policy:usize,tape:&str,pin_key:&str,target:&str,
-    release_step:u64,task_step:u64,horizon:u64
+    release_step:u64,task_step:u64,horizon:u64,
+    probe:&mut LifetimeIndexProbe
 )->(Code,u64){
     // Single exact external pin-CAS action at release_step, irrespective of
     // which policy was selected and whether it has discovered the target.
-    lifetime_pad_to(w,release_step);
+    lifetime_pad_to(w,release_step,probe);
     let original=w.state.objects.get(pin_key).unwrap();
     assert_eq!(original.bytes,target.as_bytes());
     let version=original.version;
@@ -3970,28 +3992,30 @@ fn lifetime_finish(
         actor:ORGANISM_ID,key:pin_key.into(),
         expected_version:Some(version),bytes:data
     }));
+    probe.sample(w);
     assert_eq!(mutation.code,Code::Ok);
     assert!(mutation.gas_charged>0);
     // One bounded VM service opportunity after the same exogenous release.
     if policy==0{
         if tape=="RELEASE_BEFORE_SECOND"{
-            lifetime_advance_to_action(w,"GC_SUCCESS",75);
+            lifetime_advance_to_action(w,"GC_SUCCESS",75,probe);
         }else{
-            lifetime_advance_to_action(w,"DRY_MARK",75);
+            lifetime_advance_to_action(w,"DRY_MARK",75,probe);
         }
     }else if policy==1{
-        lifetime_advance_to_action(w,"COOLDOWN_RESET",75);
+        lifetime_advance_to_action(w,"COOLDOWN_RESET",75,probe);
         let (mark,version)=paid_memory_value(w);
         assert_eq!(mark,b"0".to_vec());
         assert_eq!(version,1);
     }
-    lifetime_pad_to(w,task_step);
+    lifetime_pad_to(w,task_step,probe);
     // This is an EXTERNAL, identically timed useful storage artifact
     // submission (a bounded synthetic proxy), not a self-created task.
     let task=w.tick(Some(Action::Write{
         actor:ORGANISM_ID,key:S29_LIFE_TASK.into(),
         expected_version:None,bytes:vec![0x55;280]
     }));
+    probe.sample(w);
     assert!(matches!(task.code,Code::Ok|Code::Quota));
     if task.code==Code::Ok{
         assert_eq!(w.state.objects[S29_LIFE_TASK].bytes.len(),280);
@@ -4006,11 +4030,12 @@ fn lifetime_finish(
             .as_ref().is_some_and(|c|c.finished);
         if done{break;}
         let r=w.tick_autonomous(ORGANISM_ID);
+        probe.sample(w);
         assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
     }
     assert!(w.state.organisms[&ORGANISM_ID]
         .vm_continuation.as_ref().is_some_and(|c|c.finished));
-    lifetime_pad_to(w,horizon);
+    lifetime_pad_to(w,horizon,probe);
     assert_eq!(b_gas(w),20);
     assert_eq!(w.state_hash(),World::from_snapshot(
         &w.snapshot_json()).unwrap().state_hash());
@@ -4025,10 +4050,12 @@ struct LifetimeMeasured{
     catalog_count:usize,index_count:usize,
     used:u64,a_available:u64,
     policy_bytes:usize,index_serialized_final_unbilled:usize,
+    index_serialized_post_tick_peak_unbilled:usize,
+    index_post_tick_samples:u64,
 }
 fn measure_lifetime(
     w:&World,start:u64,policy:&'static str,policy_bytes:usize,
-    task_code:Code,task_cost_a:u64
+    task_code:Code,task_cost_a:u64,peak:&LifetimeIndexProbe
 )->LifetimeMeasured{
     let mut vm_a=0u64;
     let mut maintenance_a=0u64;
@@ -4070,6 +4097,11 @@ fn measure_lifetime(
     // in the full multi-tape study. Not charged to organism physical quota.
     let index_bytes=w.state.version_ref_index.as_ref()
         .map(|x|serde_json::to_vec(x).unwrap().len()).unwrap_or(0);
+    assert!(peak.samples>0);
+    if indexes>0{
+        assert!(peak.post_tick_peak>0,
+            "real paid indexes must have nonzero post-tick certificate high-water");
+    }
     LifetimeMeasured{
         policy,vm_a,maintenance_action_a:maintenance_a,
         exogenous_a:external_a,task_ok:task_code==Code::Ok,
@@ -4077,12 +4109,14 @@ fn measure_lifetime(
         gc_bytes:reclaimed,catalog_count:catalog,index_count:indexes,
         used:w.state.organisms[&ORGANISM_ID].storage_used,
         a_available:w.state.nodes[&NodeId::A].gas_available,
-        policy_bytes,index_serialized_final_unbilled:index_bytes
+        policy_bytes,index_serialized_final_unbilled:index_bytes,
+        index_serialized_post_tick_peak_unbilled:peak.post_tick_peak,
+        index_post_tick_samples:peak.samples
     }
 }
-fn test_matched_lifetime_pilot(tape:&str){
+fn test_matched_lifetime_pilot(tape:&str,seed:u64){
     use sha2::{Digest,Sha256};
-    let (base,versions,target,roots,new_hash)=lifetime_setup();
+    let (base,versions,target,roots,new_hash)=lifetime_setup(seed);
     let initial_hash=base.state_hash();
     let pin_idx=versions.iter().position(|v|v==&target).unwrap();
     let pin_key=format!("/self/pins/s29-dry-{pin_idx}");
@@ -4097,6 +4131,8 @@ fn test_matched_lifetime_pilot(tape:&str){
     for (p,policy) in policies.iter().enumerate(){
         let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
         lifetime_set_active(&mut w,&roots[p]);
+        let mut peak=LifetimeIndexProbe::default();
+        peak.sample(&w);
         let study_start=w.state.step;
         let release_step=study_start+90;
         let task_step=study_start+155;
@@ -4116,22 +4152,25 @@ fn test_matched_lifetime_pilot(tape:&str){
             common_schedule=Some((release_step,task_step,horizon));
         }
         if p==0 || p==1{
-            lifetime_advance_to_action(&mut w,"DRY_MARK",80);
+            lifetime_advance_to_action(&mut w,"DRY_MARK",80,&mut peak);
             assert_eq!(paid_memory_value(&w),(b"1".to_vec(),0));
         }else{
-            lifetime_advance_to_action(&mut w,"NO_OP",10);
+            lifetime_advance_to_action(&mut w,"NO_OP",10,&mut peak);
         }
         let before_release=World::from_snapshot(
             &w.snapshot_json()).unwrap();
+        let mut replay_peak=peak.clone();
         let (task,task_a)=lifetime_finish(
             &mut w,p,tape,&pin_key,&target,
-            release_step,task_step,horizon
+            release_step,task_step,horizon,&mut peak
         );
         let mut replay=before_release;
         let (replay_task,replay_a)=lifetime_finish(
             &mut replay,p,tape,&pin_key,&target,
-            release_step,task_step,horizon
+            release_step,task_step,horizon,&mut replay_peak
         );
+        assert_eq!(peak,replay_peak,
+            "actual post-tick index certificate peak must replay");
         assert_eq!((task,task_a),(replay_task,replay_a));
         assert_eq!(w.snapshot_json(),replay.snapshot_json());
         assert_eq!(w.audit,replay.audit);
@@ -4139,12 +4178,12 @@ fn test_matched_lifetime_pilot(tape:&str){
         let root_program_len=base.state.objects[&version_key(&roots[p])]
             .bytes.len();
         metrics.push(measure_lifetime(
-            &w,study_start,policy,root_program_len,task,task_a
+            &w,study_start,policy,root_program_len,task,task_a,&peak
         ));
     }
     let (release_step,task_step,horizon)=common_schedule.unwrap();
     let tape_bytes=serde_json::to_vec(&serde_json::json!({
-        "seed":129,"protocol":42,"family":"P2",
+        "seed":seed,"protocol":42,"family":"P2",
         "tape":tape,"release_step":release_step,
         "task_step":task_step,"horizon":horizon,
         "released_program":target,"pin_key":pin_key,
@@ -4181,7 +4220,7 @@ fn test_matched_lifetime_pilot(tape:&str){
         assert_eq!(none.gc_bytes,0);
     }
     assert_eq!(b_gas(&base),20);
-    println!("S29_LIFETIME_PILOT tape={tape} seed=129 base_snapshot_SHA={initial_hash} \
+    println!("S29_LIFETIME_PILOT tape={tape} seed={seed} base_snapshot_SHA={initial_hash} \
         event_tape_SHA256={tape_sha} \
         policy_hashes={roots:?} release_step={release_step} \
         task_step={task_step} horizon={horizon} \
@@ -4195,9 +4234,14 @@ fn test_matched_lifetime_pilot(tape:&str){
 fn s29_lifetime_matched_pilot_native(){
     let tape=std::env::var("OCEE_S29_LIFE_TAPE")
         .expect("pair-matched frozen exogenous tape");
+    let seed: u64=std::env::var("OCEE_S29_LIFE_SEED")
+        .unwrap_or_else(|_|"129".into()).parse()
+        .expect("preregistered P2 seed is numeric");
+    assert!([129,130,131].contains(&seed),
+        "only three preregistered matched lifetime seeds");
     match tape.as_str(){
         "ALL_PINNED"|"RELEASE_BEFORE_SECOND"=>
-            test_matched_lifetime_pilot(&tape),
+            test_matched_lifetime_pilot(&tape,seed),
         other=>panic!("unregistered lifetime tape {other}")
     }
 }
