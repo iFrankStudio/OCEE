@@ -1,9 +1,7 @@
 name: S29 True P2 Seed-Aware Orphan Matched Lifetime v2
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-matched-lifetime-seed-aware-v2.yml'
+  # Separately preregistered actual-orphan corrected v2 native matrix was 9/9 at #45309723967.
+  # Replay manually only; do not fan out historical expensive P2 jobs.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-seed-aware-v2-${{ github.ref }}
