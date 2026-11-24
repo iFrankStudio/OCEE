@@ -12,3 +12,7 @@ Original content-bound receipt protocol remains frozen. Run 45331711663 failed 0
 
 ## Partial native result (SPACE only)
 Run [45334665847](https://github.com/iFrankStudio/OCEE/actions/runs/45334665847), job 138243808799 completed success (1 passed). VERIFY/CACHE from common base f4068a45… both start4099 with 11993A, actual Quota4103, commit Ok20A4130, 2 Exec, terminal9, same retained b1/v0, exact replay. VERIFY 20 successful receipt lookups (120A), CACHE zero (both four NotFound); both 24 public reads/48A. VM8237/3746, world2886/2761, non-task11103/6487 A: saved4616A (41.57%). Roots37106/37461B, joint install4678A, storage peak203254B, unbilled index peak3852B. Other three jobs still running at observation, no full-matrix claim.
+
+
+## Final native acceptance
+[Run 45334665847](https://github.com/iFrankStudio/OCEE/actions/runs/45334665847) @edb9793a, all four jobs success (each 1 passed). SPACE previously recorded. REORDER and ID_CONFLICT each same paired phase costs: phase0 VERIFY/CACHE non-task A8550/3150, 26/1 successful receipt reads; phase1 8923/3445, 28/2 reads. Phase0 real a,b commits, phase1 c only, each 20A; terminal codes REORDER 9/5, ID_CONFLICT 10/6. Original-cap CACHE-only SPACE: actual same Quota4103→Ok4130, terminal9, VM4622/world2785, non-task7387A, zero successful receipt reads, four missing, poll72A, replay. All roots safety, original exact replay and terminal predicates passed; no original VERIFY success at 32/96. Root joint install4678A; roomy peaks203533/203813B. No full workspace claim.
