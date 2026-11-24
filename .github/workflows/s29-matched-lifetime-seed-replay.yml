@@ -1,0 +1,29 @@
+name: S29 Matched Lifetime Three-Seed Replication and Index High-Water
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-matched-lifetime-seed-replay.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-seed-replay-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  paired-p2-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [129, 130, 131]
+        tape: [ALL_PINNED, RELEASE_BEFORE_SECOND]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OCEE_S29_LIFE_SEED: ${{ matrix.seed }}
+      OCEE_S29_LIFE_TAPE: ${{ matrix.tape }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify same-seed P2 lifecycle, real cost and post-tick certificate peak
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_lifetime_matched_pilot_native -- --ignored --show-output
