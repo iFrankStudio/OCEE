@@ -941,3 +941,8 @@
 ### 2026-11-24 — 持久收据与低成本局部感知原生8/8验收
 - [有界轮询#45334665847](https://github.com/iFrankStudio/OCEE/actions/runs/45334665847) @edb9793a 全4 job成功。SPACE已记录；REORDER与ID_CONFLICT两阶段VERIFY/CACHE非任务A8550/3150、8923/3445，真实成功收据读26/1、28/2，首阶段仅a,b成功写，重启后仅c成功写，终态状态码9/5或10/6。原上限32/96独立CACHE SPACE也成功（7387A，0成功收据读，原真实Quota→Ok），不抹去原VERIFY红例。
 - [局部读取#45334944941](https://github.com/iFrankStudio/OCEE/actions/runs/45334944941) @b1322980 全4 job成功，原32/96上限不变；内核契约真实280B/6A vs 37B/3A，权限/边界/低A/replay检查通过。SPACE VERIFY/CACHE非任务10664/7404A，成功读32/0，同样真实完成a；REORDER/ID_CONFLICT第一阶段7324/3925A，第二阶段7425/4089A，实际成功收据读38/1和40/2，真实正确产物、同ID冲突、跨重启判据均通过。根37666/38021B，共同安装4748A，全部精确复演，B20不重算，物理峰204374/204653/204933B，未计费index峰SPACE3852B。缓存仍限定单writer、不外部修改产物。尚无全workspace回归或内生策略发明证据。下一步应检验真实信息感知成本与延迟/漏任务的取舍，不以固定tape上最省A等同一般最优。G0 GO/G1,G2 NO-GO；正式E001尚未校准/预注册。
+
+
+### 2026-11-24 — 真实反馈驱动的感知节奏与机会成本（待验收）
+- 先冻结[配对感知协议](./experiments/E001/DEV-S29-FEEDBACK-PACED-PERCEPTION.md) @9ec81d2f，源/工作流 @cedaa628，[原生CI #45336375358](https://github.com/iFrankStudio/OCEE/actions/runs/45336375358) 已触发。DENSE复用已通过的prefix CACHE 32/96，PACED仅在VM真实见到相同ID/input且已验证状态1/2时真付费Observe三次再poll，单scope/aggregate改12/36；pending分支不延迟。不新增内核/VM原语，不由host控制个体行动，不称自主学会阈值。
+- seed129真实P2 B20、共同付费安装两个root、同1200B空闲、自然A grant、等价激活、120tick。三预冻结tape都+0发布a：STABLE +16发布持续b，预测两者完成a,b且PACED少花非任务A；PULSE +7发布b/+9恢复a，预测PACED漏b而DENSE观测并完成；LATE +40发布持续b，预测DENSE已结束而PACED仍能观测。真实独立计算、内容绑定产物、没有重复执行/写入、正常结束、实际费用、感知与完成时间、安装/峰值、完整snapshot/audit及环境publication hash复演均需验收。比较的是轮询数量与间隔联合策略，不是隔离单因素，也非一般最优。CI尚未验收，继续先读真实日志并保留红例。G0 GO/G1,G2 NO-GO；正式E001尚未校准/预注册。
