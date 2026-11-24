@@ -5354,3 +5354,234 @@ fn s29_recovery_memory_revision_native(){
     println!("S29_REVISION_DONE arm={arm} seed=129 base={base_hash} roots={roots:?} target={target} target_B={target_len} start_A={} setup_VM_A={} setup_world_A={}",
         start_a.unwrap(),after.0-before.0,after.1-before.1);
 }
+
+
+// One continuous bounded VM, no researcher-selected task or root after
+// initial activation. 1 = failed/pending skip, 2 = failed/skip consumed,
+// 0 = actual successful recovery. Distinguish outcome from retry eligibility.
+const CONT_TASK_PREFIX:&str="/self/outcomes/s29-continuous-";
+fn continuous_task_root()->Program{
+    let mut p=recovery_revision_root();
+    let f=&mut p.functions[0];
+    let memory=f.blocks.iter_mut().find(|b|b.id=="probe_memory_exists").unwrap();
+    if let Terminator::Branch{if_true,true_args,..}=&mut memory.terminator{
+        assert_eq!(if_true,"start_uncached");
+        *if_true="cooldown_reset".into();*true_args=vec![15];
+    }else{panic!("expected history branch");}
+    let reset=f.blocks.iter_mut().find(|b|b.id=="cooldown_reset").unwrap();
+    reset.instructions[1].op=lit(b"2");
+    let zero=f.blocks.iter_mut().find(|b|b.id=="probe_memory_zero").unwrap();
+    if let Terminator::Branch{if_false,false_args,..}=&mut zero.terminator{
+        *if_false="probe_memory_cooled".into();*false_args=vec![2];
+    }else{panic!("expected valid history check");}
+    f.blocks.push(Block{id:"probe_memory_cooled".into(),
+        params:vec![Param{id:2,ty:Type::Bytes}],
+        instructions:vec![Instruction{id:10,op:lit(b"2")},
+            Instruction{id:11,op:Op::EqBytes(2,10)}],
+        terminator:Terminator::Branch{condition:11,if_true:"start_uncached".into(),
+            true_args:vec![],if_false:"failed".into(),false_args:vec![]}});
+    let revise=f.blocks.iter_mut().find(|b|b.id=="revision_zero").unwrap();
+    // Existing 0 is already a real success. Only 1 or 2 need revision.
+    revise.instructions[0].op=lit(b"2");
+    let round=f.blocks.iter_mut().find(|b|b.id=="round_header").unwrap();
+    round.terminator=Terminator::Jump{target:"probe_memory".into(),args:vec![]};
+    let after=f.blocks.iter_mut().find(|b|b.id=="after_observe").unwrap();
+    after.terminator=Terminator::Jump{target:"episode_end".into(),args:vec![]};
+    for id in ["failed","task_ok"]{
+        let b=f.blocks.iter_mut().find(|b|b.id==id).unwrap();
+        b.instructions.clear();
+        b.terminator=Terminator::Jump{target:"episode_end".into(),args:vec![]};
+    }
+    let entry=f.blocks.iter_mut().find(|b|b.id=="entry").unwrap();
+    entry.id="episode_task".into();entry.params.clear();
+    for id in ["episode_task","task_retry"]{
+        let b=f.blocks.iter_mut().find(|b|b.id==id).unwrap();
+        b.instructions=vec![
+            Instruction{id:10,op:lit(CONT_TASK_PREFIX.as_bytes())},
+            Instruction{id:13,op:Op::ConstU32(48)},
+            Instruction{id:14,op:Op::Add(99,13)},
+            Instruction{id:15,op:Op::PackByte(14)},
+            Instruction{id:16,op:Op::Concat(10,15)},
+            Instruction{id:11,op:lit(&[0x55;280])},
+            Instruction{id:12,op:Op::ConstU32(u32::MAX)}
+        ];
+        if let Terminator::Yield{args,..}=&mut b.terminator{*args=vec![16,11,12];}
+        else{panic!("task must remain a real world Write");}
+    }
+    // Thread a task-slot register through every existing block and edge.
+    // The verifier requires feedback Bytes last, so insert before it.
+    let yield_targets=f.blocks.iter().filter_map(|b|match &b.terminator{
+        Terminator::Yield{next,..}=>Some(next.clone()),_=>None
+    }).collect::<std::collections::BTreeSet<_>>();
+    for b in &mut f.blocks{
+        let pos=if yield_targets.contains(&b.id){b.params.len()-1}else{b.params.len()};
+        b.params.insert(pos,Param{id:99,ty:Type::U32});
+        match &mut b.terminator{
+            Terminator::Jump{args,..}=>args.push(99),
+            Terminator::Branch{true_args,false_args,..}=>{
+                true_args.push(99);false_args.push(99);
+            },
+            Terminator::RepeatBounded{body_args,done_args,..} |
+            Terminator::RepeatScoped{body_args,done_args,..}=>{
+                body_args.push(99);done_args.push(99);
+            },
+            Terminator::Yield{next_args,..}=>next_args.push(99),
+            Terminator::Return{..}=>panic!("all episode returns must join next task")
+        }
+    }
+    let slot=||vec![Param{id:99,ty:Type::U32}];
+    f.blocks.insert(0,Block{id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+        instructions:vec![Instruction{id:99,op:Op::ConstU32(0)}],
+        terminator:Terminator::Jump{target:"episode_header".into(),args:vec![99]}});
+    f.blocks.extend([
+        Block{id:"episode_header".into(),params:slot(),instructions:vec![],
+            terminator:Terminator::RepeatBounded{limit:3,body:"episode_task".into(),
+                body_args:vec![99],done:"episode_return".into(),done_args:vec![99]}},
+        Block{id:"episode_end".into(),params:slot(),instructions:vec![
+            Instruction{id:10,op:Op::ConstU32(2)},
+            Instruction{id:11,op:Op::EqU32(99,10)}
+        ],terminator:Terminator::Branch{condition:11,if_true:"episode_next".into(),
+            true_args:vec![99],if_false:"episode_delay".into(),false_args:vec![99]}},
+        Block{id:"episode_delay".into(),params:slot(),instructions:vec![],
+            terminator:Terminator::RepeatScoped{limit:40,aggregate_limit:80,scope:99,
+                body:"episode_observe".into(),body_args:vec![99],
+                done:"episode_next".into(),done_args:vec![99]}},
+        Block{id:"episode_observe".into(),params:slot(),instructions:vec![],
+            terminator:Terminator::Yield{call:WorldCall::Observe,args:vec![],
+                next:"episode_observe_reply".into(),next_args:vec![99]}},
+        Block{id:"episode_observe_reply".into(),params:vec![
+            Param{id:99,ty:Type::U32},Param{id:2,ty:Type::Bytes}],
+            instructions:vec![],terminator:Terminator::Jump{
+                target:"episode_delay".into(),args:vec![99]}},
+        Block{id:"episode_next".into(),params:slot(),instructions:vec![
+            Instruction{id:10,op:Op::ConstU32(1)},
+            Instruction{id:11,op:Op::Add(99,10)}
+        ],terminator:Terminator::Jump{target:"episode_header".into(),args:vec![11]}},
+        Block{id:"episode_return".into(),params:slot(),instructions:vec![],
+            terminator:Terminator::Return{value:99}}
+    ]);
+    p.validate().expect("single bounded three-task typed continuation");
+    p
+}
+fn continuous_task_episode(w:&mut World,root:&str,pin:&str,target:&str,release:bool)
+    ->(LifetimeIndexProbe,u64){
+    let start=w.state.step;
+    let mut peak=LifetimeIndexProbe::default();
+    peak.sample(w);
+    let mut external=None;
+    while w.state.step<start+190{
+        if w.state.step==start+25{
+            assert_eq!(paid_memory_value(w),(b"1".to_vec(),0));
+            assert!(!w.state.objects.contains_key(&format!("{CONT_TASK_PREFIX}1")));
+            let r=lifetime_external_write(w,pin,
+                if release{vec![b'-';64]}else{target.as_bytes().to_vec()},Some(0),&mut peak);
+            assert_eq!(r.code,Code::Ok);
+            external=Some(r.gas_charged);
+        }else if w.state.organisms[&ORGANISM_ID]
+            .vm_continuation.as_ref().is_some_and(|c|c.finished){
+            w.tick(None);peak.sample(w);
+        }else{
+            let r=w.tick_autonomous(ORGANISM_ID);peak.sample(w);
+            assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        }
+        assert_eq!(w.state.organisms[&ORGANISM_ID].active_program_hash.as_deref(),Some(root));
+    }
+    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(3)));
+    assert_eq!(b_gas(w),20);
+    (peak,external.expect("frozen external pin CAS"))
+}
+#[test]
+#[ignore="frozen three-task continuous outcome/scheduling separation"]
+fn s29_continuous_task_history_native(){
+    let arm=std::env::var("OCEE_S29_CONTINUOUS_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"RELEASED"|"PINNED"));
+    let released=arm=="RELEASED";
+    let (mut w,versions,target,_,registered)=lifetime_setup(129);
+    let before=spend(&w);
+    let p=continuous_task_root();
+    let raw=p.canonical_bytes();
+    assert!(!raw.windows(64).any(|x|x==target.as_bytes()));
+    let root=p.content_hash().unwrap();
+    let root_bytes=raw.len();
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+65_536;
+    put(&mut w,version_key(&root),raw);
+    put(&mut w,"/self/pins/s29-continuous-root".into(),root.as_bytes().to_vec());
+    let used=w.state.organisms[&ORGANISM_ID].storage_used;
+    w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
+    quota_wait_next_grant(&mut w);
+    let base_hash=w.state_hash();
+    let after=spend(&w);
+    assert!(!w.state.objects.contains_key(S29_DRY_KEY));
+    let installed=lifetime_extra_versions(&w);
+    let idx=versions.iter().position(|h|h==&target).unwrap();
+    let pin=format!("/self/pins/s29-dry-{idx}");
+    let target_len=w.state.objects[&version_key(&target)].bytes.len() as u64;
+    lifetime_set_active(&mut w,&root);
+    let start=w.state.step;
+    let start_a=w.state.nodes[&NodeId::A].gas_available;
+    let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+    let (peak,external)=continuous_task_episode(&mut w,&root,&pin,&target,released);
+    let (rp,re)=continuous_task_episode(&mut replay,&root,&pin,&target,released);
+    assert_eq!(peak,rp);assert_eq!(external,re);
+    assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+    let mut tasks=Vec::new();let mut marks=Vec::new();let mut indices=Vec::new();
+    let mut vm=0u64;let mut world=0u64;let mut task_a=0u64;let mut reclaimed=0u64;
+    let mut gc_step=None;let mut conflicts=0;
+    for e in w.audit.iter().filter(|e|e.step>=start){
+        vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+        if let Some(Action::Write{key,bytes,..})=&e.action{
+            assert_ne!(key,"/self/active");
+            if key.starts_with(CONT_TASK_PREFIX){
+                assert_eq!(bytes,&vec![0x55;280]);
+                tasks.push((e.step,key.clone(),e.result.code,e.result.gas_charged));
+                task_a+=e.result.gas_charged;
+            }
+            if key==S29_DRY_KEY{
+                assert_eq!(e.result.code,Code::Ok);assert!(e.result.gas_charged>0);
+                marks.push((e.step,bytes.clone(),e.result.gas_charged));
+            }
+        }
+        if matches!(&e.action,Some(Action::IndexVersionRefs{..})){
+            assert_eq!(e.result.code,Code::Ok);indices.push(e.step);
+        }
+        if let Some(Action::ReclaimIndexedVersion{program_hash,..})=&e.action{
+            if e.result.code==Code::Ok{
+                assert_eq!(program_hash,&target);
+                reclaimed+=u64::from_le_bytes(e.result.payload.as_slice().try_into().unwrap());
+                gc_step=Some(e.step);
+            }else if e.result.code==Code::Conflict{conflicts+=1;}
+        }
+    }
+    assert_eq!(tasks.len(),if released{4}else{3});
+    for (i,t) in tasks.iter().take(3).enumerate(){
+        assert_eq!(t.1,format!("{CONT_TASK_PREFIX}{i}"));
+        assert_eq!(t.2,Code::Quota);
+    }
+    assert_eq!(marks.len(),3);
+    assert_eq!(marks[0].1,b"1");
+    assert_eq!(marks[1].1,b"2");
+    assert_eq!(marks[2].1,if released{b"0"}else{b"1"});
+    assert_eq!(indices.len(),2);
+    assert!(tasks[0].0<indices[0]&&indices[0]<marks[0].0&&marks[0].0<start+25);
+    assert!(start+25<tasks[1].0&&tasks[1].0<marks[1].0&&marks[1].0<tasks[2].0);
+    assert!(tasks[2].0<indices[1]&&indices[1]<marks[2].0);
+    if released{
+        assert_eq!(tasks[3].1,format!("{CONT_TASK_PREFIX}2"));
+        assert_eq!(tasks[3].2,Code::Ok);
+        assert!(indices[1]<gc_step.unwrap()&&gc_step.unwrap()<tasks[3].0);
+        assert!(tasks[3].0<marks[2].0);
+    }
+    assert_eq!(reclaimed,if released{target_len}else{0});
+    assert_eq!(paid_memory_value(&w),(if released{b"0".to_vec()}else{b"1".to_vec()},2));
+    for i in 0..3{
+        assert_eq!(w.state.objects.contains_key(&format!("{CONT_TASK_PREFIX}{i}")),released&&i==2);
+    }
+    for h in &installed{
+        assert_eq!(w.state.objects.contains_key(&version_key(h)),!(released&&h==&target));
+    }
+    assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+    println!("S29_CONTINUOUS_DONE arm={arm} seed=129 root={root} root_B={root_bytes} base={base_hash} start={start} start_A={start_a} tasks={tasks:?} marks={marks:?} indexes={indices:?} conflicts={conflicts} gc_B={reclaimed} gc_step={gc_step:?} VM_A={vm} world_A={world} task_A={task_a} external_A={external} non_task_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} final_memory={:?} one_root=true replay=true B=20",
+        vm+world-task_a-external,after.0-before.0,after.1-before.1,
+        peak.storage_peak,peak.post_tick_peak,paid_memory_value(&w));
+}
