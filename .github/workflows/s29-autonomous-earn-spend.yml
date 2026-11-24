@@ -1,0 +1,17 @@
+name: S29 Autonomous Earn Spend
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-autonomous-earn-spend.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-world-kernel finite_escrow_autonomous_earn_spend -- --show-output

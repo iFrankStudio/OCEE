@@ -160,3 +160,121 @@ mod tests{
         println!("S29_ESCROW_NEGATIVE wrong_or_failed=9 disabled=true unspent_epoch_persistent=true");
     }
 }
+
+
+#[cfg(test)]
+mod autonomous_pilot{
+    use super::*;
+    use ocee_organism_vm::{Block,Function,Instruction,Op,Param,Program,Terminator,Type,Value,WorldCall};
+    fn literal(bytes:&[u8])->Op{
+        Op::ConstBytes{hex:bytes.iter().map(|b|format!("{b:02x}")).collect::<String>()}
+    }
+    fn root()->Program{
+        let i=|id,op|Instruction{id,op};
+        let feedback=||vec![Param{id:2,ty:Type::Bytes}];
+        let blocks=vec![
+            Block{id:"entry".into(),params:vec![Param{id:0,ty:Type::Bytes}],
+                instructions:vec![i(10,literal(OFFER.as_bytes()))],
+                terminator:Terminator::Yield{call:WorldCall::Read,args:vec![10],next:"offer".into(),next_args:vec![]}},
+            Block{id:"offer".into(),params:feedback(),instructions:vec![
+                i(10,literal(b"code")),i(11,Op::JsonFieldString(2,10)),i(12,literal(b"Ok")),i(13,Op::EqBytes(11,12))],
+                terminator:Terminator::Branch{condition:13,if_true:"compute".into(),true_args:vec![2],
+                    if_false:"failed".into(),false_args:vec![]}},
+            Block{id:"compute".into(),params:feedback(),instructions:vec![
+                i(10,literal(b"payload")),i(11,Op::JsonFieldBytes(2,10)),
+                i(12,literal(b"task_id")),i(13,Op::JsonFieldString(11,12)),i(14,Op::HexEncode(13)),
+                i(15,literal(OUTCOME.as_bytes())),i(16,Op::Concat(15,14)),
+                i(17,literal(b"held_out_input")),i(18,Op::JsonFieldBytes(11,17)),
+                i(19,Op::Len(18)),i(20,Op::PackByte(19)),i(21,Op::Sha256(18)),
+                i(22,Op::Concat(20,21)),i(23,literal(&[0x55;247])),i(24,Op::Concat(22,23)),
+                i(25,Op::ConstU32(u32::MAX))],
+                terminator:Terminator::Yield{call:WorldCall::Write,args:vec![16,24,25],next:"submitted".into(),next_args:vec![]}},
+            Block{id:"submitted".into(),params:feedback(),instructions:vec![
+                i(10,literal(b"code")),i(11,Op::JsonFieldString(2,10)),i(12,literal(b"Ok")),i(13,Op::EqBytes(11,12))],
+                terminator:Terminator::Branch{condition:13,if_true:"workspace".into(),true_args:vec![],
+                    if_false:"failed".into(),false_args:vec![]}},
+            Block{id:"workspace".into(),params:vec![],instructions:vec![
+                i(10,literal(b"/self/earned-workspace")),i(11,literal(&[0x37;2048])),i(12,Op::ConstU32(u32::MAX))],
+                terminator:Terminator::Yield{call:WorldCall::Write,args:vec![10,11,12],next:"worked".into(),next_args:vec![]}},
+            Block{id:"worked".into(),params:feedback(),instructions:vec![
+                i(10,literal(b"code")),i(11,Op::JsonFieldString(2,10)),i(12,literal(b"Ok")),i(13,Op::EqBytes(11,12))],
+                terminator:Terminator::Branch{condition:13,if_true:"done".into(),true_args:vec![],if_false:"failed".into(),false_args:vec![]}},
+            Block{id:"done".into(),params:vec![],instructions:vec![i(10,Op::ConstU32(1))],terminator:Terminator::Return{value:10}},
+            Block{id:"failed".into(),params:vec![],instructions:vec![i(10,Op::ConstU32(0))],terminator:Terminator::Return{value:10}}
+        ];
+        let p=Program{format_version:1,entry_function:"main".into(),functions:vec![Function{
+            name:"main".into(),args:vec![Type::Bytes],returns:Type::U32,blocks}]};
+        p.validate().expect("typed earn-spend root");p
+    }
+    #[test]
+    fn finite_escrow_autonomous_earn_spend(){
+        let p=root();let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+        for (id,input) in [("a",vec![44,7,2]),("b",vec![13,9,4,8,2])]{
+            let task=TransformTask{task_id:id.into(),examples:vec![],held_out_input:input.clone()};
+            let key=format!("{OUTCOME}{:02x}",id.as_bytes()[0]);
+            let mut setup_cost=None;
+            for price in [1,1000]{
+                let config=Config{seed:129,a_gas_per_epoch:12_000,epoch_length:16,..Config::default()};
+                let mut w=World::with_transform_escrow(config,task.clone(),1000,price).unwrap();
+                for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                    let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                    assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+                }
+                let paid=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+                if let Some(previous)=setup_cost{assert_eq!(paid,previous);}else{setup_cost=Some(paid);}
+                w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                    kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:256}});
+                while w.state.step<16{w.tick(None);}
+                assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+                let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+                let mut balance=256u64;let mut remaining=1000u64;let mut fees=0;let mut after_fees=0;
+                let mut received=0;let mut submitted_at=None;let mut workspace_ok=false;let mut gas=0;
+                for _ in 0..12{
+                    let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                    let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                    let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                    assert_eq!(r,rr);
+                    let fee=r.gas_charged+r.vm_gas_charged;
+                    if submitted_at.is_some(){after_fees+=fee;}
+                    balance=balance.checked_sub(fee).expect("fees before credit").checked_add(r.a_credited).unwrap();
+                    remaining=remaining.checked_sub(r.a_credited).unwrap();fees+=fee;received+=r.a_credited;
+                    assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                    assert_eq!(remaining,w.state.transform_escrow.as_ref().unwrap().remaining_a);
+                    assert_eq!(balance+remaining,1256-fees);
+                    let e=w.audit.last().unwrap();
+                    if r.code==Code::Gas{gas+=1;}
+                    if r.a_credited>0{
+                        assert_eq!(r.a_credited,price);assert_eq!(r.code,Code::Ok);
+                        assert_eq!(r.gas_charged,20);assert!(submitted_at.is_none());
+                        assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                        submitted_at=Some(e.step);
+                    }
+                    if matches!(&e.action,Some(Action::Write{key,..}) if key=="/self/earned-workspace")&&r.code==Code::Ok{
+                        assert!(submitted_at.is_some());workspace_ok=true;
+                    }
+                }
+                println!("S29_AUTONOMOUS_ESCROW id={id} price={price} root={hash} root_B={} install_A={paid} submitted_at={submitted_at:?} received={received} fees={fees} after_fees={after_fees} final_A={balance} escrow_A={remaining} workspace={workspace_ok} gas={gas} return={:?} storage_B={} replay=true",
+                    raw.len(),w.state.organisms[&ORGANISM_ID].last_return,w.state.organisms[&ORGANISM_ID].storage_used);
+                assert_eq!(received,price);assert!(submitted_at.is_some());
+                let receipt=&w.state.objects[&key];
+                assert_eq!(receipt.owner,ORGANISM_ID);assert_eq!(receipt.version,0);assert_eq!(receipt.bytes.len(),280);
+                assert_eq!(receipt.bytes[0],input.len() as u8);
+                assert_eq!(&receipt.bytes[1..33],Sha256::digest(&input).as_slice());
+                assert!(receipt.bytes[33..].iter().all(|b|*b==0x55));
+                assert_eq!(w.state.transform_escrow.as_ref().unwrap().paid_at,submitted_at);
+                assert_eq!(w.state.transform_escrow.as_ref().unwrap().paid_a,price);
+                assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+                assert_eq!(w.audit.iter().filter(|e|matches!(&e.action,Some(Action::Write{key:k,..}) if k==&key)).count(),1);
+                if price==1000{
+                    assert!(workspace_ok);assert_eq!(w.state.objects["/self/earned-workspace"].bytes,vec![0x37;2048]);
+                    assert_eq!(w.state.objects["/self/earned-workspace"].version,0);
+                    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(1)));
+                    assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().unwrap().finished);
+                    assert_eq!(gas,0);assert!(fees>257);
+                }else{
+                    assert!(!workspace_ok);assert!(!w.state.objects.contains_key("/self/earned-workspace"));assert!(gas>0);
+                }
+            }
+        }
+    }
+}
