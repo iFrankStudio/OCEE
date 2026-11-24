@@ -6484,27 +6484,61 @@ fn assert_bound_artifact(bytes:&[u8],slot:usize){
 #[test]
 #[ignore="frozen durable receipt identity and continuation caching"]
 fn s29_content_bound_receipt_native(){
-    receipt_native_impl(32,false);
+    receipt_native_impl(32,false,false);
 }
 
 #[test]
 #[ignore="frozen bounded receipt polling budget revision"]
 fn s29_bounded_receipt_poll_native(){
-    receipt_native_impl(20,false);
+    receipt_native_impl(20,false,false);
 }
 
 #[test]
 #[ignore="original receipt cache independently observed"]
 fn s29_original_receipt_cache_native(){
-    receipt_native_impl(32,true);
+    receipt_native_impl(32,true,false);
 }
 
-fn receipt_native_impl(poll_limit:u32,cache_only:bool){
+#[test]
+#[ignore="frozen generic own-prefix receipt observation"]
+fn s29_paid_prefix_receipt_native(){
+    receipt_native_impl(32,false,true);
+}
+
+fn prefix_receipt_root(cache:bool)->Program{
+    let mut p=bound_receipt_root(cache);
+    let f=&mut p.functions[0];
+    for id in ["receipt_fresh_read","pending_artifact"]{
+        let b=f.blocks.iter_mut().find(|b|b.id==id).unwrap();
+        b.instructions.iter_mut().find(|i|i.id==10).unwrap().op=
+            lit(b"/sys/self-prefix/33/outcomes/s29-offer-");
+    }
+    let b=f.blocks.iter_mut().find(|b|b.id=="receipt_shape").unwrap();
+    b.instructions.iter_mut().find(|i|i.id==13).unwrap().op=Op::ConstU32(37);
+    if let Terminator::Branch{if_true,..}=&mut b.terminator{*if_true="receipt_prefix_size".into();}
+    else{panic!("expected receipt shape guard");}
+    let params=b.params.clone();
+    f.blocks.push(Block{id:"receipt_prefix_size".into(),params,instructions:vec![
+        Instruction{id:10,op:Op::ConstU32(0)},
+        Instruction{id:11,op:Op::ConstU32(4)},
+        Instruction{id:12,op:Op::Slice(2,10,11)},
+        Instruction{id:13,op:lit(&280u32.to_le_bytes())},
+        Instruction{id:14,op:Op::EqBytes(12,13)}
+    ],terminator:Terminator::Branch{condition:14,if_true:"receipt_digest".into(),
+        true_args:vec![99,97,98,96,2],if_false:"receipt_collision".into(),
+        false_args:vec![99,97,98,96]}});
+    let b=f.blocks.iter_mut().find(|b|b.id=="receipt_digest").unwrap();
+    b.instructions.iter_mut().find(|i|i.id==10).unwrap().op=Op::ConstU32(5);
+    p.validate().expect("typed generic prefix receipt verifier");p
+}
+
+fn receipt_native_impl(poll_limit:u32,cache_only:bool,prefix:bool){
     let arm=std::env::var("OCEE_S29_RECEIPT_ARM").unwrap();
     assert!(matches!(arm.as_str(),"SPACE"|"REORDER"|"ID_CONFLICT"));
     let (mut base,_,target,_,registered)=lifetime_setup(129);
     let before=spend(&base);
-    let roots=[bound_receipt_root(false),bound_receipt_root(true)].into_iter()
+    let roots=(if prefix{[prefix_receipt_root(false),prefix_receipt_root(true)]}
+        else{[bound_receipt_root(false),bound_receipt_root(true)]}).into_iter()
         .map(|mut p|{
             if poll_limit!=32{
                 let b=p.functions[0].blocks.iter_mut().find(|b|b.id=="offer_poll_header").unwrap();
@@ -6585,9 +6619,19 @@ fn receipt_native_impl(poll_limit:u32,cache_only:bool){
                     Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
                         assert_eq!(e.result.code,Code::Ok);poll_a+=e.result.gas_charged;
                     },
-                    Some(Action::Read{key,..}) if key.starts_with(OFFER_OUTCOME)=>{
+                    Some(Action::Read{key,..}) if key.starts_with(OFFER_OUTCOME)||
+                        key.starts_with("/sys/self-prefix/33/outcomes/s29-offer-")=>{
                         assert!(matches!(e.result.code,Code::Ok|Code::NotFound));
-                        lookup_a+=e.result.gas_charged;lookups.push((e.step,key.clone(),e.result.code));
+                        let normalized=if prefix{
+                            let suffix=key.strip_prefix("/sys/self-prefix/33/outcomes/s29-offer-").unwrap();
+                            if e.result.code==Code::Ok{
+                                assert_eq!(e.result.gas_charged,3);
+                                assert_eq!(e.result.payload.len(),37);
+                                assert_eq!(&e.result.payload[..4],&280u32.to_le_bytes());
+                            }
+                            format!("{OFFER_OUTCOME}{suffix}")
+                        }else{assert!(key.starts_with(OFFER_OUTCOME));key.clone()};
+                        lookup_a+=e.result.gas_charged;lookups.push((e.step,normalized,e.result.code));
                     },
                     Some(Action::Exec{program_hash,input,..})=>{
                         assert_eq!(program_hash,&registered);

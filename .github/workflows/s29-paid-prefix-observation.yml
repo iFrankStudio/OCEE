@@ -1,0 +1,32 @@
+name: S29 Paid Own Prefix Observation
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-paid-prefix-observation.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-paid-prefix-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-world-kernel paid_own_prefix_contract -- --show-output
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [SPACE, REORDER, ID_CONFLICT]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_RECEIPT_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_paid_prefix_receipt_native -- --ignored --show-output

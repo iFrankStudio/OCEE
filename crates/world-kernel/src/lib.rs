@@ -1025,6 +1025,31 @@ impl World {
                 // strictly map canonical suffixes to the requesting actor's
                 // existing /self/ data. No public, system, or cross-actor
                 // capabilities are exposed through this metadata path.
+                // Generic paid own-object prefix: no task/receipt interpretation.
+                if let Some(raw)=key.strip_prefix("/sys/self-prefix/"){
+                    let Some((n,relative))=raw.split_once('/') else{
+                        return ActionResult::fail(Code::BadRequest);
+                    };
+                    let n=match n.parse::<usize>(){
+                        Ok(v) if (1..=256).contains(&v)&&v.to_string()==n=>v,
+                        _=>return ActionResult::fail(Code::BadRequest),
+                    };
+                    if relative.is_empty()||relative.split('/').any(|p|p.is_empty()||p=="."||p==".."){
+                        return ActionResult::fail(Code::BadRequest);
+                    }
+                    let Some(obj)=self.state.objects.get(&format!("/self/{relative}")) else{
+                        return ActionResult::fail(Code::NotFound);
+                    };
+                    if obj.owner!=actor{return ActionResult::fail(Code::Denied);}
+                    let Ok(size)=u32::try_from(obj.bytes.len()) else{
+                        return ActionResult::fail(Code::Quota);
+                    };
+                    let mut payload=size.to_le_bytes().to_vec();
+                    payload.extend_from_slice(&obj.bytes[..n.min(obj.bytes.len())]);
+                    let fee=2+(payload.len() as u64).saturating_add(63)/64;
+                    if let Err(code)=self.spend_a_gas(fee){return ActionResult::fail(code);}
+                    return ActionResult::ok(payload,fee,0);
+                }
                 if let Some(relative)=key.strip_prefix("/sys/self-object/"){
                     if relative.is_empty() || relative.split('/').any(|part|
                         part.is_empty() || part=="." || part==".."){
@@ -1504,6 +1529,60 @@ impl World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn paid_own_prefix_contract(){
+        let mut w=World::new(Config::default());
+        let bytes=(0..280).map(|i|(i%256) as u8).collect::<Vec<_>>();
+        for (key,value) in [("/self/prefix/probe",bytes.clone()),("/self/prefix/empty",vec![])]{
+            assert_eq!(w.tick(Some(Action::Write{actor:ORGANISM_ID,key:key.into(),
+                bytes:value,expected_version:None})).code,Code::Ok);
+        }
+        // Explicit foreign fixture; neither prefix nor full read may disclose it.
+        w.state.objects.insert("/self/prefix/foreign".into(),Object{owner:0,version:0,bytes:vec![9]});
+        let initial=w.snapshot_json();
+        let before=w.state.objects.clone();
+        let used=w.state.organisms[&ORGANISM_ID].storage_used;
+        let read=|key:&str|Action::Read{actor:ORGANISM_ID,key:key.into()};
+        let cases=[
+            ("/self/prefix/probe",Code::Ok,6,bytes.clone()),
+            ("/sys/self-prefix/33/prefix/probe",Code::Ok,3,
+                [280u32.to_le_bytes().as_slice(),&bytes[..33]].concat()),
+            ("/sys/self-prefix/256/prefix/probe",Code::Ok,7,
+                [280u32.to_le_bytes().as_slice(),&bytes[..256]].concat()),
+            ("/sys/self-prefix/33/prefix/empty",Code::Ok,3,0u32.to_le_bytes().to_vec()),
+            ("/sys/self-prefix/33/prefix/missing",Code::NotFound,0,vec![]),
+            ("/sys/self-prefix/33/prefix/foreign",Code::Denied,0,vec![]),
+            ("/sys/self-prefix/033/prefix/probe",Code::BadRequest,0,vec![]),
+            ("/sys/self-prefix/0/prefix/probe",Code::BadRequest,0,vec![]),
+            ("/sys/self-prefix/257/prefix/probe",Code::BadRequest,0,vec![]),
+            ("/sys/self-prefix/33/prefix/../probe",Code::BadRequest,0,vec![]),
+            ("/sys/self-prefix/33//probe",Code::BadRequest,0,vec![]),
+            ("/sys/self-prefix/33/",Code::BadRequest,0,vec![]),
+        ];
+        let mut replay=World::from_snapshot(&initial).unwrap();
+        for (key,code,fee,payload) in cases{
+            let a=w.state.nodes[&NodeId::A].gas_available;
+            let result=w.tick(Some(read(key)));
+            assert_eq!(result.code,code);assert_eq!(result.gas_charged,fee);
+            assert_eq!(result.payload,payload);
+            assert_eq!(a-w.state.nodes[&NodeId::A].gas_available,fee);
+            assert_eq!(result,replay.tick(Some(read(key))));
+        }
+        assert_eq!(w.state.objects,before);assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,used);
+        assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+        // True configured low grant (not a balance mutation); a zero-byte write
+        // costs at least one A, leaving insufficient gas for the three-A read.
+        let mut low=World::new(Config{a_gas_per_epoch:2,..Config::default()});
+        // A foreign/missing object may not be used as a proxy for a gas refusal.
+        // Install a real existing own object in the initial fixture, with proper storage accounting.
+        low.state.objects.insert("/self/prefix/probe".into(),Object{owner:ORGANISM_ID,version:0,bytes:vec![7]});
+        low.state.organisms.get_mut(&ORGANISM_ID).unwrap().storage_used=1;
+        let r=low.tick(Some(read("/sys/self-prefix/33/prefix/probe")));
+        assert_eq!(r.code,Code::Gas);assert_eq!(r.gas_charged,0);assert!(r.payload.is_empty());
+        assert_eq!(low.state.nodes[&NodeId::A].gas_available,2);
+        println!("S29_PREFIX_CONTRACT full_B=280 full_A=6 prefix_payload_B=37 prefix_A=3 replay=true");
+    }
 
     #[test]
     fn event_is_applied_before_new_epoch_grant() {
