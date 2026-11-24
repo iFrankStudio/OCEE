@@ -23,5 +23,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Native public offers and duplicate identity control
+      - name: Native public offers and duplicate identity control (SHA-256 import corrected)
         run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_public_offer_driven_native -- --ignored --show-output
