@@ -1,9 +1,6 @@
 name: S29 Continuous Task History
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/s29-continuous-task-history.yml'
+  # Native 2/2 verified at #45320513669; manual replay only.
   workflow_dispatch:
 concurrency:
   group: ocee-s29-continuous-task-${{ github.ref }}
