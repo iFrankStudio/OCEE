@@ -14,4 +14,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_reversible_experience_cas_native -- --ignored --show-output
+      - name: Native unchanged frozen protocol after duplicate removal
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_reversible_experience_cas_native -- --ignored --show-output
