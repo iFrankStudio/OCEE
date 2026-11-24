@@ -191,3 +191,6 @@ Initial compile-only failure [#44991946675](https://github.com/iFrankStudio/OCEE
 
 ## 2026-11-24 — Complementary paired tapes
 [Run #45312329768](https://github.com/iFrankStudio/OCEE/actions/runs/45312329768) @c49ce017: six narrow jobs all success, each 1 passed; mixed transport and pruned inventory at seeds129/130/131. Full raw logs and data summarized in [report](./experiments/E001/DEV-S29-MATCHED-TRANSPORT-AND-PRUNED-INVENTORY.md). Separate v2 + complement 15 paired cases, no new workspace regression. Restore this workflow manual-only, original v1 reds preserved.
+
+## 2026-11-24 — Own-task quota override native pilot
+[Run #45318054188](https://github.com/iFrankStudio/OCEE/actions/runs/45318054188) @716a5109 completed/success 3/3; each native job 1 passed/0 failed. RELEASED actual same-VM retry Ok at step4108 after initial Quota step4099 and true GC276B; PINNED extra3609A and no task; SPACE both immediate Ok. [Protocol and logs summary](./experiments/E001/DEV-S29-TASK-QUOTA-OVERRIDE.md). Restore workflow manual-only. No full workspace regression.
