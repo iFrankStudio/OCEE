@@ -12,6 +12,8 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use ocee_protocol_sim::{Family, ParseError, Service, ServiceOutput};
 
 mod program_host;
+mod transform_escrow;
+pub use transform_escrow::TransformEscrow;
 
 pub const ORGANISM_ID: u64 = 1;
 
@@ -105,6 +107,9 @@ pub struct WorldState {
     /// real-world object/transport/root mutation; never organism-writable.
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub version_ref_index:Option<VersionRefIndex>,
+    /// Optional finite, independently endowed development payer.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub transform_escrow:Option<TransformEscrow>,
     pub mailboxes: BTreeMap<NodeId, Vec<Message>>,
     pub pending_deliveries: Vec<Message>,
     pub events: Vec<ScheduledEvent>,
@@ -170,6 +175,7 @@ pub struct TaskFenceDrop {
 }
 
 fn probe_count_is_zero(count:&u32)->bool{*count==0}
+fn credit_is_zero(amount:&u64)->bool{*amount==0}
 
 /// Exact environment task bytes and exact issued receipt are bound together.
 /// This is an in-kernel provenance guard, NOT a cryptographic public proof.
@@ -380,13 +386,16 @@ pub struct ActionResult {
     /// organisms must abstain if the logical step cannot be represented.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exec_step: Option<u32>,
+    /// Actual spendable A transferred from a finite development escrow.
+    #[serde(default,skip_serializing_if="credit_is_zero")]
+    pub a_credited:u64,
 }
 impl ActionResult {
     fn fail(code: Code) -> Self {
-        Self { code, payload: vec![], gas_charged: 0, vm_gas_charged: 0, bandwidth_charged: 0, exec_step: None }
+        Self { code, payload: vec![], gas_charged: 0, vm_gas_charged: 0, bandwidth_charged: 0, exec_step:None,a_credited:0 }
     }
     fn ok(payload: Vec<u8>, gas: u64, bandwidth: u64) -> Self {
-        Self { code: Code::Ok, payload, gas_charged: gas, vm_gas_charged: 0, bandwidth_charged: bandwidth, exec_step: None }
+        Self { code: Code::Ok, payload, gas_charged: gas, vm_gas_charged: 0, bandwidth_charged: bandwidth, exec_step:None,a_credited:0 }
     }
 }
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -451,7 +460,7 @@ impl World {
                 task_fences:BTreeMap::new(),guarded_sends:BTreeMap::new(),
                 fence_drops:vec![],last_guarded_send:BTreeMap::new(),
                 initial_root_hash:None,guarded_restarts:BTreeMap::new(),
-                version_ref_index:None,
+                version_ref_index:None,transform_escrow:None,
             },
             audit: vec![],
         }
@@ -1255,7 +1264,7 @@ impl World {
                     payload:confirmation.map(|v|serde_json::to_vec(&v)
                         .expect("confirmed reply")).unwrap_or_default(),
                     gas_charged:gas,vm_gas_charged:0,bandwidth_charged:0,
-                    exec_step:None}
+                    exec_step:None,a_credited:0}
             },
             Action::Probe {input,..} => {
                 // Deliberately no arbitrary oracle: only this explicitly
@@ -1320,7 +1329,7 @@ impl World {
                     code:if has_drop{Code::Ok}else{Code::Empty},
                     payload:if has_drop{b"Dropped".to_vec()}else{vec![]},
                     gas_charged:gas,vm_gas_charged:0,bandwidth_charged:0,
-                    exec_step:None,
+                    exec_step:None,a_credited:0,
                 }
             },
             Action::RestartRoot {..} | Action::RestartRootFor{..} => {
@@ -1394,7 +1403,7 @@ impl World {
                     self.state.task_fences.insert(actor,current.unwrap());
                 }
                 ActionResult{code,payload:vec![],gas_charged:gas,
-                    vm_gas_charged:0,bandwidth_charged:0,exec_step:None}
+                    vm_gas_charged:0,bandwidth_charged:0,exec_step:None,a_credited:0}
             },
             Action::RenewProbe {evidence,..} => {
                 // Research-locked v1 -> v2 transition: changing any other
@@ -1431,7 +1440,7 @@ impl World {
                     self.state.probe_renewed_for=Some(current_hash);
                 }
                 ActionResult{code,payload:vec![],gas_charged:gas,
-                    vm_gas_charged:0,bandwidth_charged:0,exec_step:None}
+                    vm_gas_charged:0,bandwidth_charged:0,exec_step:None,a_credited:0}
             },
             Action::VerifyProbe {evidence,..} => {
                 // This cannot mint a new label: only validate a PREVIOUS
@@ -1450,12 +1459,12 @@ impl World {
                 let Some(record)=self.state.probe_record.as_ref() else{
                     return ActionResult{code:Code::NotFound,payload:vec![],
                         gas_charged:gas,vm_gas_charged:0,
-                        bandwidth_charged:0,exec_step:None};
+                        bandwidth_charged:0,exec_step:None,a_credited:0};
                 };
                 let code=if record.task_hash==current_hash &&
                     record.receipt==evidence {Code::Ok}else{Code::Conflict};
                 ActionResult{code,payload:vec![],gas_charged:gas,
-                    vm_gas_charged:0,bandwidth_charged:0,exec_step:None}
+                    vm_gas_charged:0,bandwidth_charged:0,exec_step:None,a_credited:0}
             },
         }
     }
@@ -1490,6 +1499,11 @@ impl World {
             None => ActionResult::fail(no_action_code),
         };
         result.vm_gas_charged=vm_used;
+        if self.state.transform_escrow.is_some() && result.code==Code::Ok {
+            if let Some(Action::Write{actor,key,expected_version:None,..})=action.as_ref(){
+                result.a_credited=self.settle_transform_write(*actor,key,k);
+            }
+        }
         if matches!(action.as_ref(),Some(Action::Exec{..})) &&
             matches!(result.code,Code::Ok|Code::InvalidCode){
             result.exec_step=u32::try_from(k).ok();
