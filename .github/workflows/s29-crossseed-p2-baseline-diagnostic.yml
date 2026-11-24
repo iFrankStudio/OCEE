@@ -1,0 +1,27 @@
+name: S29 Frozen Three-Seed P2 Selected-Tool Baseline Diagnostic
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-crossseed-p2-baseline-diagnostic.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-crossseed-baseline-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  real-p2-baseline:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [129, 130, 131]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      OCEE_S29_BASE_SEED: ${{ matrix.seed }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Diagnose actual public-label selected program and held-out hidden P2 oracle
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_crossseed_p2_baseline_native -- --ignored --show-output
