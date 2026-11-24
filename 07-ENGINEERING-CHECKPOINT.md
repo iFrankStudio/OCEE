@@ -884,3 +884,7 @@
 - 先冻结[独立经验因果协议](./experiments/E001/DEV-S29-EARNED-TASK-HISTORY-CAUSAL-TRANSFER.md) @347c76ce，再实现 @83c34d79、专项CI [#45318793560](https://github.com/iFrankStudio/OCEE/actions/runs/45318793560) @ac986f79。seed129真实P2、同一付费安装三新根；同训练根真实280B任务先Quota，成功支真GC+重试Ok后由VM真付费创建b0/v0；失败支真耗尽搜索创建b1/v0。没有研究者写记忆。
 - 两训练历史均通过付费合法操作归一化旧任务对象（空/v1）、被清理版本实际重新安装、同pin CAS v2、同容量used+195、自然epoch grant；断言当前所有对象内容和版本除记忆同长度同版本的不同字节外相等，节点资源、mailbox、pending、step、库存相等。随后同一probe根对两真实历史完成新280B任务，另设忽略历史的quota覆盖根；RELEASED/PINNED两环境，各四probe分支、90tick horizon，完整重放与费用账本。若环境改变时旧记忆导致错误跳过，保留反例。仍为研究者编写二元反馈策略，并非策略自发学习。
 - **本试点只已提交与触发，尚未验收。** 继续时先查该run真实日志和最新HEAD，不预判通过。G0 GO/G1,G2 NO-GO；正式E001尚未校准/预注册。
+
+### 2026-11-24 — 真实任务恢复后的负反馈修订（待验收）
+- 在历史因果试点#45318793560尚运行时，独立冻结[修订协议](./experiments/E001/DEV-S29-RECOVERY-MEMORY-REVISION.md) @5cd42ce8，后实现 @2268f8fa，触发[定向原生CI #45319202821](https://github.com/iFrankStudio/OCEE/actions/runs/45319202821) @9681065a。真实seed129/P2 B20、共同付费b1/v0失败经验；同一280B任务、实际Quota后维护并重试。原STALE覆盖根与新REVISE根对照，仅REVISE在真实重试Ok后付费读既有记忆meta、校验b0/b1、按真实版本CAS b0。任务已成功则CAS失败不能倒算任务失败；二者分别记账。
+- RELEASED/PINNED/STALE_CAS三臂，第三臂按真实成功后的meta读取回执插入研究者b1/v0→b1/v1付费CAS，要求VM旧版b0 CAS实际Conflict、不覆盖新记忆、不重复写且已成功任务仍保留；单独记录外部A、任务A、VM和非任务动作A、索引序列化峰、完整审计与snapshot复演。没有修改旧已通过试验或正在运行的因果试点。新试验尚未验收，不宣称通过。G0 GO/G1,G2 NO-GO，正式E001尚未校准/预注册。
