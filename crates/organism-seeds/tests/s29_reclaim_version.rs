@@ -6697,3 +6697,177 @@ fn receipt_native_impl(poll_limit:u32,cache_only:bool,prefix:bool){
         assert!(measurements[1].1<measurements[0].1);
     }
 }
+
+
+// Pacing is executed by the real VM, not the host scheduler. Only a
+// confirmed unchanged receipt enters the paid bounded delay.
+fn feedback_paced_root()->Program{
+    let mut p=prefix_receipt_root(true);
+    let f=&mut p.functions[0];
+    let h=f.blocks.iter_mut().find(|b|b.id=="offer_poll_header").unwrap();
+    if let Terminator::RepeatScoped{limit,aggregate_limit,..}=&mut h.terminator{
+        assert_eq!((*limit,*aggregate_limit),(32,96));
+        *limit=12;*aggregate_limit=36;
+    }else{panic!("expected scoped polling");}
+    let b=f.blocks.iter_mut().find(|b|b.id=="receipt_cached").unwrap();
+    if let Terminator::Branch{if_false,..}=&mut b.terminator{
+        assert_eq!(if_false,"offer_poll_header");
+        *if_false="paced_wait_0".into();
+    }else{panic!("expected confirmed receipt branch");}
+    let ctx=b.params.clone();
+    assert_eq!(ctx.iter().map(|p|p.id).collect::<Vec<_>>(),vec![99,97,98,96]);
+    for i in 0..3{
+        let wait=format!("paced_wait_{i}");
+        let reply=format!("paced_reply_{i}");
+        let next=if i==2{"offer_poll_header".to_string()}else{format!("paced_wait_{}",i+1)};
+        f.blocks.push(Block{id:wait,params:ctx.clone(),instructions:vec![],
+            terminator:Terminator::Yield{call:WorldCall::Observe,args:vec![],
+                next:reply.clone(),next_args:vec![99,97,98,96]}});
+        let mut params=ctx.clone();params.push(Param{id:2,ty:Type::Bytes});
+        f.blocks.push(Block{id:reply,params,instructions:vec![],
+            terminator:Terminator::Jump{target:next,args:vec![99,97,98,96]}});
+    }
+    p.validate().expect("typed feedback-paced perception");p
+}
+fn paced_tape(arm:&str)->Vec<(u64,usize)>{
+    match arm{
+        "STABLE"=>vec![(0,0),(16,1)],
+        "PULSE"=>vec![(0,0),(7,1),(9,0)],
+        "LATE"=>vec![(0,0),(40,1)],
+        _=>panic!("unknown frozen tape")
+    }
+}
+fn paced_episode(w:&mut World,root:&str,tape:&[(u64,usize)])
+    ->(LifetimeIndexProbe,Vec<(u64,usize,u64,String)>,Option<u64>){
+    let start=w.state.step;let mut peak=LifetimeIndexProbe::default();peak.sample(w);
+    let mut pubs=Vec::new();let mut finished=None;
+    while w.state.step<start+120{
+        let offset=w.state.step-start;
+        if let Some((_,slot))=tape.iter().find(|(at,_)|*at==offset){
+            offer_publish(w,*slot);
+            pubs.push((w.state.step,*slot,w.state.objects[OFFER_PUBLIC].version,w.state_hash()));
+            peak.sample(w);
+        }
+        if w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished){
+            if finished.is_none(){finished=Some(w.state.step);}
+            w.tick(None);
+        }else{
+            let r=w.tick_autonomous(ORGANISM_ID);
+            assert!(!matches!(r.code,Code::Denied|Code::InvalidCode));
+        }
+        peak.sample(w);
+        assert_eq!(w.state.organisms[&ORGANISM_ID].active_program_hash.as_deref(),Some(root));
+    }
+    assert_eq!(b_gas(w),20);
+    (peak,pubs,finished)
+}
+#[test]
+#[ignore="frozen matched feedback-paced perception"]
+fn s29_feedback_paced_perception_native(){
+    let arm=std::env::var("OCEE_S29_PACED_ARM").unwrap();
+    let tape=paced_tape(&arm);
+    let (mut base,_,target,_,registered)=lifetime_setup(129);
+    let before=spend(&base);
+    let roots=[prefix_receipt_root(true),feedback_paced_root()].into_iter()
+        .map(|p|(p.content_hash().unwrap(),p.canonical_bytes())).collect::<Vec<_>>();
+    let total=roots.iter().map(|(_,b)|b.len() as u64+64).sum::<u64>();
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+total;
+    quota_wait_next_grant(&mut base);
+    for (i,(h,b)) in roots.iter().enumerate(){
+        assert!(!b.windows(64).any(|x|x==registered.as_bytes()||x==target.as_bytes()));
+        put(&mut base,version_key(h),b.clone());
+        put(&mut base,format!("/self/pins/s29-paced-root-{i}"),h.as_bytes().to_vec());
+    }
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+1200;
+    quota_wait_next_grant(&mut base);
+    let after=spend(&base);let base_hash=base.state_hash();
+    let inventory=lifetime_extra_versions(&base);
+    let mut common_start=None;let mut costs=Vec::new();
+    for (policy,(root,raw)) in roots.iter().enumerate(){
+        let paced=policy==1;
+        let expected_b=match arm.as_str(){"STABLE"=>true,"PULSE"=>!paced,"LATE"=>paced,_=>unreachable!()};
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        lifetime_set_active(&mut w,root);
+        let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
+        if let Some(prev)=common_start{assert_eq!((start,start_a),prev);}
+        else{common_start=Some((start,start_a));}
+        let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+        let (peak,pubs,finished)=paced_episode(&mut w,root,&tape);
+        let (rp,rpubs,rf)=paced_episode(&mut replay,root,&tape);
+        assert_eq!(peak,rp);assert_eq!(pubs,rpubs);assert_eq!(finished,rf);
+        assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+        let mut reads=Vec::new();let mut execs=Vec::new();let mut tasks=Vec::new();
+        let mut lookups=Vec::new();let mut observations=Vec::new();
+        let mut vm=0u64;let mut world=0u64;let mut task_a=0u64;
+        let mut poll_a=0u64;let mut observe_a=0u64;let mut lookup_a=0u64;
+        let mut gas=0;
+        for e in w.audit.iter().filter(|e|e.step>=start){
+            vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+            if e.result.code==Code::Gas{gas+=1;}
+            match &e.action{
+                Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
+                    assert_eq!(e.result.code,Code::Ok);
+                    let slot=tape.iter().rev().find(|(at,_)|start+*at<=e.step).unwrap().1;
+                    assert_eq!(serde_json::from_slice::<TransformTask>(&e.result.payload).unwrap(),offer_fixture(slot));
+                    reads.push((e.step,slot));poll_a+=e.result.gas_charged;
+                },
+                Some(Action::Read{key,..}) if key.starts_with("/sys/self-prefix/33/outcomes/s29-offer-")=>{
+                    assert!(matches!(e.result.code,Code::Ok|Code::NotFound));
+                    if e.result.code==Code::Ok{
+                        assert_eq!(e.result.gas_charged,3);
+                        assert_eq!(e.result.payload.len(),37);
+                    }
+                    lookups.push((e.step,key.clone(),e.result.code));lookup_a+=e.result.gas_charged;
+                },
+                Some(Action::Observe{..})=>{
+                    assert!(paced);assert_eq!(e.result.code,Code::Ok);
+                    observations.push(e.step);observe_a+=e.result.gas_charged;
+                },
+                Some(Action::Exec{program_hash,input,..})=>{
+                    assert_eq!(program_hash,&registered);assert_eq!(e.result.code,Code::Ok);
+                    let slot=execs.len();assert!(slot<2);
+                    assert_eq!(input,&offer_fixture(slot).held_out_input);
+                    assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),
+                        Value::U32(hidden_transform(129,input)));
+                    assert!(reads.iter().any(|(at,s)|*at<e.step&&*s==slot));
+                    execs.push((e.step,slot));
+                },
+                Some(Action::Write{key,bytes,..})=>{
+                    let slot=tasks.len();assert!(slot<2);
+                    assert_eq!(key,&format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8));
+                    assert_eq!(e.result.code,Code::Ok);assert_eq!(e.result.gas_charged,20);
+                    assert_bound_artifact(bytes,slot);
+                    tasks.push((e.step,slot));task_a+=e.result.gas_charged;
+                },
+                Some(Action::IndexVersionRefs{..})|Some(Action::ReclaimIndexedVersion{..})=>
+                    panic!("roomy tape must not maintain"),
+                _=>{}
+            }
+        }
+        let non_task=vm+world-task_a;
+        let latencies=tasks.iter().map(|(step,slot)|step-start-tape.iter().find(|(_,s)|s==slot).unwrap().0)
+            .collect::<Vec<_>>();
+        println!("S29_PACED arm={arm} policy={} root={root} root_B={} base={base_hash} start={start} start_A={start_a} final_A={} finished={finished:?} return={:?} pubs={pubs:?} reads={reads:?} observes={observations:?} lookups={lookups:?} execs={execs:?} tasks={tasks:?} latencies={latencies:?} gas={gas} VM_A={vm} world_A={world} task_A={task_a} non_task_A={non_task} poll_A={poll_a} observe_A={observe_a} lookup_A={lookup_a} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
+            if paced{"PACED"}else{"DENSE"},raw.len(),w.state.nodes[&NodeId::A].gas_available,
+            w.state.organisms[&ORGANISM_ID].last_return,after.0-before.0,after.1-before.1,
+            peak.storage_peak,peak.post_tick_peak);
+        assert!(finished.is_some());assert_eq!(gas,0);
+        let expected=if expected_b{2}else{1};
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(4*expected as u32+1)));
+        assert_eq!(execs.len(),expected);assert_eq!(tasks.len(),expected);
+        assert_eq!(reads.iter().any(|(_,s)|*s==1),expected_b);
+        if paced{assert!(!observations.is_empty());}else{assert!(observations.is_empty());}
+        for slot in 0..3{
+            let key=format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8);
+            assert_eq!(w.state.objects.contains_key(&key),slot<expected);
+            if slot<expected{let obj=&w.state.objects[&key];assert_eq!(obj.version,0);assert_bound_artifact(&obj.bytes,slot);}
+        }
+        for h in &inventory{assert!(w.state.objects.contains_key(&version_key(h)));}
+        assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+        assert!(!w.state.objects.contains_key(S29_DRY_KEY));
+        costs.push(non_task);
+    }
+    if arm=="STABLE"{assert!(costs[1]<costs[0]);}
+}
