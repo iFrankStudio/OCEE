@@ -13,3 +13,7 @@ Require actual paid version/bytes read each phase and precise CAS precondition/f
 
 ## Compilation-only failure and exact repair
 [Run 45389246393](https://github.com/iFrankStudio/OCEE/actions/runs/45389246393) @f045d14 failed to compile E0428, duplicate EXPERIENCE_META and repeated_experience_root. No experimental trajectory or scientific result. The trailing duplicate was verified byte-for-byte equal after trimming whitespace, then removed, retaining original builder and complete frozen test. Repair @ec7e58c, [CI #45390225834](https://github.com/iFrankStudio/OCEE/actions/runs/45390225834). No change to policy, tapes, budgets, world, acceptance or predictions. Original red retained.
+
+
+## Native acceptance
+[Run 45390225834](https://github.com/iFrankStudio/OCEE/actions/runs/45390225834) @ec7e58c passed 1/1, ten phase trajectories. Roots58684/59699B, common install7416A; phase starts4099,5123,6147,7171,8195 at11993A. Both create1/v0@4183, CAS0→0/v1@5149. REVERSIBLE CAS1→1/v2@6266, CAS2→0/v3@8221, all actual metadata reads3A and writes3A. Tasks ONE_WAY 2/1/2/1/2; REVERSIBLE 2/1/2/2/1 (8 total each). Non-task A 2617/2130/3502/2168/3406 vs2617/2130/3516/2708/2067. REVERSIBLE captures h@7184; ONE_WAY captures j@8239. Correct receipts, exact replay, no Gas, B20, retained versions, physical peak247350–249030B. Original duplicate compile failure retained. Not general dominance or discovery of rules.
