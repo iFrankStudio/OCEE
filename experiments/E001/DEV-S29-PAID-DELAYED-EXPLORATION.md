@@ -7,3 +7,7 @@ Seed129/P2 B20, common paid installed/pinned roots, free2000B, natural grants, i
 - LATE c/+40 d sustained: BASE misses d and revokes, PROBE captures d and retains1/v0.
 - MID_PULSE c/+21 d/+23 c: BASE catches d, retains1/v0; PROBE misses d, revokes. Explicit adverse exploration case.
 Require real charged Observe (fee1) in PROBE during test, no Observe BASE in test; independently check all real task outputs, immutable receipts, exact start grant, no duplicates, actual marker read/creation/revision version and fee, no Gas, no maintenance, B20, full exact replay each phase, actual costs, install, latency and physical peak. For SILENT require strictly increased non-task cost. LATE and MID_PULSE are causal timing tradeoffs, not claims of net resource efficiency. No changing tape or prediction on failure. No external experience writes. G0 GO/G1,G2 NO-GO; E001 uncalibrated/unpreregistered.
+
+
+## Original verifier rejection (retained)
+[Run 45393683463](https://github.com/iFrankStudio/OCEE/actions/runs/45393683463) @dec1d1d 0/3. All compiled, but PROBE builder rejected by Program::validate: InvalidProgram("block count"), line7913. No executed trajectory or cost/outcome evidence. The 24 expanded Observe/reply pairs exceed the existing graph limit. Do not relax VM limits. Independent scoped-loop revision freezes narrower per-opportunity delay semantics and unchanged tapes/predictions; see [bounded follow-up](./DEV-S29-PAID-DELAYED-EXPLORATION-BOUNDED.md).
