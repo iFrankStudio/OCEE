@@ -4277,3 +4277,75 @@ fn s29_lifetime_matched_pilot_native(){
         other=>panic!("unregistered lifetime tape {other}")
     }
 }
+
+/// After failures in the frozen three-seed maintenance matrix, inspect the
+/// real public-example-selected P2 program, not the seed129 Len assumption.
+/// This is diagnostic only: no host-selected replacement and no maintenance.
+#[test]
+#[ignore="three frozen P2 seed outcomes: actual selected tool, hidden oracle, billing"]
+fn s29_crossseed_p2_baseline_native(){
+    let seed:u64=std::env::var("OCEE_S29_BASE_SEED")
+        .expect("one of exactly three preregistered P2 baseline seeds")
+        .parse().expect("seed must be numeric");
+    assert!([129,130,131].contains(&seed));
+    let p1=s19_p1_build_and_use_tool();
+    let p2=s23_p2_remote_tool_transfer();
+    let root=s29_atomic_publish_repair_root(
+        &p1.content_hash().unwrap(),&p2.content_hash().unwrap());
+    let initial=wrong_tool();
+    let old_hash=initial.content_hash().unwrap();
+    let (len_hash,_)=intended_len();
+    let root_hash=root.content_hash().unwrap();
+    let mut w=World::with_protocol(Config{
+        seed,a_gas_per_epoch:12_000,..Config::default()
+    },Family::P2,42);
+    for p in [p1,p2,root,initial]{
+        put(&mut w,version_key(&p.content_hash().unwrap()),
+            p.canonical_bytes());
+    }
+    put(&mut w,"/self/active".into(),root_hash.as_bytes().to_vec());
+    put(&mut w,REGISTRY.into(),old_hash.as_bytes().to_vec());
+    run(&mut w,16_384);
+    let selected=String::from_utf8(w.state.objects[REGISTRY].bytes.clone())
+        .expect("registered tool must have canonical ASCII hex hash");
+    assert_eq!(selected.len(),64);
+    assert!(selected.bytes().all(|b|b.is_ascii_hexdigit()&&
+        !b.is_ascii_uppercase()));
+    let installed=w.state.objects.get(&version_key(&selected))
+        .expect("VM-selected published tool must really exist in storage");
+    assert_eq!(installed.owner,ORGANISM_ID);
+    let program:Program=serde_json::from_slice(&installed.bytes)
+        .expect("VM-selected tool must be real Program object");
+    assert_eq!(program.canonical_bytes(),installed.bytes);
+    assert_eq!(program.content_hash().unwrap(),selected);
+    let selected_op=format!("{:?}",
+        &program.functions[0].blocks[0].instructions[1].op);
+    let tr:TransformTask=serde_json::from_slice(
+        &w.state.objects["/public/E001/transform"].bytes).unwrap();
+    let prediction:u32=serde_json::from_slice(
+        &w.state.objects[PREDICTION].bytes).unwrap();
+    let hidden=hidden_transform(seed,&tr.held_out_input);
+    let last=w.state.organisms[&ORGANISM_ID].last_return.clone();
+    let published=w.audit.iter().filter(|e|
+        matches!(&e.action,Some(Action::PublishTool{..})))
+        .collect::<Vec<_>>();
+    let publ_ok=published.iter().filter(|e|e.result.code==Code::Ok).count();
+    let b=b_gas(&w);
+    let reg_v=w.state.objects[REGISTRY].version;
+    let old_retained=selected==old_hash;
+    let expected_len=selected==len_hash;
+    println!("S29_CROSSSEED_P2 seed={seed} root={root_hash} \
+        actual_selected_tool={selected} selected_op={selected_op} \
+        original_wrong_retained={old_retained} expected_len={expected_len} \
+        registry_version={reg_v} publish_attempts={} publish_ok={publ_ok} \
+        completed={last:?} p2_real_B={b} prediction={prediction} \
+        hidden_oracle={hidden} hidden_matches={} \
+        installed_bytes={} snapshot_replay=true",
+        published.len(),prediction==hidden,installed.bytes.len());
+    assert_eq!(last,Some(Value::U32(1)));
+    assert_eq!(prediction,hidden,
+        "real P2 held-out semantics must work on this predetermined seed");
+    assert_eq!(b,20,"P2 service must have real correct B20 result");
+    assert_eq!(w.state_hash(),World::from_snapshot(
+        &w.snapshot_json()).unwrap().state_hash());
+}
