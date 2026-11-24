@@ -203,3 +203,6 @@ Native [45318793560](https://github.com/iFrankStudio/OCEE/actions/runs/453187935
 
 ## 2026-11-24 — Continuous registered-tool utility
 [45320955049](https://github.com/iFrankStudio/OCEE/actions/runs/45320955049) @1e595f3e completed/success 6/6, 21 actual correct Exec receipts and 3 committed distinct tasks; [full native record](./experiments/E001/DEV-S29-CONTINUOUS-REGISTERED-TOOL-UTILITY.md). Narrow native only. Restore workflow manual-only.
+
+## 2026-11-24 — Public offers and pending-resource retry
+Original public pilot #45324803189 compile failure retained; import-only rerun [45325604541](https://github.com/iFrankStudio/OCEE/actions/runs/45325604541) @a81f560e 2/2 and independent [45325877503](https://github.com/iFrankStudio/OCEE/actions/runs/45325877503) @d82c0af0 3/3 success, six paired policy runs. Archive both workflows manual-only; no full workspace claim.
