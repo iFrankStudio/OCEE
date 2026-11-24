@@ -1,0 +1,19 @@
+name: S29 Public Memo Resource Accounting
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-public-memo-resource-accounting.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_RECEIPT_ARM: SPACE
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_public_memo_resource_accounting_native -- --ignored --show-output

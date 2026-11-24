@@ -6587,7 +6587,18 @@ fn public_payload_memo_root()->Program{
     p.validate().expect("typed exact public payload memo");p
 }
 
+#[test]
+#[ignore="frozen resource-accounted memo equivalence revision"]
+fn s29_public_memo_resource_accounting_native(){
+    assert_eq!(std::env::var("OCEE_S29_RECEIPT_ARM").unwrap(),"SPACE");
+    receipt_native_impl_accounted(32,false,true,true,true);
+}
+
 fn receipt_native_impl(poll_limit:u32,cache_only:bool,prefix:bool,memo:bool){
+    receipt_native_impl_accounted(poll_limit,cache_only,prefix,memo,false);
+}
+
+fn receipt_native_impl_accounted(poll_limit:u32,cache_only:bool,prefix:bool,memo:bool,accounted:bool){
     let arm=std::env::var("OCEE_S29_RECEIPT_ARM").unwrap();
     assert!(matches!(arm.as_str(),"SPACE"|"REORDER"|"ID_CONFLICT"));
     let (mut base,_,target,_,registered)=lifetime_setup(129);
@@ -6735,9 +6746,49 @@ fn receipt_native_impl(poll_limit:u32,cache_only:bool,prefix:bool,memo:bool){
             let ok_reads=lookups.iter().filter(|(_,_,c)|*c==Code::Ok).count();
             let non_task=vm+world-task_a;
             if memo{
+                let mut balance=start_a;
+                let mut scans=0;
                 let timeline=w.audit.iter().filter(|e|e.step>=start)
-                    .map(|e|(e.step,e.action.clone(),e.result.code,e.result.payload.clone(),e.result.gas_charged))
-                    .collect::<Vec<_>>();
+                    .map(|e|{
+                        let mut payload=e.result.payload.clone();
+                        let mut fee=e.result.gas_charged;
+                        if accounted{
+                            balance=balance.checked_sub(e.result.vm_gas_charged+fee).unwrap();
+                            match &e.action{
+                                Some(Action::Read{key,..}) if key=="/sys/resource-status"=>{
+                                    assert_eq!(e.result.code,Code::Ok);assert_eq!(fee,2);
+                                    let mut v:serde_json::Value=serde_json::from_slice(&payload).unwrap();
+                                    assert_eq!(v["a_available"].as_u64(),Some(balance));
+                                    v["a_available"]=serde_json::Value::Null;
+                                    payload=serde_json::to_vec(&v).unwrap();
+                                },
+                                Some(Action::Observe{..})=>{
+                                    assert_eq!(e.result.code,Code::Ok);assert_eq!(fee,1);
+                                    let mut v:serde_json::Value=serde_json::from_slice(&payload).unwrap();
+                                    assert_eq!(v[0].as_u64(),Some(e.step));
+                                    assert_eq!(v[1].as_u64(),Some(balance));
+                                    v[1]=serde_json::Value::Null;
+                                    payload=serde_json::to_vec(&v).unwrap();
+                                },
+                                Some(Action::IndexVersionRefs{..})=>{
+                                    assert_eq!(e.result.code,Code::Ok);
+                                    let scanned=u64::from_le_bytes(payload.as_slice().try_into().unwrap());
+                                    assert_eq!(fee,2+scanned.div_ceil(64)+inventory.len() as u64);
+                                    let adjusted=scanned+raw.len() as u64;
+                                    println!("S29_MEMO_INDEX_ACCOUNT policy={policy} step={} scanned_B={scanned} fee_A={fee} installed={} active_root_B={} adjusted_B={adjusted}",e.step,inventory.len(),raw.len());
+                                    payload=adjusted.to_le_bytes().to_vec();
+                                    fee=0; // only comparison projection; real fee stays in non_task
+                                    scans+=1;
+                                },
+                                _=>{}
+                            }
+                        }
+                        (e.step,e.action.clone(),e.result.code,payload,fee)
+                    }).collect::<Vec<_>>();
+                if accounted{
+                    assert_eq!(scans,1);
+                    assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                }
                 if policy==0{baseline.push((timeline,non_task));}
                 else{
                     assert_eq!(timeline,baseline[phase].0,"exact world timeline must be preserved");
