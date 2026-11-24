@@ -5929,7 +5929,9 @@ fn offer_fixture(slot:usize)->TransformTask{
     let (id,input)=match slot{
         0=>("a",vec![44,7,2]),1=>("b",vec![13,9,4,8]),
         2=>("c",vec![27,2,1,4,8]),3=>("d",vec![31,8,4,1,9,2]),
-        4=>("e",vec![8,3,6,2,9,1,5]),5=>("f",vec![17,4,3,8,2,9,1,6]),_=>panic!("unknown frozen offer")
+        4=>("e",vec![8,3,6,2,9,1,5]),5=>("f",vec![17,4,3,8,2,9,1,6]),
+        6=>("g",vec![6,7,2,1]),7=>("h",vec![19,8,6,3,2]),
+        8=>("i",vec![20,1,9]),9=>("j",vec![7,13,2,4,9]),_=>panic!("unknown frozen offer")
     };
     TransformTask{task_id:id.into(),examples:vec![],held_out_input:input}
 }
@@ -7511,3 +7513,330 @@ fn s29_durable_experience_revision_native(){
         }
     }
 }
+
+
+const EXPERIENCE_META:&str="/sys/self-object/maintenance/s29-perception-experience";
+fn repeated_experience_root(reversible:bool)->Program{
+    let mut p=revisable_experience_root(true);
+    let f=&mut p.functions[0];
+    let yields=f.blocks.iter().filter_map(|b|match &b.terminator{
+        Terminator::Yield{next,..}=>Some(next.clone()),_=>None
+    }).collect::<std::collections::BTreeSet<_>>();
+    for b in &mut f.blocks{
+        assert!(b.params.iter().all(|p|p.id!=89)&&b.instructions.iter().all(|i|i.id!=89));
+        if b.id=="entry"{b.instructions.push(Instruction{id:89,op:Op::ConstU32(u32::MAX)});}
+        else{
+            let pos=if yields.contains(&b.id){b.params.len()-1}else{b.params.len()};
+            b.params.insert(pos,Param{id:89,ty:Type::U32});
+        }
+        match &mut b.terminator{
+            Terminator::Jump{args,..}=>args.push(89),
+            Terminator::Branch{true_args,false_args,..}=>{true_args.push(89);false_args.push(89);},
+            Terminator::RepeatBounded{body_args,done_args,..}|
+            Terminator::RepeatScoped{body_args,done_args,..}=>{body_args.push(89);done_args.push(89);},
+            Terminator::Yield{next_args,..}=>next_args.push(89),
+            Terminator::Return{..}=>{}
+        }
+    }
+    let args=vec![99,97,98,96,93,90,91,89];
+    let ctx=f.blocks.iter().find(|b|b.id=="experience_loaded").unwrap().params.clone();
+    assert_eq!(ctx.iter().map(|p|p.id).collect::<Vec<_>>(),args);
+    let mut reply=ctx.clone();reply.push(Param{id:2,ty:Type::Bytes});
+    let entry=f.blocks.iter_mut().find(|b|b.id=="entry").unwrap();
+    entry.instructions.iter_mut().find(|i|i.id==10).unwrap().op=lit(EXPERIENCE_META.as_bytes());
+    // State 0 = truly absent, 1 = enabled, 2 = revoked, 3 = invalid/unusable.
+    let load=f.blocks.iter_mut().find(|b|b.id=="experience_load").unwrap();
+    load.terminator=Terminator::Branch{condition:13,if_true:"experience_meta_decode".into(),
+        true_args:{let mut a=args.clone();a.push(2);a},
+        if_false:"experience_missing_check".into(),false_args:{let mut a=args.clone();a.push(2);a}};
+    // Existing non-yield targets with feedback have register89 appended
+    // after feedback, so use new blocks with explicit parameter order.
+    f.blocks.retain(|b|!matches!(b.id.as_str(),"experience_decode"|"experience_decode_revoked"|"experience_loaded"|"experience_revoked"));
+    let mut version_args=args.clone();version_args.pop();version_args.push(17);
+    let mut decoded_args=version_args.clone();decoded_args.push(15);
+    let mut decoded=ctx.clone();decoded.push(Param{id:15,ty:Type::Bytes});
+    f.blocks.extend([
+        Block{id:"experience_missing_check".into(),params:reply.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"code")},Instruction{id:11,op:Op::JsonFieldString(2,10)},
+            Instruction{id:12,op:lit(b"NotFound")},Instruction{id:13,op:Op::EqBytes(11,12)}
+        ],terminator:Terminator::Branch{condition:13,if_true:"episode_header".into(),
+            true_args:args.clone(),if_false:"experience_invalid".into(),false_args:args.clone()}},
+        Block{id:"experience_meta_decode".into(),params:reply.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"payload")},Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:14,op:lit(b"bytes")},Instruction{id:15,op:Op::JsonFieldBytes(11,14)},
+            Instruction{id:16,op:lit(b"version")},Instruction{id:17,op:Op::JsonFieldU32(11,16)},
+            Instruction{id:18,op:Op::ConstU32(u32::MAX)},Instruction{id:19,op:Op::EqU32(17,18)}
+        ],terminator:Terminator::Branch{condition:19,if_true:"experience_invalid".into(),
+            true_args:args.clone(),if_false:"experience_check_one".into(),false_args:decoded_args}},
+        Block{id:"experience_check_one".into(),params:decoded.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"1")},Instruction{id:11,op:Op::EqBytes(15,10)}
+        ],terminator:Terminator::Branch{condition:11,if_true:"experience_enabled_meta".into(),
+            true_args:args.clone(),if_false:"experience_check_zero".into(),false_args:{
+                let mut a=args.clone();a.push(15);a}}},
+        Block{id:"experience_check_zero".into(),params:decoded,instructions:vec![
+            Instruction{id:10,op:lit(b"0")},Instruction{id:11,op:Op::EqBytes(15,10)}
+        ],terminator:Terminator::Branch{condition:11,if_true:"experience_disabled_meta".into(),
+            true_args:args.clone(),if_false:"experience_invalid".into(),false_args:args.clone()}},
+        Block{id:"experience_enabled_meta".into(),params:ctx.clone(),instructions:vec![Instruction{id:10,op:Op::ConstU32(1)}],
+            terminator:Terminator::Jump{target:"episode_header".into(),args:vec![99,97,98,96,93,10,91,89]}},
+        Block{id:"experience_disabled_meta".into(),params:ctx.clone(),instructions:vec![Instruction{id:10,op:Op::ConstU32(2)}],
+            terminator:Terminator::Jump{target:"episode_header".into(),args:vec![99,97,98,96,93,10,91,89]}},
+        Block{id:"experience_invalid".into(),params:ctx.clone(),instructions:vec![Instruction{id:10,op:Op::ConstU32(3)}],
+            terminator:Terminator::Jump{target:"episode_header".into(),args:vec![99,97,98,96,93,10,91,89]}}
+    ]);
+    let revoke=f.blocks.iter_mut().find(|b|b.id=="experience_revoke").unwrap();
+    revoke.instructions.retain(|i|i.id!=12);
+    if let Terminator::Yield{args,..}=&mut revoke.terminator{*args=vec![10,11,89];}
+    else{panic!("expected CAS write");}
+    if reversible{
+        let absent=f.blocks.iter_mut().find(|b|b.id=="experience_absent").unwrap();
+        if let Terminator::Branch{if_false,..}=&mut absent.terminator{
+            assert_eq!(if_false,"experience_return");*if_false="experience_reenable_check".into();
+        }else{panic!("expected two commits");}
+        f.blocks.extend([
+            Block{id:"experience_reenable_check".into(),params:ctx.clone(),instructions:vec![
+                Instruction{id:10,op:Op::ConstU32(2)},Instruction{id:11,op:Op::EqU32(90,10)}
+            ],terminator:Terminator::Branch{condition:11,if_true:"experience_reenable".into(),
+                true_args:args.clone(),if_false:"experience_return".into(),false_args:args.clone()}},
+            Block{id:"experience_reenable".into(),params:ctx,instructions:vec![
+                Instruction{id:10,op:lit(EXPERIENCE_KEY.as_bytes())},Instruction{id:11,op:lit(b"1")}
+            ],terminator:Terminator::Yield{call:WorldCall::Write,args:vec![10,11,89],
+                next:"experience_revoke_reply".into(),next_args:args}}
+        ]);
+    }
+    p.validate().expect("typed repeated version-aware experience");p
+}
+
+#[test]
+#[ignore="frozen repeated reversible experience CAS"]
+fn s29_reversible_experience_cas_native(){
+    let (mut base,_,target,_,registered)=lifetime_setup(129);
+    let before=spend(&base);
+    let roots=[false,true].into_iter().map(|r|{
+        let p=repeated_experience_root(r);(p.content_hash().unwrap(),p.canonical_bytes())
+    }).collect::<Vec<_>>();
+    let total=roots.iter().map(|(_,b)|b.len() as u64+64).sum::<u64>();
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+total;
+    quota_wait_next_grant(&mut base);
+    for (i,(h,b)) in roots.iter().enumerate(){
+        assert!(!b.windows(64).any(|x|x==registered.as_bytes()||x==target.as_bytes()));
+        put(&mut base,version_key(h),b.clone());
+        put(&mut base,format!("/self/pins/s29-repeated-{i}"),h.as_bytes().to_vec());
+    }
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+3000;
+    quota_wait_next_grant(&mut base);
+    let after=spend(&base);let base_hash=base.state_hash();
+    let inventory=lifetime_extra_versions(&base);let mut starts=Vec::new();
+    for (policy,(root,raw)) in roots.iter().enumerate(){
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        let mut committed=Vec::new();
+        let mut marker_state:Option<(u64,u8)>=None;
+        for phase in 0..5{
+            if phase>0{quota_wait_next_grant(&mut w);}
+            lifetime_set_active(&mut w,root);
+            assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+            let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
+            if policy==0{starts.push((start,start_a));}else{assert_eq!(starts[phase],(start,start_a));}
+            let tape=match phase{
+                0=>vec![(0,0),(7,1),(9,0)],
+                1=>vec![(0,2),(40,3)],
+                2=>vec![(0,4),(40,5)],
+                3=>vec![(0,6),(9,7),(11,6)],
+                _=>vec![(0,8),(40,9)]
+            };
+            let expected=match phase{
+                0=>vec![0,1],1=>vec![2],2=>vec![4,5],
+                3=>if policy==1{vec![6,7]}else{vec![6]},
+                _=>if policy==1{vec![8]}else{vec![8,9]}
+            };
+            let prior=marker_state;
+            let update=match phase{
+                0=>Some((0,b'1')),1=>Some((1,b'0')),
+                2 if policy==1=>Some((2,b'1')),
+                4 if policy==1=>Some((3,b'0')),
+                _=>None
+            };
+            let next_state=update.or(prior).unwrap();
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let (peak,pubs,finished)=paced_episode_horizon(&mut w,root,&tape,180);
+            let (rp,rpubs,rf)=paced_episode_horizon(&mut replay,root,&tape,180);
+            assert_eq!(peak,rp);assert_eq!(pubs,rpubs);assert_eq!(finished,rf);
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            let mut reads=Vec::new();let mut execs=Vec::new();let mut tasks=Vec::new();
+            let mut observations=Vec::new();let mut marker_reads=Vec::new();let mut marker_writes=Vec::new();
+            let mut vm=0u64;let mut world=0u64;let mut task_a=0u64;let mut marker_a=0u64;
+            for e in w.audit.iter().filter(|e|e.step>=start){
+                vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+                assert_ne!(e.result.code,Code::Gas);
+                match &e.action{
+                    Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
+                        assert_eq!(e.result.code,Code::Ok);
+                        let slot=tape.iter().rev().find(|(at,_)|start+*at<=e.step).unwrap().1;
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&e.result.payload).unwrap(),offer_fixture(slot));
+                        reads.push((e.step,slot));
+                    },
+                    Some(Action::Read{key,..}) if key==EXPERIENCE_META=>{
+                        assert_eq!(e.result.code,if prior.is_none(){Code::NotFound}else{Code::Ok});
+                        if let Some((version,value))=prior{
+                            assert_eq!(e.result.gas_charged,3);
+                            let meta:serde_json::Value=serde_json::from_slice(&e.result.payload).unwrap();
+                            assert_eq!(meta["version"].as_u64(),Some(version));
+                            assert_eq!(meta["bytes"],serde_json::json!([value]));
+                        }else{assert_eq!(e.result.gas_charged,0);}
+                        marker_reads.push(e.step);marker_a+=e.result.gas_charged;
+                    },
+                    Some(Action::Observe{..})=>{assert_eq!(e.result.code,Code::Ok);observations.push(e.step);},
+                    Some(Action::Exec{program_hash,input,..})=>{
+                        assert_eq!(program_hash,&registered);assert_eq!(e.result.code,Code::Ok);
+                        let slot=expected[execs.len()];
+                        assert_eq!(input,&offer_fixture(slot).held_out_input);
+                        assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),Value::U32(hidden_transform(129,input)));
+                        assert!(reads.iter().any(|(at,s)|*at<e.step&&*s==slot));
+                        execs.push((e.step,slot));
+                    },
+                    Some(Action::Write{key,bytes,expected_version,..})=>{
+                        assert_eq!(e.result.code,Code::Ok);
+                        if key==EXPERIENCE_KEY{
+                            let (version,value)=update.expect("only a frozen actual revision");
+                            assert_eq!(tasks.len(),expected.len());
+                            assert_eq!(*expected_version,prior.map(|p|p.0));
+                            assert_eq!(version,prior.map_or(0,|p|p.0+1));
+                            assert_eq!(bytes,&vec![value]);
+                            assert_eq!(e.result.gas_charged,3);
+                            marker_writes.push((e.step,*expected_version,bytes.clone()));
+                            marker_a+=e.result.gas_charged;
+                        }else{
+                            assert_eq!(*expected_version,None);
+                            let slot=expected[tasks.len()];
+                            assert_eq!(key,&format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8));
+                            assert_eq!(e.result.gas_charged,20);assert_bound_artifact(bytes,slot);
+                            tasks.push((e.step,slot));task_a+=e.result.gas_charged;
+                        }
+                    },
+                    Some(Action::IndexVersionRefs{..})|Some(Action::ReclaimIndexedVersion{..})=>
+                        panic!("roomy revision tape must not maintain"),
+                    _=>{}
+                }
+            }
+            let latencies=tasks.iter().map(|(at,slot)|at-start-tape.iter().find(|(_,s)|s==slot).unwrap().0).collect::<Vec<_>>();
+            println!("S29_REPEATED_EXPERIENCE policy={policy} phase={phase} root={root} root_B={} base={base_hash} start={start} start_A={start_a} final_A={} finished={finished:?} return={:?} pubs={pubs:?} reads={reads:?} observes={observations:?} execs={execs:?} tasks={tasks:?} latency={latencies:?} marker_reads={marker_reads:?} marker_writes={marker_writes:?} prior={prior:?} next={next_state:?} marker_A={marker_a} VM_A={vm} world_A={world} task_A={task_a} non_task_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
+                raw.len(),w.state.nodes[&NodeId::A].gas_available,w.state.organisms[&ORGANISM_ID].last_return,
+                vm+world-task_a,after.0-before.0,after.1-before.1,peak.storage_peak,peak.post_tick_peak);
+            assert!(finished.is_some());
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(4*expected.len() as u32+1)));
+            assert_eq!(execs.len(),expected.len());assert_eq!(tasks.len(),expected.len());
+            assert_eq!(marker_reads,vec![start]);assert_eq!(marker_writes.len(),usize::from(update.is_some()));
+            let marker=&w.state.objects[EXPERIENCE_KEY];
+            assert_eq!(marker.version,next_state.0);assert_eq!(marker.bytes,vec![next_state.1]);
+            marker_state=Some(next_state);
+            committed.extend(expected.iter().copied());
+            for slot in 0..10{
+                let key=format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8);
+                let exists=committed.contains(&slot);
+                assert_eq!(w.state.objects.contains_key(&key),exists);
+                if exists{let o=&w.state.objects[&key];assert_eq!(o.version,0);assert_bound_artifact(&o.bytes,slot);}
+            }
+            for h in &inventory{assert!(w.state.objects.contains_key(&version_key(h)));}
+            assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+            assert!(!w.state.objects.contains_key(S29_DRY_KEY));
+            if prior.is_some_and(|p|p.1==b'1'){assert!(observations.is_empty());}
+            else{assert!(!observations.is_empty());}
+        }
+    }
+}
+
+
+const EXPERIENCE_META:&str="/sys/self-object/maintenance/s29-perception-experience";
+fn repeated_experience_root(reversible:bool)->Program{
+    let mut p=revisable_experience_root(true);
+    let f=&mut p.functions[0];
+    let yields=f.blocks.iter().filter_map(|b|match &b.terminator{
+        Terminator::Yield{next,..}=>Some(next.clone()),_=>None
+    }).collect::<std::collections::BTreeSet<_>>();
+    for b in &mut f.blocks{
+        assert!(b.params.iter().all(|p|p.id!=89)&&b.instructions.iter().all(|i|i.id!=89));
+        if b.id=="entry"{b.instructions.push(Instruction{id:89,op:Op::ConstU32(u32::MAX)});}
+        else{
+            let pos=if yields.contains(&b.id){b.params.len()-1}else{b.params.len()};
+            b.params.insert(pos,Param{id:89,ty:Type::U32});
+        }
+        match &mut b.terminator{
+            Terminator::Jump{args,..}=>args.push(89),
+            Terminator::Branch{true_args,false_args,..}=>{true_args.push(89);false_args.push(89);},
+            Terminator::RepeatBounded{body_args,done_args,..}|
+            Terminator::RepeatScoped{body_args,done_args,..}=>{body_args.push(89);done_args.push(89);},
+            Terminator::Yield{next_args,..}=>next_args.push(89),
+            Terminator::Return{..}=>{}
+        }
+    }
+    let args=vec![99,97,98,96,93,90,91,89];
+    let ctx=f.blocks.iter().find(|b|b.id=="experience_loaded").unwrap().params.clone();
+    assert_eq!(ctx.iter().map(|p|p.id).collect::<Vec<_>>(),args);
+    let mut reply=ctx.clone();reply.push(Param{id:2,ty:Type::Bytes});
+    let entry=f.blocks.iter_mut().find(|b|b.id=="entry").unwrap();
+    entry.instructions.iter_mut().find(|i|i.id==10).unwrap().op=lit(EXPERIENCE_META.as_bytes());
+    // State 0 = truly absent, 1 = enabled, 2 = revoked, 3 = invalid/unusable.
+    let load=f.blocks.iter_mut().find(|b|b.id=="experience_load").unwrap();
+    load.terminator=Terminator::Branch{condition:13,if_true:"experience_meta_decode".into(),
+        true_args:{let mut a=args.clone();a.push(2);a},
+        if_false:"experience_missing_check".into(),false_args:{let mut a=args.clone();a.push(2);a}};
+    // Existing non-yield targets with feedback have register89 appended
+    // after feedback, so use new blocks with explicit parameter order.
+    f.blocks.retain(|b|!matches!(b.id.as_str(),"experience_decode"|"experience_decode_revoked"|"experience_loaded"|"experience_revoked"));
+    let mut version_args=args.clone();version_args.pop();version_args.push(17);
+    let mut decoded_args=version_args.clone();decoded_args.push(15);
+    let mut decoded=ctx.clone();decoded.push(Param{id:15,ty:Type::Bytes});
+    f.blocks.extend([
+        Block{id:"experience_missing_check".into(),params:reply.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"code")},Instruction{id:11,op:Op::JsonFieldString(2,10)},
+            Instruction{id:12,op:lit(b"NotFound")},Instruction{id:13,op:Op::EqBytes(11,12)}
+        ],terminator:Terminator::Branch{condition:13,if_true:"episode_header".into(),
+            true_args:args.clone(),if_false:"experience_invalid".into(),false_args:args.clone()}},
+        Block{id:"experience_meta_decode".into(),params:reply.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"payload")},Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:14,op:lit(b"bytes")},Instruction{id:15,op:Op::JsonFieldBytes(11,14)},
+            Instruction{id:16,op:lit(b"version")},Instruction{id:17,op:Op::JsonFieldU32(11,16)},
+            Instruction{id:18,op:Op::ConstU32(u32::MAX)},Instruction{id:19,op:Op::EqU32(17,18)}
+        ],terminator:Terminator::Branch{condition:19,if_true:"experience_invalid".into(),
+            true_args:args.clone(),if_false:"experience_check_one".into(),false_args:decoded_args}},
+        Block{id:"experience_check_one".into(),params:decoded.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"1")},Instruction{id:11,op:Op::EqBytes(15,10)}
+        ],terminator:Terminator::Branch{condition:11,if_true:"experience_enabled_meta".into(),
+            true_args:args.clone(),if_false:"experience_check_zero".into(),false_args:{
+                let mut a=args.clone();a.push(15);a}}},
+        Block{id:"experience_check_zero".into(),params:decoded,instructions:vec![
+            Instruction{id:10,op:lit(b"0")},Instruction{id:11,op:Op::EqBytes(15,10)}
+        ],terminator:Terminator::Branch{condition:11,if_true:"experience_disabled_meta".into(),
+            true_args:args.clone(),if_false:"experience_invalid".into(),false_args:args.clone()}},
+        Block{id:"experience_enabled_meta".into(),params:ctx.clone(),instructions:vec![Instruction{id:10,op:Op::ConstU32(1)}],
+            terminator:Terminator::Jump{target:"episode_header".into(),args:vec![99,97,98,96,93,10,91,89]}},
+        Block{id:"experience_disabled_meta".into(),params:ctx.clone(),instructions:vec![Instruction{id:10,op:Op::ConstU32(2)}],
+            terminator:Terminator::Jump{target:"episode_header".into(),args:vec![99,97,98,96,93,10,91,89]}},
+        Block{id:"experience_invalid".into(),params:ctx.clone(),instructions:vec![Instruction{id:10,op:Op::ConstU32(3)}],
+            terminator:Terminator::Jump{target:"episode_header".into(),args:vec![99,97,98,96,93,10,91,89]}}
+    ]);
+    let revoke=f.blocks.iter_mut().find(|b|b.id=="experience_revoke").unwrap();
+    revoke.instructions.retain(|i|i.id!=12);
+    if let Terminator::Yield{args,..}=&mut revoke.terminator{*args=vec![10,11,89];}
+    else{panic!("expected CAS write");}
+    if reversible{
+        let absent=f.blocks.iter_mut().find(|b|b.id=="experience_absent").unwrap();
+        if let Terminator::Branch{if_false,..}=&mut absent.terminator{
+            assert_eq!(if_false,"experience_return");*if_false="experience_reenable_check".into();
+        }else{panic!("expected two commits");}
+        f.blocks.extend([
+            Block{id:"experience_reenable_check".into(),params:ctx.clone(),instructions:vec![
+                Instruction{id:10,op:Op::ConstU32(2)},Instruction{id:11,op:Op::EqU32(90,10)}
+            ],terminator:Terminator::Branch{condition:11,if_true:"experience_reenable".into(),
+                true_args:args.clone(),if_false:"experience_return".into(),false_args:args.clone()}},
+            Block{id:"experience_reenable".into(),params:ctx,instructions:vec![
+                Instruction{id:10,op:lit(EXPERIENCE_KEY.as_bytes())},Instruction{id:11,op:lit(b"1")}
+            ],terminator:Terminator::Yield{call:WorldCall::Write,args:vec![10,11,89],
+                next:"experience_revoke_reply".into(),next_args:args}}
+        ]);
+    }
+    p.validate().expect("typed repeated version-aware experience");p
+}
+
