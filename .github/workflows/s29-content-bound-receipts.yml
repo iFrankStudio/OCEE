@@ -23,5 +23,5 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Native content-bound durable receipts and bounded cache
+      - name: Native content-bound receipts (unchanged protocol, endpoint diagnostics)
         run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_content_bound_receipt_native -- --ignored --show-output

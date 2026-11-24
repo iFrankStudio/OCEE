@@ -6514,6 +6514,34 @@ fn s29_content_bound_receipt_native(){
             let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
             let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
             let (peak,pubs)=receipt_episode(&mut w,root,&arm,phase);
+            // Observational diagnostic only: preserve the frozen endpoint and all assertions.
+            let org=&w.state.organisms[&ORGANISM_ID];
+            let mut codes=std::collections::BTreeMap::<String,usize>::new();
+            let mut actions=std::collections::BTreeMap::<String,usize>::new();
+            let mut trace=Vec::new();
+            let mut vm_a=0u64;let mut action_a=0u64;
+            for e in w.audit.iter().filter(|e|e.step>=start){
+                *codes.entry(format!("{:?}",e.result.code)).or_default()+=1;
+                vm_a+=e.result.vm_gas_charged;action_a+=e.result.gas_charged;
+                let kind=match &e.action{
+                    Some(Action::Read{key,..})=>format!("Read:{key}"),
+                    Some(Action::Write{key,..})=>format!("Write:{key}"),
+                    Some(Action::Exec{..})=>"Exec".to_string(),
+                    Some(Action::IndexVersionRefs{..})=>"IndexVersionRefs".to_string(),
+                    Some(Action::ReclaimIndexedVersion{..})=>"ReclaimIndexedVersion".to_string(),
+                    Some(_)=>"Other".to_string(),None=>"NoAction".to_string()
+                };
+                *actions.entry(kind.clone()).or_default()+=1;
+                trace.push((e.step,kind,format!("{:?}",e.result.code),e.result.vm_gas_charged,e.result.gas_charged));
+            }
+            let continuation=serde_json::to_value(&org.vm_continuation).unwrap();
+            let continuation_summary=continuation.as_object().map(|m|m.iter()
+                .map(|(k,v)|(k.clone(),if v.is_array(){serde_json::json!({"array_len":v.as_array().unwrap().len()})}
+                    else if v.is_object(){serde_json::json!({"object_keys":v.as_object().unwrap().keys().collect::<Vec<_>>()})}
+                    else{v.clone()})).collect::<std::collections::BTreeMap<_,_>>());
+            println!("S29_RECEIPT_DIAG arm={arm} policy={policy} phase={phase} root={root} start={start} end={} start_A={start_a} remaining_A={} last_return={:?} continuation={continuation_summary:?} codes={codes:?} actions={actions:?} VM_A={vm_a} world_A={action_a} first={:?} tail={:?}",
+                w.state.step,w.state.nodes[&NodeId::A].gas_available,org.last_return,
+                &trace[..trace.len().min(20)],&trace[trace.len().saturating_sub(24)..]);
             let (rp,rpubs)=receipt_episode(&mut replay,root,&arm,phase);
             assert_eq!(peak,rp);assert_eq!(pubs,rpubs);
             assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
