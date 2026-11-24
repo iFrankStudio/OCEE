@@ -5928,7 +5928,8 @@ fn public_offer_root()->Program{
 fn offer_fixture(slot:usize)->TransformTask{
     let (id,input)=match slot{
         0=>("a",vec![44,7,2]),1=>("b",vec![13,9,4,8]),
-        2=>("c",vec![27,2,1,4,8]),3=>("d",vec![31,8,4,1,9,2]),_=>panic!("unknown frozen offer")
+        2=>("c",vec![27,2,1,4,8]),3=>("d",vec![31,8,4,1,9,2]),
+        4=>("e",vec![8,3,6,2,9,1,5]),5=>("f",vec![17,4,3,8,2,9,1,6]),_=>panic!("unknown frozen offer")
     };
     TransformTask{task_id:id.into(),examples:vec![],held_out_input:input}
 }
@@ -7327,6 +7328,186 @@ fn durable_experience_impl_accounted(arm:&str,accounted:bool){
                 if policy==0{absent_timeline=Some(timeline);}
                 else{assert_eq!(timeline,*absent_timeline.as_ref().unwrap());}
             }
+        }
+    }
+}
+
+
+// Single-writer first revision only: the original marker was created
+// at version0; a revoked marker is a distinct state, not a missing one.
+fn revisable_experience_root(revise:bool)->Program{
+    let mut p=experience_perception_root(true);
+    let f=&mut p.functions[0];
+    let ctx=f.blocks.iter().find(|b|b.id=="experience_loaded").unwrap().params.clone();
+    let args=vec![99,97,98,96,93,90,91];
+    let mut reply=ctx.clone();reply.push(Param{id:2,ty:Type::Bytes});
+    let decode=f.blocks.iter_mut().find(|b|b.id=="experience_decode").unwrap();
+    if let Terminator::Branch{if_false,false_args,..}=&mut decode.terminator{
+        *if_false="experience_decode_revoked".into();
+        *false_args=args.clone();false_args.push(2);
+    }else{panic!("expected marker decode");}
+    f.blocks.extend([
+        Block{id:"experience_decode_revoked".into(),params:reply.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"payload")},Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:12,op:lit(b"0")},Instruction{id:13,op:Op::EqBytes(11,12)}
+        ],terminator:Terminator::Branch{condition:13,if_true:"experience_revoked".into(),
+            true_args:args.clone(),if_false:"episode_header".into(),false_args:args.clone()}},
+        Block{id:"experience_revoked".into(),params:ctx.clone(),instructions:vec![Instruction{id:10,op:Op::ConstU32(2)}],
+            terminator:Terminator::Jump{target:"episode_header".into(),args:vec![99,97,98,96,93,10,91]}}
+    ]);
+    if revise{
+        let ret=f.blocks.iter_mut().find(|b|b.id=="episode_return").unwrap();
+        if let Terminator::Branch{if_false,..}=&mut ret.terminator{
+            assert_eq!(if_false,"experience_return");*if_false="experience_one_commit".into();
+        }else{panic!("expected real commit count");}
+        f.blocks.extend([
+            Block{id:"experience_one_commit".into(),params:ctx.clone(),instructions:vec![
+                Instruction{id:10,op:Op::ConstU32(1)},Instruction{id:11,op:Op::EqU32(91,10)}
+            ],terminator:Terminator::Branch{condition:11,if_true:"experience_was_enabled".into(),
+                true_args:args.clone(),if_false:"experience_return".into(),false_args:args.clone()}},
+            Block{id:"experience_was_enabled".into(),params:ctx.clone(),instructions:vec![
+                Instruction{id:10,op:Op::ConstU32(1)},Instruction{id:11,op:Op::EqU32(90,10)}
+            ],terminator:Terminator::Branch{condition:11,if_true:"experience_revoke".into(),
+                true_args:args.clone(),if_false:"experience_return".into(),false_args:args.clone()}},
+            Block{id:"experience_revoke".into(),params:ctx,instructions:vec![
+                Instruction{id:10,op:lit(EXPERIENCE_KEY.as_bytes())},Instruction{id:11,op:lit(b"0")},
+                Instruction{id:12,op:Op::ConstU32(0)}
+            ],terminator:Terminator::Yield{call:WorldCall::Write,args:vec![10,11,12],
+                next:"experience_revoke_reply".into(),next_args:args.clone()}},
+            Block{id:"experience_revoke_reply".into(),params:reply,instructions:vec![],
+                terminator:Terminator::Jump{target:"experience_return".into(),args}}
+        ]);
+    }
+    p.validate().expect("typed one-way experience revision");p
+}
+
+#[test]
+#[ignore="frozen paid durable experience revision"]
+fn s29_durable_experience_revision_native(){
+    let arm=std::env::var("OCEE_S29_REVISION_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"RECOVERY"|"REVERSAL_COST"|"RETAIN"));
+    let retain=arm=="RETAIN";
+    let (mut base,_,target,_,registered)=lifetime_setup(129);
+    let before=spend(&base);
+    let roots=[false,true].into_iter().map(|r|{
+        let p=revisable_experience_root(r);(p.content_hash().unwrap(),p.canonical_bytes())
+    }).collect::<Vec<_>>();
+    let total=roots.iter().map(|(_,b)|b.len() as u64+64).sum::<u64>();
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+total;
+    quota_wait_next_grant(&mut base);
+    for (i,(h,b)) in roots.iter().enumerate(){
+        assert!(!b.windows(64).any(|x|x==registered.as_bytes()||x==target.as_bytes()));
+        put(&mut base,version_key(h),b.clone());
+        put(&mut base,format!("/self/pins/s29-revision-{i}"),h.as_bytes().to_vec());
+    }
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+2000;
+    quota_wait_next_grant(&mut base);
+    let after=spend(&base);let base_hash=base.state_hash();
+    let inventory=lifetime_extra_versions(&base);let mut starts=Vec::new();
+    for (policy,(root,raw)) in roots.iter().enumerate(){
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        let mut committed=Vec::new();
+        for phase in 0..3{
+            if phase>0{quota_wait_next_grant(&mut w);}
+            lifetime_set_active(&mut w,root);
+            assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+            let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
+            if policy==0{starts.push((start,start_a));}else{assert_eq!(starts[phase],(start,start_a));}
+            let tape=match phase{
+                0=>vec![(0,0),(7,1),(9,0)],
+                1=>if retain{vec![(0,2),(9,3),(11,2)]}else{vec![(0,2),(40,3)]},
+                _=>if arm=="RECOVERY"{vec![(0,4),(40,5)]}else{vec![(0,4),(9,5),(11,4)]}
+            };
+            let expected=match phase{
+                0=>vec![0,1],
+                1=>if retain{vec![2,3]}else{vec![2]},
+                _=>if retain||(arm=="RECOVERY"&&policy==1)||(arm=="REVERSAL_COST"&&policy==0){
+                    vec![4,5]}else{vec![4]}
+            };
+            let revise_now=policy==1&&phase==1&&!retain;
+            let revoked=policy==1&&phase>=1&&!retain;
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let (peak,pubs,finished)=paced_episode_horizon(&mut w,root,&tape,180);
+            let (rp,rpubs,rf)=paced_episode_horizon(&mut replay,root,&tape,180);
+            assert_eq!(peak,rp);assert_eq!(pubs,rpubs);assert_eq!(finished,rf);
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            let mut reads=Vec::new();let mut execs=Vec::new();let mut tasks=Vec::new();
+            let mut observations=Vec::new();let mut marker_reads=Vec::new();let mut marker_writes=Vec::new();
+            let mut vm=0u64;let mut world=0u64;let mut task_a=0u64;let mut marker_a=0u64;
+            for e in w.audit.iter().filter(|e|e.step>=start){
+                vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+                assert_ne!(e.result.code,Code::Gas);
+                match &e.action{
+                    Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
+                        assert_eq!(e.result.code,Code::Ok);
+                        let slot=tape.iter().rev().find(|(at,_)|start+*at<=e.step).unwrap().1;
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&e.result.payload).unwrap(),offer_fixture(slot));
+                        reads.push((e.step,slot));
+                    },
+                    Some(Action::Read{key,..}) if key==EXPERIENCE_KEY=>{
+                        assert_eq!(e.result.code,if phase==0{Code::NotFound}else{Code::Ok});
+                        if phase>0{
+                            assert_eq!(e.result.payload,if phase==2&&revoked{b"0"}else{b"1"});
+                            assert_eq!(e.result.gas_charged,2);
+                        }
+                        marker_reads.push(e.step);marker_a+=e.result.gas_charged;
+                    },
+                    Some(Action::Observe{..})=>{assert_eq!(e.result.code,Code::Ok);observations.push(e.step);},
+                    Some(Action::Exec{program_hash,input,..})=>{
+                        assert_eq!(program_hash,&registered);assert_eq!(e.result.code,Code::Ok);
+                        let slot=expected[execs.len()];
+                        assert_eq!(input,&offer_fixture(slot).held_out_input);
+                        assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),Value::U32(hidden_transform(129,input)));
+                        assert!(reads.iter().any(|(at,s)|*at<e.step&&*s==slot));
+                        execs.push((e.step,slot));
+                    },
+                    Some(Action::Write{key,bytes,expected_version,..})=>{
+                        assert_eq!(e.result.code,Code::Ok);
+                        if key==EXPERIENCE_KEY{
+                            assert!(phase==0||revise_now);
+                            assert_eq!(tasks.len(),if phase==0{2}else{1});
+                            assert_eq!(*expected_version,if phase==0{None}else{Some(0)});
+                            assert_eq!(bytes,if phase==0{b"1"}else{b"0"});
+                            assert_eq!(e.result.gas_charged,3);
+                            marker_writes.push((e.step,*expected_version,bytes.clone()));
+                            marker_a+=e.result.gas_charged;
+                        }else{
+                            assert_eq!(*expected_version,None);
+                            let slot=expected[tasks.len()];
+                            assert_eq!(key,&format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8));
+                            assert_eq!(e.result.gas_charged,20);assert_bound_artifact(bytes,slot);
+                            tasks.push((e.step,slot));task_a+=e.result.gas_charged;
+                        }
+                    },
+                    Some(Action::IndexVersionRefs{..})|Some(Action::ReclaimIndexedVersion{..})=>
+                        panic!("roomy revision tape must not maintain"),
+                    _=>{}
+                }
+            }
+            let latencies=tasks.iter().map(|(at,slot)|at-start-tape.iter().find(|(_,s)|s==slot).unwrap().0).collect::<Vec<_>>();
+            println!("S29_EXPERIENCE_REVISION arm={arm} policy={policy} phase={phase} root={root} root_B={} base={base_hash} start={start} start_A={start_a} final_A={} finished={finished:?} return={:?} pubs={pubs:?} reads={reads:?} observes={observations:?} execs={execs:?} tasks={tasks:?} latency={latencies:?} marker_reads={marker_reads:?} marker_writes={marker_writes:?} marker_A={marker_a} VM_A={vm} world_A={world} task_A={task_a} non_task_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
+                raw.len(),w.state.nodes[&NodeId::A].gas_available,w.state.organisms[&ORGANISM_ID].last_return,
+                vm+world-task_a,after.0-before.0,after.1-before.1,peak.storage_peak,peak.post_tick_peak);
+            assert!(finished.is_some());
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(4*expected.len() as u32+1)));
+            assert_eq!(execs.len(),expected.len());assert_eq!(tasks.len(),expected.len());
+            assert_eq!(marker_reads,vec![start]);assert_eq!(marker_writes.len(),usize::from(phase==0||revise_now));
+            let marker=&w.state.objects[EXPERIENCE_KEY];assert_eq!(marker.version,u64::from(revoked));
+            assert_eq!(marker.bytes,if revoked{b"0"}else{b"1"});
+            committed.extend(expected.iter().copied());
+            for slot in 0..6{
+                let key=format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8);
+                let exists=committed.contains(&slot);
+                assert_eq!(w.state.objects.contains_key(&key),exists);
+                if exists{let o=&w.state.objects[&key];assert_eq!(o.version,0);assert_bound_artifact(&o.bytes,slot);}
+            }
+            for h in &inventory{assert!(w.state.objects.contains_key(&version_key(h)));}
+            assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+            assert!(!w.state.objects.contains_key(S29_DRY_KEY));
+            if phase>0&&!(phase==2&&revoked){assert!(observations.is_empty());}
+            if phase==2&&revoked{assert!(!observations.is_empty());}
         }
     }
 }
