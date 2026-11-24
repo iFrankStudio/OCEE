@@ -87,17 +87,32 @@ fn boot_repaired_seed(seed:u64)->(World,String,String,String){
     run(&mut w,16_384);
     assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,
         Some(Value::U32(1)));
-    assert_eq!(w.state.objects[REGISTRY].bytes,new_hash.as_bytes());
-    assert_eq!(w.state.objects[REGISTRY].version,1);
+    // The task rule varies by seed: the fixed Len hash is a valid
+    // strict expectation ONLY on the original seed129. Do not force a
+    // researcher tool choice into the P2 program on seeds130/131.
+    let selected=String::from_utf8(w.state.objects[REGISTRY].bytes.clone())
+        .expect("real P2 registry must hold canonical ASCII program hash");
+    if seed==129{
+        assert_eq!(selected,new_hash,
+            "preserve the original seed129 strict Len selection");
+    }
+    assert_eq!(w.state.objects[REGISTRY].version,1,
+        "real P2 must publish its own selected repair via paid CAS");
     assert!(w.state.objects.contains_key(&format!("/self/versions/{old_hash}")));
-    assert!(w.state.objects.contains_key(&format!("/self/versions/{new_hash}")));
+    let selected_object=w.state.objects.get(&version_key(&selected))
+        .expect("selected P2 output must really be an installed tool");
+    let selected_program:Program=serde_json::from_slice(&selected_object.bytes)
+        .expect("actual seed-specific selected program must be executable");
+    assert_eq!(selected_program.canonical_bytes(),selected_object.bytes);
+    assert_eq!(selected_program.content_hash().unwrap(),selected);
     assert_eq!(b_gas(&w),20);
     let tr:TransformTask=serde_json::from_slice(
         &w.state.objects["/public/E001/transform"].bytes).unwrap();
     let pred:u32=serde_json::from_slice(
         &w.state.objects[PREDICTION].bytes).unwrap();
-    assert_eq!(pred,hidden_transform(seed,&tr.held_out_input));
-    (w,old_hash,new_hash,root_hash)
+    assert_eq!(pred,hidden_transform(seed,&tr.held_out_input),
+        "all registered P2 roots must truly solve their seed's hidden task");
+    (w,old_hash,selected,root_hash)
 }
 /// A researcher preinstalls this static, audited maintenance routine.
 /// Its *real* VM requests ReclaimVersion, but the decision to switch to
@@ -3882,7 +3897,15 @@ fn lifetime_setup(seed:u64)->(World,Vec<String>,String,[String;3],String){
     let mut introduced=vec![old_hash];
     for p in extra_unreferenced_tools(){
         let h=p.content_hash().unwrap();
-        put(&mut w,version_key(&h),p.canonical_bytes());
+        let key=version_key(&h);
+        let canonical=p.canonical_bytes();
+        if let Some(existing)=w.state.objects.get(&key){
+            // The real seed130/131 P2 root may have already generated
+            // this exact program: never write duplicate immutable code.
+            assert_eq!(existing.bytes,canonical);
+        }else{
+            put(&mut w,key,canonical);
+        }
         introduced.push(h);
     }
     let roots=[
@@ -3913,9 +3936,40 @@ fn lifetime_setup(seed:u64)->(World,Vec<String>,String,[String;3],String){
     paid_pin_all_dry(&mut w,&all,false);
     let used=w.state.organisms[&ORGANISM_ID].storage_used;
     w.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+195;
-    let target=introduced.iter().find(|h|
-        w.state.objects[&version_key(h)].bytes.len()==276)
-        .expect("matched genuine S29 P2 old 276B program").clone();
+    // Seed-independent, PREDECLARED researcher decision rule:
+    // choose smallest physical candidate NOT registered by real P2;
+    // tie-break lexical hash. The VM never receives target identity.
+    let target=introduced.iter().filter(|h|*h!=&new_hash)
+        .min_by_key(|h|(
+            w.state.objects[&version_key(h)].bytes.len(),(*h).clone()
+        )).expect("there must be a nonregistered candidate").clone();
+    let target_bytes=w.state.objects[&version_key(&target)].bytes.len();
+    assert!(target_bytes>85,"a reclaimed version must unlock 280B task");
+    // Discarded RESEARCHER-ONLY fork verifies actual reference safety and
+    // real catalog eligibility. No trusted answer is added to VM state.
+    let mut validate=World::from_snapshot(&w.snapshot_json()).unwrap();
+    let inventory=paid_catalog_read(&mut validate,S29_CATALOG_PAGE0);
+    assert_eq!(inventory.code,Code::Ok);
+    assert!(inventory.gas_charged>0);
+    let listing:serde_json::Value=
+        serde_json::from_slice(&inventory.payload).unwrap();
+    assert!(listing["entries"].as_array().unwrap().iter()
+        .any(|entry|entry["hash"].as_str()==Some(target.as_str())),
+        "selected researcher validation target must really appear on paid page0");
+    let pin_index=all.iter().position(|h|h==&target).unwrap();
+    let pin_path=format!("/self/pins/s29-dry-{pin_index}");
+    let release=validate.tick(Some(Action::Write{
+        actor:ORGANISM_ID,key:pin_path,
+        expected_version:Some(0),bytes:vec![b'-';64]
+    }));
+    assert_eq!(release.code,Code::Ok);
+    assert_eq!(index_refs(&mut validate).code,Code::Ok);
+    let reclaimed=fast_reclaim(&mut validate,&target);
+    assert_eq!(reclaimed.code,Code::Ok,
+        "true prebranch research clone proves chosen candidate is safely orphaned");
+    assert_eq!(u64::from_le_bytes(
+        reclaimed.payload.as_slice().try_into().unwrap()),
+        target_bytes as u64);
     assert_eq!(b_gas(&w),20);
     (w,all,target,policy_hashes,new_hash)
 }
@@ -4124,6 +4178,8 @@ fn test_matched_lifetime_pilot(tape:&str,seed:u64){
     let initial_hash=base.state_hash();
     let pin_idx=versions.iter().position(|v|v==&target).unwrap();
     let pin_key=format!("/self/pins/s29-dry-{pin_idx}");
+    let target_bytes=base.state.objects[&version_key(&target)]
+        .bytes.len() as u64;
     let start_storage=base.state.organisms[&ORGANISM_ID].storage_used;
     let capacity=base.state.nodes[&NodeId::A].storage_capacity;
     assert_eq!(capacity-start_storage,195);
@@ -4236,8 +4292,8 @@ fn test_matched_lifetime_pilot(tape:&str,seed:u64){
         assert!(always.task_ok);
         assert!(!cool.task_ok);
         assert!(!none.task_ok);
-        assert!(always.gc_bytes>=276);
-        assert!(cool.gc_bytes>=276,
+        assert_eq!(always.gc_bytes,target_bytes);
+        assert_eq!(cool.gc_bytes,target_bytes,
             "late third-episode discovery still does not rescue earlier task");
         assert_eq!(none.gc_bytes,0);
     }else{
@@ -4245,8 +4301,8 @@ fn test_matched_lifetime_pilot(tape:&str,seed:u64){
         assert!(always.task_ok&&cool.task_ok,
             "both real maintenance policies must reclaim before a later task");
         assert!(!none.task_ok);
-        assert_eq!(always.gc_bytes,276);
-        assert_eq!(cool.gc_bytes,276);
+        assert_eq!(always.gc_bytes,target_bytes);
+        assert_eq!(cool.gc_bytes,target_bytes);
         assert_eq!(none.gc_bytes,0);
         assert_eq!(always.index_count,3);
         assert_eq!(cool.index_count,2);
@@ -4257,6 +4313,8 @@ fn test_matched_lifetime_pilot(tape:&str,seed:u64){
         policy_hashes={roots:?} release_step={release_step} \
         task_step={task_step} horizon={horizon} \
         shared_installed={shared_versions} initial_used={start_storage} \
+        actual_registered_P2_tool={new_hash} selected_research_orphan={target} \
+        orphan_physical_bytes={target_bytes} \
         initial_capacity={capacity} initial_A={start_a} \
         metrics={metrics:?} true_P2_B=20 paired_replay=true \
         all_exogenous_actions_identical=true");
