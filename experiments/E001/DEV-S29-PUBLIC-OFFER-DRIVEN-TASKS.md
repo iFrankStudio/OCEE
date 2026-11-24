@@ -8,3 +8,11 @@ Frozen tapes: common initial offer id 'a', input [44,7,2] at start+0. Both tapes
 
 ## Native attempt 1 — compile failure (2026-11-24)
 [Run #45324803189](https://github.com/iFrankStudio/OCEE/actions/runs/45324803189) @ae1753ce, 0/2: both jobs E0433 unresolved Sha256 in test schedule hashing, no VM experiment executed. Existing sha2 dev dependency already present. Compile-only local import added @1703198d; unchanged protocol and assertion thresholds, retest [#45325604541](https://github.com/iFrankStudio/OCEE/actions/runs/45325604541) @a81f560e pending. Preserve original red.
+
+## Native attempt 2 — verified 2026-11-24
+[Run #45325604541](https://github.com/iFrankStudio/OCEE/actions/runs/45325604541) @a81f560ed4d90ebf44a93a4373a97b08f8fe5208 **2/2 native success** after compile-only import correction; raw logs both inspected. Original compile red retained. Same root 23f293685fd765664f77bad9e50b9e8dfef8db1f215b501fa88da4956bec8cac (29283B), paid install1839A, base b7e07a99864e91b0869d3b4f05c26690ca73a57f0b1d30c530a68c2238f3cc96, start3075/A11993. Actual publications at3075/3103/3123 (versions1/2/3), actual release CAS3097/6A. First Exec3077 result3, task Quota3078, index3082, dry memory b1/v0@3092. ARRIVALS new b read3103, Exec3105 result4, Quota3106, b2/v1@3108; c read3123, Exec3125 result5, Quota3126, index3130, GC276B, same retained input retry Exec3136 result5, write Ok3137/20A, b0/v2@3139. DUPLICATE_ONLY actual repeated a read through3126; only first Exec/Quota, one index and no GC or additional memory update.
+| arm | public reads | Exec | committed | GC B | VM A | world A | poll A | Exec A | task A | external A | physical peak B | unbilled index peak B |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+|ARRIVALS|24|4|1|276|4578|4298|48|12|20|6|157630|3620|
+|DUPLICATE_ONLY|33|1|0|0|3504|2169|66|3|0|6|157626|3620|
+Both exact snapshot/audit and publication replay, registered tool and protected versions intact, B20 unchanged. Schedule hashes b077b434b1cef2f1060f4dd61a7e7e13d60fbb437d7cd6aa7d35b97f37728e25 / b5d5f081540ee044fa5417f074211cf7a4707b61e272a81aaea78b2386cb2447. Same-ID suppression also blocks pending failed task; next independent pending-resource pilot addresses this. Not general queue, learned goal, or full workspace success. G0 GO/G1,G2 NO-GO.
