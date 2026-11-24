@@ -1,0 +1,27 @@
+name: S29 Recovery Memory Revision
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-recovery-memory-revision.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-recovery-revision-${{ github.ref }}
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  revision-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [RELEASED, PINNED, STALE_CAS]
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      OCEE_S29_REVISION_ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native actual task recovery and versioned memory revision
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_recovery_memory_revision_native -- --ignored --show-output
