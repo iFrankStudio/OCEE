@@ -7746,3 +7746,143 @@ fn s29_reversible_experience_cas_native(){
         }
     }
 }
+
+
+#[test]
+#[ignore="frozen same-root unobserved-opportunity aliasing"]
+fn s29_observation_aliasing_native(){
+    let (mut base,_,target,_,registered)=lifetime_setup(129);
+    let before=spend(&base);
+    let p=revisable_experience_root(true);
+    let root=p.content_hash().unwrap();let raw=p.canonical_bytes();
+    assert!(!raw.windows(64).any(|x|x==registered.as_bytes()||x==target.as_bytes()));
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+raw.len() as u64+64;
+    quota_wait_next_grant(&mut base);
+    put(&mut base,version_key(&root),raw.clone());
+    put(&mut base,"/self/pins/s29-aliasing".into(),root.as_bytes().to_vec());
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+2000;
+    quota_wait_next_grant(&mut base);
+    let after=spend(&base);let inventory=lifetime_extra_versions(&base);
+    lifetime_set_active(&mut base,&root);
+    let training_start=base.state.step;
+    let mut replay=World::from_snapshot(&base.snapshot_json()).unwrap();
+    let tape=vec![(0,0),(7,1),(9,0)];
+    let (peak,pubs,finished)=paced_episode_horizon(&mut base,&root,&tape,180);
+    let (rp,rpubs,rf)=paced_episode_horizon(&mut replay,&root,&tape,180);
+    assert_eq!((peak,pubs,finished),(rp,rpubs,rf));assert!(finished.is_some());
+    assert_eq!(base.snapshot_json(),replay.snapshot_json());assert_eq!(base.audit,replay.audit);
+    assert_eq!(base.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(9)));
+    let mut training_tasks=Vec::new();let mut training_execs=Vec::new();let mut marker_created=0;
+    for e in base.audit.iter().filter(|e|e.step>=training_start){
+        assert_ne!(e.result.code,Code::Gas);
+        match &e.action{
+            Some(Action::Exec{program_hash,input,..})=>{
+                let slot=training_execs.len();
+                assert_eq!(program_hash,&registered);assert_eq!(e.result.code,Code::Ok);
+                assert_eq!(input,&offer_fixture(slot).held_out_input);
+                assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),Value::U32(hidden_transform(129,input)));
+                training_execs.push(slot);
+            },
+            Some(Action::Write{key,bytes,expected_version,..})=>{
+                assert_eq!(*expected_version,None);assert_eq!(e.result.code,Code::Ok);
+                if key==EXPERIENCE_KEY{
+                    assert_eq!(training_tasks,vec![0,1]);assert_eq!(bytes,b"1");
+                    assert_eq!(e.result.gas_charged,3);marker_created+=1;
+                }else{
+                    let slot=training_tasks.len();
+                    assert_eq!(key,&format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8));
+                    assert_eq!(e.result.gas_charged,20);assert_bound_artifact(bytes,slot);
+                    training_tasks.push(slot);
+                }
+            },
+            Some(Action::IndexVersionRefs{..})|Some(Action::ReclaimIndexedVersion{..})=>panic!("roomy aliasing training"),
+            _=>{}
+        }
+    }
+    assert_eq!(training_execs,vec![0,1]);assert_eq!(training_tasks,vec![0,1]);assert_eq!(marker_created,1);
+    assert_eq!(base.state.objects[EXPERIENCE_KEY].bytes,b"1");
+    assert_eq!(base.state.objects[EXPERIENCE_KEY].version,0);
+    quota_wait_next_grant(&mut base);lifetime_set_active(&mut base,&root);
+    assert!(base.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+    let start=base.state.step;let start_a=base.state.nodes[&NodeId::A].gas_available;
+    let restart=base.snapshot_json();let mut outcomes=Vec::new();
+    for late in [false,true]{
+        let tape=if late{vec![(0,2),(40,3)]}else{vec![(0,2)]};
+        let mut w=World::from_snapshot(&restart).unwrap();
+        let mut replay=World::from_snapshot(&restart).unwrap();
+        let (peak,pubs,finished)=paced_episode_horizon(&mut w,&root,&tape,180);
+        let (rp,rpubs,rf)=paced_episode_horizon(&mut replay,&root,&tape,180);
+        assert_eq!(peak,rp);assert_eq!(pubs,rpubs);assert_eq!(finished,rf);
+        assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+        assert!(finished.unwrap()<start+40);
+        assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(5)));
+        let mut reads=Vec::new();let mut execs=0;let mut tasks=0;let mut revokes=0;let mut marker_reads=0;
+        let mut vm=0;let mut world=0;
+        for e in w.audit.iter().filter(|e|e.step>=start){
+            assert_ne!(e.result.code,Code::Gas);
+            vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+            match &e.action{
+                Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
+                    assert_eq!(e.result.code,Code::Ok);
+                    assert_eq!(serde_json::from_slice::<TransformTask>(&e.result.payload).unwrap(),offer_fixture(2));
+                    reads.push(e.step);
+                },
+                Some(Action::Read{key,..}) if key==EXPERIENCE_KEY=>{
+                    assert_eq!(e.step,start);assert_eq!(e.result.code,Code::Ok);
+                    assert_eq!(e.result.payload,b"1");assert_eq!(e.result.gas_charged,2);
+                    marker_reads+=1;
+                },
+                Some(Action::Exec{program_hash,input,..})=>{
+                    assert_eq!(program_hash,&registered);assert_eq!(e.result.code,Code::Ok);
+                    assert_eq!(input,&offer_fixture(2).held_out_input);
+                    assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),Value::U32(hidden_transform(129,input)));
+                    assert!(reads.iter().any(|at|*at<e.step));execs+=1;
+                },
+                Some(Action::Write{key,bytes,expected_version,..})=>{
+                    assert_eq!(e.result.code,Code::Ok);
+                    if key==EXPERIENCE_KEY{
+                        assert_eq!(tasks,1);assert_eq!(*expected_version,Some(0));
+                        assert_eq!(bytes,b"0");assert_eq!(e.result.gas_charged,3);revokes+=1;
+                    }else{
+                        assert_eq!(*expected_version,None);assert_eq!(key,&format!("{OFFER_OUTCOME}63"));
+                        assert_eq!(e.result.gas_charged,20);assert_bound_artifact(bytes,2);tasks+=1;
+                    }
+                },
+                Some(Action::Observe{..})|Some(Action::IndexVersionRefs{..})|Some(Action::ReclaimIndexedVersion{..})=>panic!("dense aliasing test must not maintain or wait"),
+                _=>{}
+            }
+        }
+        assert_eq!((execs,tasks,revokes,marker_reads),(1,1,1,1));
+        assert_eq!(w.state.objects[EXPERIENCE_KEY].version,1);
+        assert_eq!(w.state.objects[EXPERIENCE_KEY].bytes,b"0");
+        for slot in 0..4{
+            let key=format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8);
+            assert_eq!(w.state.objects.contains_key(&key),slot<3);
+            if slot<3{let o=&w.state.objects[&key];assert_eq!(o.version,0);assert_bound_artifact(&o.bytes,slot);}
+        }
+        for h in &inventory{assert!(w.state.objects.contains_key(&version_key(h)));}
+        assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+        assert!(!w.state.objects.contains_key(S29_DRY_KEY));
+        assert_eq!(pubs.len(),if late{2}else{1});
+        let final_a=w.state.nodes[&NodeId::A].gas_available;
+        assert_eq!(start_a-final_a,vm+world);
+        println!("S29_ALIASING late={late} root={root} root_B={} start={start} start_A={start_a} final_A={final_a} finished={finished:?} pubs={pubs:?} reads={reads:?} execs={execs} tasks={tasks} revokes={revokes} VM_A={vm} world_A={world} non_task_A={} setup_VM_A={} setup_world_A={} peak_B={} replay=true B=20",
+            raw.len(),vm+world-20,after.0-before.0,after.1-before.1,peak.storage_peak);
+        outcomes.push((w,finished));
+    }
+    let (silent,sf)=&outcomes[0];let (late,lf)=&outcomes[1];
+    let projection=|w:&World|w.audit.iter().filter(|e|e.step>=start)
+        .map(|e|(e.step,e.action.clone(),e.result.clone())).collect::<Vec<_>>();
+    assert_eq!(projection(silent),projection(late));assert_eq!(sf,lf);
+    assert_eq!(silent.state.organisms,late.state.organisms);
+    assert_eq!(silent.state.nodes,late.state.nodes);
+    let own=|w:&World|w.state.objects.iter().filter(|(_,o)|o.owner==ORGANISM_ID)
+        .map(|(k,o)|(k.clone(),o.clone())).collect::<Vec<_>>();
+    assert_eq!(own(silent),own(late));
+    assert_eq!(silent.state.objects[OFFER_PUBLIC].version+1,late.state.objects[OFFER_PUBLIC].version);
+    assert_ne!(silent.state.objects[OFFER_PUBLIC].bytes,late.state.objects[OFFER_PUBLIC].bytes);
+    assert_ne!(silent.state_hash(),late.state_hash());
+    println!("S29_ALIASING_EQUALITY action_result=true private_state=true public_history_different=true");
+}
