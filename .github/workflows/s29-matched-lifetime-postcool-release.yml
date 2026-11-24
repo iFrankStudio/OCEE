@@ -1,0 +1,28 @@
+name: S29 Matched Post-Cooldown Release Task Control
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-matched-lifetime-postcool-release.yml'
+  workflow_dispatch:
+concurrency:
+  group: ocee-s29-postcool-release-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  postcool-real-p2:
+    strategy:
+      fail-fast: false
+      matrix:
+        seed: [129, 130, 131]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OCEE_S29_LIFE_SEED: ${{ matrix.seed }}
+      OCEE_S29_LIFE_TAPE: RELEASE_AFTER_COOLDOWN
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rebuild true version index only after paid cooldown and real later pin release
+        run: cargo test -p ocee-organism-seeds --test s29_reclaim_version s29_lifetime_matched_pilot_native -- --ignored --show-output
