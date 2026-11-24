@@ -15,4 +15,5 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test -p ocee-world-kernel finite_escrow -- --show-output
-      - run: cargo test --workspace
+      - name: Workspace regression after legacy diagnostic exhaustiveness repair
+        run: cargo test --workspace

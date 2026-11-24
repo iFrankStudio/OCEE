@@ -102,6 +102,11 @@ fn verify_remote(w:&World,family:Family){
                     format!("REQUEST OUTCOME FOR {request_id}"),
                 Some(Action::ConfirmResponseFor{request_id,..})=>
                     format!("CONFIRM RESPONSE FOR {request_id}"),
+                Some(Action::WriteIndexed{key,..})=>format!("WRITE INDEXED {key}"),
+                Some(Action::PublishTool{registry_key,..})=>format!("PUBLISH TOOL {registry_key}"),
+                Some(Action::IndexVersionRefs{..})=>"INDEX VERSION REFS".into(),
+                Some(Action::ReclaimIndexedVersion{program_hash,..})=>format!("RECLAIM INDEXED {program_hash}"),
+                Some(Action::ReclaimVersion{program_hash,..})=>format!("RECLAIM {program_hash}"),
                 None=>"VM-only".into(),
             };
             format!("step={} {action} code={:?} vm_gas={}",
