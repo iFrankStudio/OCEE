@@ -909,3 +909,6 @@
 ### 2026-11-24 — 公共任务出现驱动的有界调度（待验收）
 - [冻结协议](./experiments/E001/DEV-S29-PUBLIC-OFFER-DRIVEN-TASKS.md) @36857f67、实现 @d31a59ca、[CI #45324803189](https://github.com/iFrankStudio/OCEE/actions/runs/45324803189) @ae1753ce，seed129两tape ARRIVALS / DUPLICATE_ONLY。使用现有ACL公开对象/public/E001/transform（研究者模拟world发布，owner0，空examples、单字节ID和真实输入）；不添加内核能力、根不含具体输入或发布时间，移除40Observe固定任务间隔。VM真付费轮询，保留last attempted ID与原输入的continuation，识别不同ID、动态hex ID产物路径、读取实际P2注册工具并Exec；实际GC后按原ID/input重试。每机会32 poll、总96、最多3不同连续任务；不宣称任意重排ID全局去重。
 - 两tape start+0发布a，+22实际付费释放pin，+28/+48发布新b/c或重复a（公共对象版本改变）；固定+150终点。公共发布是明确的研究者环境夹具直接更新公共对象且保守失效索引，非个体权限或生产事件API，记录预先schedule hash及每次发布state hash，完整重放。预期真实新任务可驱动后续冷却消耗与恢复，重复发布不得重复计算或虚构经验。审计独立计算、实际提交、轮询成本、维护、安全性与状态重放。**CI尚未验收**；保留失败，下一轮先实时读取。仍为预设任务解析和有限循环，非内生目标/学习。G0 GO/G1,G2 NO-GO；正式E001尚未校准/预注册。
+
+### 2026-11-24 — 公共任务驱动首轮编译红，原协议重试
+- [CI #45324803189](https://github.com/iFrankStudio/OCEE/actions/runs/45324803189) @ae1753ce 两臂0/2，均 E0433 测试schedule hash缺Sha256作用域，尚未执行实验。既有dev dependency sha2不变，仅补局部Digest/Sha256导入 @1703198d；原协议、输入、时序、资源与断言全部不变。触发[原生重试 #45325604541](https://github.com/iFrankStudio/OCEE/actions/runs/45325604541) @a81f560e，尚未验收。保留红例。G0 GO/G1,G2 NO-GO。
