@@ -3982,7 +3982,7 @@ fn lifetime_finish(
     let original=w.state.objects.get(pin_key).unwrap();
     assert_eq!(original.bytes,target.as_bytes());
     let version=original.version;
-    let data=if tape=="RELEASE_BEFORE_SECOND"{
+    let data=if matches!(tape,"RELEASE_BEFORE_SECOND"|"RELEASE_AFTER_COOLDOWN"){
         vec![b'-';64]
     }else{
         assert_eq!(tape,"ALL_PINNED");
@@ -3997,16 +3997,20 @@ fn lifetime_finish(
     assert!(mutation.gas_charged>0);
     // One bounded VM service opportunity after the same exogenous release.
     if policy==0{
-        if tape=="RELEASE_BEFORE_SECOND"{
+        if matches!(tape,"RELEASE_BEFORE_SECOND"|"RELEASE_AFTER_COOLDOWN"){
             lifetime_advance_to_action(w,"GC_SUCCESS",75,probe);
         }else{
             lifetime_advance_to_action(w,"DRY_MARK",75,probe);
         }
     }else if policy==1{
-        lifetime_advance_to_action(w,"COOLDOWN_RESET",75,probe);
-        let (mark,version)=paid_memory_value(w);
-        assert_eq!(mark,b"0".to_vec());
-        assert_eq!(version,1);
+        if tape=="RELEASE_AFTER_COOLDOWN"{
+            lifetime_advance_to_action(w,"GC_SUCCESS",75,probe);
+        }else{
+            lifetime_advance_to_action(w,"COOLDOWN_RESET",75,probe);
+            let (mark,version)=paid_memory_value(w);
+            assert_eq!(mark,b"0".to_vec());
+            assert_eq!(version,1);
+        }
     }
     lifetime_pad_to(w,task_step,probe);
     // This is an EXTERNAL, identically timed useful storage artifact
@@ -4134,9 +4138,11 @@ fn test_matched_lifetime_pilot(tape:&str,seed:u64){
         let mut peak=LifetimeIndexProbe::default();
         peak.sample(&w);
         let study_start=w.state.step;
-        let release_step=study_start+90;
-        let task_step=study_start+155;
-        let horizon=study_start+245;
+        let (release_step,task_step,horizon)=if tape=="RELEASE_AFTER_COOLDOWN"{
+            (study_start+140,study_start+205,study_start+295)
+        }else{
+            (study_start+90,study_start+155,study_start+245)
+        };
         assert_eq!(w.state.organisms[&ORGANISM_ID].storage_used,
             start_storage);
         let active_a=w.state.nodes[&NodeId::A].gas_available;
@@ -4156,6 +4162,23 @@ fn test_matched_lifetime_pilot(tape:&str,seed:u64){
             assert_eq!(paid_memory_value(&w),(b"1".to_vec(),0));
         }else{
             lifetime_advance_to_action(&mut w,"NO_OP",10,&mut peak);
+        }
+        if tape=="RELEASE_AFTER_COOLDOWN"{
+            // The exogenous release is expressly AFTER the verified
+            // second round, not simply after researcher-idled ticks.
+            if p==0{
+                lifetime_advance_to_action(&mut w,"DRY_MARK",80,&mut peak);
+                assert_eq!(paid_memory_value(&w),(b"1".to_vec(),1));
+            }else if p==1{
+                lifetime_advance_to_action(&mut w,"COOLDOWN_RESET",80,&mut peak);
+                assert_eq!(paid_memory_value(&w),(b"0".to_vec(),1));
+            }
+            let pre_release_indexes=w.audit.iter()
+                .filter(|e|e.step>=study_start &&
+                    matches!(e.action,Some(Action::IndexVersionRefs{..})))
+                .count();
+            assert_eq!(pre_release_indexes,if p==0{2}else if p==1{1}else{0},
+                "after-cooldown tape must prove actual pre-release episode");
         }
         let before_release=World::from_snapshot(
             &w.snapshot_json()).unwrap();
@@ -4209,8 +4232,7 @@ fn test_matched_lifetime_pilot(tape:&str,seed:u64){
             (0,0,0));
         assert_eq!(always.index_count,3);
         assert_eq!(cool.index_count,2);
-    }else{
-        assert_eq!(tape,"RELEASE_BEFORE_SECOND");
+    }else if tape=="RELEASE_BEFORE_SECOND"{
         assert!(always.task_ok);
         assert!(!cool.task_ok);
         assert!(!none.task_ok);
@@ -4218,6 +4240,16 @@ fn test_matched_lifetime_pilot(tape:&str,seed:u64){
         assert!(cool.gc_bytes>=276,
             "late third-episode discovery still does not rescue earlier task");
         assert_eq!(none.gc_bytes,0);
+    }else{
+        assert_eq!(tape,"RELEASE_AFTER_COOLDOWN");
+        assert!(always.task_ok&&cool.task_ok,
+            "both real maintenance policies must reclaim before a later task");
+        assert!(!none.task_ok);
+        assert_eq!(always.gc_bytes,276);
+        assert_eq!(cool.gc_bytes,276);
+        assert_eq!(none.gc_bytes,0);
+        assert_eq!(always.index_count,3);
+        assert_eq!(cool.index_count,2);
     }
     assert_eq!(b_gas(&base),20);
     println!("S29_LIFETIME_PILOT tape={tape} seed={seed} base_snapshot_SHA={initial_hash} \
@@ -4240,7 +4272,7 @@ fn s29_lifetime_matched_pilot_native(){
     assert!([129,130,131].contains(&seed),
         "only three preregistered matched lifetime seeds");
     match tape.as_str(){
-        "ALL_PINNED"|"RELEASE_BEFORE_SECOND"=>
+        "ALL_PINNED"|"RELEASE_BEFORE_SECOND"|"RELEASE_AFTER_COOLDOWN"=>
             test_matched_lifetime_pilot(&tape,seed),
         other=>panic!("unregistered lifetime tape {other}")
     }
