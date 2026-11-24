@@ -9,3 +9,7 @@ Audit ActionResult optional zero-omitted a_credited field; all legacy result con
 
 ## Implementation
 @7b440dc; [CI #45407022797](https://github.com/iFrankStudio/OCEE/actions/runs/45407022797). Constructor additionally restricts examples to empty for this narrowly bounded pilot (no training samples), ordinary disabled serialization omits both new fields. Initial payer endowment is an explicit independent allocation, not a debit from existing A grant or a claim of a second live payer. Tests are contract-level host-driven writes, not yet autonomous organism task settlement. All outcomes pending actual CI.
+
+
+## Native contract result
+[Run 45407022797](https://github.com/iFrankStudio/OCEE/actions/runs/45407022797) @7b440dc contract tests 2/2 pass: credit100, fee20, payer150→50, A25→105, spend/read actual A, no second credit, exact replay, epoch reset A25, unspent escrow survives. Nine wrong/failed paths no credit; disabled zero-omitted serialization passes. Workspace compile blocked by existing S28 non-exhaustive diagnostic match E0004 for five existing maintenance actions. Diagnostic-only repair @89b31bf, [rerun #45407357391](https://github.com/iFrankStudio/OCEE/actions/runs/45407357391) in_progress/pending. Original failure retained; full compatibility not yet accepted. Separate autonomous earn-spend pilot frozen and implemented, [CI #45407569736](https://github.com/iFrankStudio/OCEE/actions/runs/45407569736).
