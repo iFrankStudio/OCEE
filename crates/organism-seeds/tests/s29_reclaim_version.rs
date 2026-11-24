@@ -5928,7 +5928,7 @@ fn public_offer_root()->Program{
 fn offer_fixture(slot:usize)->TransformTask{
     let (id,input)=match slot{
         0=>("a",vec![44,7,2]),1=>("b",vec![13,9,4,8]),
-        2=>("c",vec![27,2,1,4,8]),_=>panic!("unknown frozen offer")
+        2=>("c",vec![27,2,1,4,8]),3=>("d",vec![31,8,4,1,9,2]),_=>panic!("unknown frozen offer")
     };
     TransformTask{task_id:id.into(),examples:vec![],held_out_input:input}
 }
@@ -7061,4 +7061,206 @@ fn paced_perception_impl(adaptive:bool){
         costs.push(non_task);
     }
     if arm=="STABLE"{assert!(costs[1]<costs[0]);if adaptive{assert!(costs[2]<costs[0]);}}
+}
+
+
+const EXPERIENCE_KEY:&str="/self/maintenance/s29-perception-experience";
+fn experience_perception_root(use_experience:bool)->Program{
+    let mut p=adaptive_perception_root();
+    let f=&mut p.functions[0];
+    let yields=f.blocks.iter().filter_map(|b|match &b.terminator{
+        Terminator::Yield{next,..}=>Some(next.clone()),_=>None
+    }).collect::<std::collections::BTreeSet<_>>();
+    for b in &mut f.blocks{
+        assert!(b.params.iter().all(|p|p.id!=90&&p.id!=91)&&
+            b.instructions.iter().all(|i|i.id!=90&&i.id!=91));
+        if b.id=="entry"{
+            b.instructions.extend([Instruction{id:90,op:Op::ConstU32(0)},Instruction{id:91,op:Op::ConstU32(0)}]);
+        }else{
+            let pos=if yields.contains(&b.id){b.params.len()-1}else{b.params.len()};
+            b.params.insert(pos,Param{id:90,ty:Type::U32});
+            b.params.insert(pos+1,Param{id:91,ty:Type::U32});
+        }
+        match &mut b.terminator{
+            Terminator::Jump{args,..}=>args.extend([90,91]),
+            Terminator::Branch{true_args,false_args,..}=>{true_args.extend([90,91]);false_args.extend([90,91]);},
+            Terminator::RepeatBounded{body_args,done_args,..}|
+            Terminator::RepeatScoped{body_args,done_args,..}=>{body_args.extend([90,91]);done_args.extend([90,91]);},
+            Terminator::Yield{next_args,..}=>next_args.extend([90,91]),
+            Terminator::Return{..}=>{}
+        }
+    }
+    let ctx=f.blocks.iter().find(|b|b.id=="adaptive_repeat").unwrap().params.clone();
+    assert_eq!(ctx.iter().map(|p|p.id).collect::<Vec<_>>(),vec![99,97,98,96,93,90,91]);
+    let args=vec![99,97,98,96,93,90,91];
+    let mut reply=ctx.clone();reply.push(Param{id:2,ty:Type::Bytes});
+    let entry=f.blocks.iter_mut().find(|b|b.id=="entry").unwrap();
+    assert_eq!(entry.terminator,Terminator::Jump{target:"episode_header".into(),args:args.clone()});
+    entry.instructions.push(Instruction{id:10,op:lit(EXPERIENCE_KEY.as_bytes())});
+    entry.terminator=Terminator::Yield{call:WorldCall::Read,args:vec![10],next:"experience_load".into(),next_args:args.clone()};
+    let header=f.blocks.iter_mut().find(|b|b.id=="offer_poll_header").unwrap();
+    if let Terminator::RepeatScoped{limit,aggregate_limit,..}=&mut header.terminator{
+        *limit=20;*aggregate_limit=60;
+    }else{panic!("expected polling header");}
+    let ok=f.blocks.iter_mut().find(|b|b.id=="task_ok").unwrap();
+    ok.instructions.extend([Instruction{id:10,op:Op::ConstU32(1)},Instruction{id:11,op:Op::Add(91,10)}]);
+    if let Terminator::Jump{args,..}=&mut ok.terminator{
+        assert_eq!(args.pop(),Some(91));args.push(11);
+    }else{panic!("expected real success");}
+    let repeat=f.blocks.iter_mut().find(|b|b.id=="adaptive_repeat").unwrap();
+    if use_experience{
+        repeat.instructions=vec![Instruction{id:10,op:Op::ConstU32(1)},
+            Instruction{id:11,op:Op::EqU32(90,10)}];
+        repeat.terminator=Terminator::Branch{condition:11,if_true:"experience_dense".into(),
+            true_args:args.clone(),if_false:"experience_default".into(),false_args:args.clone()};
+    }
+    let ret=f.blocks.iter_mut().find(|b|b.id=="episode_return").unwrap();
+    let original_return=ret.clone();
+    ret.instructions=vec![Instruction{id:10,op:Op::ConstU32(2)},Instruction{id:11,op:Op::EqU32(91,10)}];
+    ret.terminator=Terminator::Branch{condition:11,if_true:"experience_absent".into(),
+        true_args:args.clone(),if_false:"experience_return".into(),false_args:args.clone()};
+    f.blocks.extend([
+        Block{id:"experience_load".into(),params:reply.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"code")},Instruction{id:11,op:Op::JsonFieldString(2,10)},
+            Instruction{id:12,op:lit(b"Ok")},Instruction{id:13,op:Op::EqBytes(11,12)}
+        ],terminator:Terminator::Branch{condition:13,if_true:"experience_decode".into(),true_args:{
+            let mut a=args.clone();a.push(2);a
+        },if_false:"episode_header".into(),false_args:args.clone()}},
+        Block{id:"experience_decode".into(),params:reply.clone(),instructions:vec![
+            Instruction{id:10,op:lit(b"payload")},Instruction{id:11,op:Op::JsonFieldBytes(2,10)},
+            Instruction{id:12,op:lit(b"1")},Instruction{id:13,op:Op::EqBytes(11,12)}
+        ],terminator:Terminator::Branch{condition:13,if_true:"experience_loaded".into(),
+            true_args:args.clone(),if_false:"episode_header".into(),false_args:args.clone()}},
+        Block{id:"experience_loaded".into(),params:ctx.clone(),instructions:vec![Instruction{id:10,op:Op::ConstU32(1)}],
+            terminator:Terminator::Jump{target:"episode_header".into(),args:vec![99,97,98,96,93,10,91]}},
+        Block{id:"experience_absent".into(),params:ctx.clone(),instructions:vec![
+            Instruction{id:10,op:Op::ConstU32(0)},Instruction{id:11,op:Op::EqU32(90,10)}
+        ],terminator:Terminator::Branch{condition:11,if_true:"experience_save".into(),
+            true_args:args.clone(),if_false:"experience_return".into(),false_args:args.clone()}},
+        Block{id:"experience_save".into(),params:ctx.clone(),instructions:vec![
+            Instruction{id:10,op:lit(EXPERIENCE_KEY.as_bytes())},Instruction{id:11,op:lit(b"1")},
+            Instruction{id:12,op:Op::ConstU32(u32::MAX)}
+        ],terminator:Terminator::Yield{call:WorldCall::Write,args:vec![10,11,12],
+            next:"experience_save_reply".into(),next_args:args.clone()}},
+        Block{id:"experience_save_reply".into(),params:reply,instructions:vec![],
+            terminator:Terminator::Jump{target:"experience_return".into(),args:args.clone()}},
+        Block{id:"experience_return".into(),..original_return}
+    ]);
+    if use_experience{
+        f.blocks.extend([
+            Block{id:"experience_default".into(),params:ctx.clone(),instructions:vec![
+                Instruction{id:10,op:Op::ConstU32(2)},Instruction{id:11,op:Op::EqU32(93,10)}
+            ],terminator:Terminator::Branch{condition:11,if_true:"paced_wait_0".into(),
+                true_args:args.clone(),if_false:"adaptive_increment".into(),false_args:args.clone()}},
+            Block{id:"experience_dense".into(),params:ctx,instructions:vec![
+                Instruction{id:10,op:Op::ConstU32(32)},Instruction{id:11,op:Op::EqU32(93,10)}
+            ],terminator:Terminator::Branch{condition:11,if_true:"paced_wait_0".into(),
+                true_args:args.clone(),if_false:"adaptive_increment".into(),false_args:args}}
+        ]);
+    }
+    p.validate().expect("typed durable experience-conditioned pacing");p
+}
+
+#[test]
+#[ignore="frozen durable experience reuse versus ignored record"]
+fn s29_durable_perception_experience_native(){
+    let (mut base,_,target,_,registered)=lifetime_setup(129);
+    let before=spend(&base);
+    let roots=[false,true].into_iter().map(|enable|{
+        let p=experience_perception_root(enable);(p.content_hash().unwrap(),p.canonical_bytes())
+    }).collect::<Vec<_>>();
+    let total=roots.iter().map(|(_,b)|b.len() as u64+64).sum::<u64>();
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+total;
+    quota_wait_next_grant(&mut base);
+    for (i,(h,b)) in roots.iter().enumerate(){
+        assert!(!b.windows(64).any(|x|x==registered.as_bytes()||x==target.as_bytes()));
+        put(&mut base,version_key(h),b.clone());
+        put(&mut base,format!("/self/pins/s29-experience-{i}"),h.as_bytes().to_vec());
+    }
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+1200;
+    quota_wait_next_grant(&mut base);
+    let after=spend(&base);let inventory=lifetime_extra_versions(&base);
+    let mut starts=Vec::new();
+    for (policy,(root,raw)) in roots.iter().enumerate(){
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        for phase in 0..2{
+            if phase==1{quota_wait_next_grant(&mut w);}
+            lifetime_set_active(&mut w,root);
+            assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+            let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
+            if policy==0{starts.push((start,start_a));}else{assert_eq!(starts[phase],(start,start_a));}
+            let tape=if phase==0{vec![(0,0),(7,1),(9,0)]}else{vec![(0,2),(9,3),(11,2)]};
+            let expected=if phase==0{vec![0,1]}else if policy==0{vec![2]}else{vec![2,3]};
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let (peak,pubs,finished)=paced_episode(&mut w,root,&tape);
+            let (rp,rpubs,rf)=paced_episode(&mut replay,root,&tape);
+            assert_eq!(peak,rp);assert_eq!(pubs,rpubs);assert_eq!(finished,rf);
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            let mut reads=Vec::new();let mut execs=Vec::new();let mut tasks=Vec::new();
+            let mut observations=Vec::new();let mut marker_reads=Vec::new();let mut marker_writes=Vec::new();
+            let mut vm=0u64;let mut world=0u64;let mut task_a=0u64;let mut marker_a=0u64;
+            for e in w.audit.iter().filter(|e|e.step>=start){
+                vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+                assert_ne!(e.result.code,Code::Gas);
+                match &e.action{
+                    Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
+                        assert_eq!(e.result.code,Code::Ok);
+                        let slot=tape.iter().rev().find(|(at,_)|start+*at<=e.step).unwrap().1;
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&e.result.payload).unwrap(),offer_fixture(slot));
+                        reads.push((e.step,slot));
+                    },
+                    Some(Action::Read{key,..}) if key==EXPERIENCE_KEY=>{
+                        assert_eq!(e.result.code,if phase==0{Code::NotFound}else{Code::Ok});
+                        if phase==1{assert_eq!(e.result.payload,b"1");assert_eq!(e.result.gas_charged,2);}
+                        marker_reads.push(e.step);marker_a+=e.result.gas_charged;
+                    },
+                    Some(Action::Observe{..})=>{assert_eq!(e.result.code,Code::Ok);observations.push(e.step);},
+                    Some(Action::Exec{program_hash,input,..})=>{
+                        assert_eq!(program_hash,&registered);assert_eq!(e.result.code,Code::Ok);
+                        let slot=expected[execs.len()];
+                        assert_eq!(input,&offer_fixture(slot).held_out_input);
+                        assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),Value::U32(hidden_transform(129,input)));
+                        assert!(reads.iter().any(|(at,s)|*at<e.step&&*s==slot));
+                        execs.push((e.step,slot));
+                    },
+                    Some(Action::Write{key,bytes,expected_version,..})=>{
+                        assert_eq!(*expected_version,None);assert_eq!(e.result.code,Code::Ok);
+                        if key==EXPERIENCE_KEY{
+                            assert_eq!(phase,0);assert_eq!(tasks.len(),2);assert_eq!(bytes,b"1");
+                            marker_writes.push(e.step);marker_a+=e.result.gas_charged;
+                        }else{
+                            let slot=expected[tasks.len()];
+                            assert_eq!(key,&format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8));
+                            assert_eq!(e.result.gas_charged,20);assert_bound_artifact(bytes,slot);
+                            tasks.push((e.step,slot));task_a+=e.result.gas_charged;
+                        }
+                    },
+                    Some(Action::IndexVersionRefs{..})|Some(Action::ReclaimIndexedVersion{..})=>
+                        panic!("roomy experience tape must not maintain"),
+                    _=>{}
+                }
+            }
+            let latencies=tasks.iter().map(|(at,slot)|at-start-tape.iter().find(|(_,s)|s==slot).unwrap().0).collect::<Vec<_>>();
+            println!("S29_EXPERIENCE policy={policy} phase={phase} root={root} root_B={} start={start} start_A={start_a} final_A={} finished={finished:?} return={:?} pubs={pubs:?} reads={reads:?} observes={observations:?} execs={execs:?} tasks={tasks:?} latency={latencies:?} marker_reads={marker_reads:?} marker_writes={marker_writes:?} marker_A={marker_a} VM_A={vm} world_A={world} task_A={task_a} non_task_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
+                raw.len(),w.state.nodes[&NodeId::A].gas_available,w.state.organisms[&ORGANISM_ID].last_return,
+                vm+world-task_a,after.0-before.0,after.1-before.1,peak.storage_peak,peak.post_tick_peak);
+            assert!(finished.is_some());
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(4*expected.len() as u32+1)));
+            assert_eq!(execs.len(),expected.len());assert_eq!(tasks.len(),expected.len());
+            assert_eq!(marker_reads,vec![start]);assert_eq!(marker_writes.len(),usize::from(phase==0));
+            let marker=&w.state.objects[EXPERIENCE_KEY];assert_eq!(marker.version,0);assert_eq!(marker.bytes,b"1");
+            for slot in 0..4{
+                let key=format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8);
+                let exists=slot<2||phase==1&&expected.contains(&slot);
+                assert_eq!(w.state.objects.contains_key(&key),exists);
+                if exists{let o=&w.state.objects[&key];assert_eq!(o.version,0);assert_bound_artifact(&o.bytes,slot);}
+            }
+            for h in &inventory{assert!(w.state.objects.contains_key(&version_key(h)));}
+            assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+            assert!(!w.state.objects.contains_key(S29_DRY_KEY));
+            if phase==1&&policy==1{assert!(observations.is_empty());}
+        }
+    }
 }
