@@ -7886,3 +7886,162 @@ fn s29_observation_aliasing_native(){
     assert_ne!(silent.state_hash(),late.state_hash());
     println!("S29_ALIASING_EQUALITY action_result=true private_state=true public_history_different=true");
 }
+
+
+fn delayed_exploration_root(probe:bool)->Program{
+    let mut p=revisable_experience_root(true);
+    if !probe{return p;}
+    let f=&mut p.functions[0];
+    let dense=f.blocks.iter_mut().find(|b|b.id=="experience_dense").unwrap();
+    let ctx=dense.params.clone();
+    let args=vec![99,97,98,96,93,90,91];
+    assert_eq!(ctx.iter().map(|p|p.id).collect::<Vec<_>>(),args);
+    let original=Block{id:"explore_original_dense".into(),..dense.clone()};
+    dense.instructions=vec![Instruction{id:10,op:Op::ConstU32(10)},Instruction{id:11,op:Op::EqU32(93,10)}];
+    dense.terminator=Terminator::Branch{condition:11,if_true:"explore_wait_0".into(),
+        true_args:args.clone(),if_false:"explore_original_dense".into(),false_args:args.clone()};
+    f.blocks.push(original);
+    for i in 0..24{
+        let next=if i==23{"adaptive_increment".to_string()}else{format!("explore_wait_{}",i+1)};
+        let reply=format!("explore_reply_{i}");
+        f.blocks.push(Block{id:format!("explore_wait_{i}"),params:ctx.clone(),instructions:vec![],
+            terminator:Terminator::Yield{call:WorldCall::Observe,args:vec![],next:reply.clone(),next_args:args.clone()}});
+        let mut rp=ctx.clone();rp.push(Param{id:2,ty:Type::Bytes});
+        f.blocks.push(Block{id:reply,params:rp,instructions:vec![],
+            terminator:Terminator::Jump{target:next,args:args.clone()}});
+    }
+    p.validate().expect("finite paid delayed exploration");p
+}
+
+#[test]
+#[ignore="frozen paid delayed exploration tradeoff"]
+fn s29_paid_delayed_exploration_native(){
+    let arm=std::env::var("OCEE_S29_EXPLORATION_ARM").unwrap();
+    assert!(matches!(arm.as_str(),"SILENT"|"LATE"|"MID_PULSE"));
+    let (mut base,_,target,_,registered)=lifetime_setup(129);
+    let before=spend(&base);
+    let roots=[false,true].into_iter().map(|r|{
+        let p=delayed_exploration_root(r);(p.content_hash().unwrap(),p.canonical_bytes())
+    }).collect::<Vec<_>>();
+    let total=roots.iter().map(|(_,b)|b.len() as u64+64).sum::<u64>();
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+total;
+    quota_wait_next_grant(&mut base);
+    for (i,(h,b)) in roots.iter().enumerate(){
+        assert!(!b.windows(64).any(|x|x==registered.as_bytes()||x==target.as_bytes()));
+        put(&mut base,version_key(h),b.clone());
+        put(&mut base,format!("/self/pins/s29-exploration-{i}"),h.as_bytes().to_vec());
+    }
+    let used=base.state.organisms[&ORGANISM_ID].storage_used;
+    base.state.nodes.get_mut(&NodeId::A).unwrap().storage_capacity=used+2000;
+    quota_wait_next_grant(&mut base);
+    let after=spend(&base);let base_hash=base.state_hash();
+    let inventory=lifetime_extra_versions(&base);let mut starts=Vec::new();let mut costs=Vec::new();
+    for (policy,(root,raw)) in roots.iter().enumerate(){
+        let mut w=World::from_snapshot(&base.snapshot_json()).unwrap();
+        let mut committed=Vec::new();
+        for phase in 0..2{
+            if phase>0{quota_wait_next_grant(&mut w);}
+            lifetime_set_active(&mut w,root);
+            assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+            let start=w.state.step;let start_a=w.state.nodes[&NodeId::A].gas_available;
+            if policy==0{starts.push((start,start_a));}else{assert_eq!(starts[phase],(start,start_a));}
+            let tape=if phase==0{vec![(0,0),(7,1),(9,0)]}
+                else{match arm.as_str(){
+                    "SILENT"=>vec![(0,2)],
+                    "LATE"=>vec![(0,2),(40,3)],
+                    "MID_PULSE"=>vec![(0,2),(21,3),(23,2)],
+                    _=>unreachable!()
+                }};
+            let expected=if phase==0{vec![0,1]}
+                else if (arm=="LATE"&&policy==1)||(arm=="MID_PULSE"&&policy==0){vec![2,3]}
+                else{vec![2]};
+            let revise_now=phase==1&&expected.len()==1;
+            let revoked=revise_now;
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let (peak,pubs,finished)=paced_episode_horizon(&mut w,root,&tape,180);
+            let (rp,rpubs,rf)=paced_episode_horizon(&mut replay,root,&tape,180);
+            assert_eq!(peak,rp);assert_eq!(pubs,rpubs);assert_eq!(finished,rf);
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            let mut reads=Vec::new();let mut execs=Vec::new();let mut tasks=Vec::new();
+            let mut observations=Vec::new();let mut marker_reads=Vec::new();let mut marker_writes=Vec::new();
+            let mut vm=0u64;let mut world=0u64;let mut task_a=0u64;let mut marker_a=0u64;
+            for e in w.audit.iter().filter(|e|e.step>=start){
+                vm+=e.result.vm_gas_charged;world+=e.result.gas_charged;
+                assert_ne!(e.result.code,Code::Gas);
+                match &e.action{
+                    Some(Action::Read{key,..}) if key==OFFER_PUBLIC=>{
+                        assert_eq!(e.result.code,Code::Ok);
+                        let slot=tape.iter().rev().find(|(at,_)|start+*at<=e.step).unwrap().1;
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&e.result.payload).unwrap(),offer_fixture(slot));
+                        reads.push((e.step,slot));
+                    },
+                    Some(Action::Read{key,..}) if key==EXPERIENCE_KEY=>{
+                        assert_eq!(e.result.code,if phase==0{Code::NotFound}else{Code::Ok});
+                        if phase>0{
+                            assert_eq!(e.result.payload,b"1");
+                            assert_eq!(e.result.gas_charged,2);
+                        }
+                        marker_reads.push(e.step);marker_a+=e.result.gas_charged;
+                    },
+                    Some(Action::Observe{..})=>{assert_eq!(e.result.code,Code::Ok);assert_eq!(e.result.gas_charged,1);observations.push(e.step);},
+                    Some(Action::Exec{program_hash,input,..})=>{
+                        assert_eq!(program_hash,&registered);assert_eq!(e.result.code,Code::Ok);
+                        let slot=expected[execs.len()];
+                        assert_eq!(input,&offer_fixture(slot).held_out_input);
+                        assert_eq!(serde_json::from_slice::<Value>(&e.result.payload).unwrap(),Value::U32(hidden_transform(129,input)));
+                        assert!(reads.iter().any(|(at,s)|*at<e.step&&*s==slot));
+                        execs.push((e.step,slot));
+                    },
+                    Some(Action::Write{key,bytes,expected_version,..})=>{
+                        assert_eq!(e.result.code,Code::Ok);
+                        if key==EXPERIENCE_KEY{
+                            assert!(phase==0||revise_now);
+                            assert_eq!(tasks.len(),if phase==0{2}else{1});
+                            assert_eq!(*expected_version,if phase==0{None}else{Some(0)});
+                            assert_eq!(bytes,if phase==0{b"1"}else{b"0"});
+                            assert_eq!(e.result.gas_charged,3);
+                            marker_writes.push((e.step,*expected_version,bytes.clone()));
+                            marker_a+=e.result.gas_charged;
+                        }else{
+                            assert_eq!(*expected_version,None);
+                            let slot=expected[tasks.len()];
+                            assert_eq!(key,&format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8));
+                            assert_eq!(e.result.gas_charged,20);assert_bound_artifact(bytes,slot);
+                            tasks.push((e.step,slot));task_a+=e.result.gas_charged;
+                        }
+                    },
+                    Some(Action::IndexVersionRefs{..})|Some(Action::ReclaimIndexedVersion{..})=>
+                        panic!("roomy revision tape must not maintain"),
+                    _=>{}
+                }
+            }
+            let latencies=tasks.iter().map(|(at,slot)|at-start-tape.iter().find(|(_,s)|s==slot).unwrap().0).collect::<Vec<_>>();
+            println!("S29_DELAYED_EXPLORATION arm={arm} policy={policy} phase={phase} root={root} root_B={} base={base_hash} start={start} start_A={start_a} final_A={} finished={finished:?} return={:?} pubs={pubs:?} reads={reads:?} observes={observations:?} execs={execs:?} tasks={tasks:?} latency={latencies:?} marker_reads={marker_reads:?} marker_writes={marker_writes:?} marker_A={marker_a} VM_A={vm} world_A={world} task_A={task_a} non_task_A={} setup_VM_A={} setup_world_A={} storage_peak={} index_peak_unbilled={} replay=true B=20",
+                raw.len(),w.state.nodes[&NodeId::A].gas_available,w.state.organisms[&ORGANISM_ID].last_return,
+                vm+world-task_a,after.0-before.0,after.1-before.1,peak.storage_peak,peak.post_tick_peak);
+            assert!(finished.is_some());
+            assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(4*expected.len() as u32+1)));
+            assert_eq!(execs.len(),expected.len());assert_eq!(tasks.len(),expected.len());
+            assert_eq!(marker_reads,vec![start]);assert_eq!(marker_writes.len(),usize::from(phase==0||revise_now));
+            let marker=&w.state.objects[EXPERIENCE_KEY];assert_eq!(marker.version,u64::from(revoked));
+            assert_eq!(marker.bytes,if revoked{b"0"}else{b"1"});
+            committed.extend(expected.iter().copied());
+            for slot in 0..4{
+                let key=format!("{OFFER_OUTCOME}{:02x}",b'a'+slot as u8);
+                let exists=committed.contains(&slot);
+                assert_eq!(w.state.objects.contains_key(&key),exists);
+                if exists{let o=&w.state.objects[&key];assert_eq!(o.version,0);assert_bound_artifact(&o.bytes,slot);}
+            }
+            for h in &inventory{assert!(w.state.objects.contains_key(&version_key(h)));}
+            assert_eq!(w.state.objects[REGISTRY].bytes,registered.as_bytes());
+            assert!(!w.state.objects.contains_key(S29_DRY_KEY));
+            if phase==1{
+                if policy==0{assert!(observations.is_empty());}
+                else{assert!(observations.len()>=24);}
+                costs.push(vm+world-task_a);
+            }
+        }
+    }
+    if arm=="SILENT"{assert!(costs[1]>costs[0]);}
+}
