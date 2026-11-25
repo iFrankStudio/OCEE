@@ -1,0 +1,91 @@
+{
+  "source_sha": "f201f273a04661a02eda93b157eb6931249db476",
+  "run_id": 45589101624,
+  "kind": "offline_reweighting",
+  "result": [
+    {
+      "fee": 8,
+      "stop": [
+        231,
+        0
+      ],
+      "continue": [
+        60,
+        399
+      ],
+      "quote": [
+        139,
+        228
+      ],
+      "best_switch": 0.42857142857142855,
+      "peak": {
+        "p": 0.42857142857142855,
+        "gain": 5.714285714285722
+      },
+      "mean_gain": -6.5,
+      "strict_gain_interval": [
+        0.40350877192982454,
+        0.4619883040935672
+      ],
+      "install_A": [
+        533,
+        534,
+        702
+      ]
+    },
+    {
+      "fee": 32,
+      "stop": [
+        231,
+        0
+      ],
+      "continue": [
+        60,
+        399
+      ],
+      "quote": [
+        115,
+        228
+      ],
+      "best_switch": 0.42857142857142855,
+      "peak": {
+        "p": 0.42857142857142855,
+        "gain": -18.285714285714278
+      },
+      "mean_gain": -30.5,
+      "strict_gain_interval": null,
+      "install_A": [
+        533,
+        534,
+        702
+      ]
+    },
+    {
+      "fee": 96,
+      "stop": [
+        231,
+        0
+      ],
+      "continue": [
+        60,
+        399
+      ],
+      "quote": [
+        51,
+        -44
+      ],
+      "best_switch": 0.42857142857142855,
+      "peak": {
+        "p": 0,
+        "gain": -180
+      },
+      "mean_gain": -230.5,
+      "strict_gain_interval": null,
+      "install_A": [
+        533,
+        534,
+        702
+      ]
+    }
+  ]
+}
