@@ -1,0 +1,53 @@
+source_sha=f201f273a04661a02eda93b157eb6931249db476
+run_id=45589101624
+run_attempt=1
+test=s29_paid_price_contract_native exit=0
+running 1 test
+S29_PAID_QUOTE fee=8 final_A=256 payer_A=50 last=Ok replay=true
+S29_PAID_QUOTE fee=32 final_A=184 payer_A=50 last=Ok replay=true
+S29_PAID_QUOTE fee=96 final_A=88 payer_A=50 last=Gas replay=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.01s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+test=s29_hidden_price_decision_native exit=0
+running 1 test
+S29_HIDDEN_PRICE third_price=1 tape=DENSE_TO_SPARSE grant=1152 estimate=false root=fcab133bee5e963309f3da66aa430b154fabb54934a507ea80f19ab9f148387e root_B=7603 install_A=484 settlements=[(18, 0, 1), (21, 1, 200)] reads=[(17, 0), (20, 1), (23, 2)] sensors=[(16, 1142), (19, 923), (22, 615)] intervals=[(220, 923, 4), (508, 615, 1)] features=[3, 128, 255] credit=201 fees=1129 final_A=224 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_HIDDEN_PRICE third_price=1 tape=DENSE_TO_SPARSE grant=1152 estimate=true root=8ca2e8385a56b34d6e71db2de208313207aae7c62a22ec5245865bdaf3ac7359 root_B=7603 install_A=484 settlements=[(18, 0, 1), (21, 1, 200), (24, 2, 1)] reads=[(17, 0), (20, 1), (23, 2)] sensors=[(16, 1142), (19, 923), (22, 615), (25, 102)] intervals=[(220, 923, 4), (508, 615, 1), (514, 102, 0)] features=[29, 344, 406] credit=202 fees=1287 final_A=67 payer_A=1198 gas=0 return=Some(U32(3)) replay=true
+S29_HIDDEN_PRICE third_price=400 tape=DENSE_TO_SPARSE grant=1152 estimate=false root=fcab133bee5e963309f3da66aa430b154fabb54934a507ea80f19ab9f148387e root_B=7603 install_A=484 settlements=[(18, 0, 1), (21, 1, 200)] reads=[(17, 0), (20, 1), (23, 2)] sensors=[(16, 1142), (19, 923), (22, 615)] intervals=[(220, 923, 4), (508, 615, 1)] features=[3, 128, 255] credit=201 fees=1129 final_A=224 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_HIDDEN_PRICE third_price=400 tape=DENSE_TO_SPARSE grant=1152 estimate=true root=8ca2e8385a56b34d6e71db2de208313207aae7c62a22ec5245865bdaf3ac7359 root_B=7603 install_A=484 settlements=[(18, 0, 1), (21, 1, 200), (24, 2, 400)] reads=[(17, 0), (20, 1), (23, 2)] sensors=[(16, 1142), (19, 923), (22, 615), (25, 501)] intervals=[(220, 923, 4), (508, 615, 1), (514, 501, 0)] features=[29, 344, 406] credit=601 fees=1287 final_A=466 payer_A=799 gas=0 return=Some(U32(3)) replay=true
+S29_HIDDEN_PRICE_RESULTS deltas=[(1, -157), (400, 242)] exact_projection=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.65s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+test=s29_paid_price_decision_native exit=0
+running 1 test
+S29_PRICE_POLICY fee=8 third_price=1 mode=0 root=170e43fc4f65fe8dece547dd7aeb5b3c50c7aca94899ccb1b744a42c2aa9d2d6 root_B=8391 install_A=533 settled=2 quotes=0 quote_ok=false quote_fees=0 third_attempts=0 credit=201 fees=1122 final_A=231 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_PRICE_POLICY fee=8 third_price=1 mode=1 root=2c10a3d5af71088ad9b40b41d0777902fd59b1e9d7aff82a3327f30b883d2abd root_B=8413 install_A=534 settled=3 quotes=0 quote_ok=false quote_fees=0 third_attempts=1 credit=202 fees=1294 final_A=60 payer_A=1198 gas=0 return=Some(U32(3)) replay=true
+S29_PRICE_POLICY fee=8 third_price=1 mode=2 root=cf62968e12adcd0467d3de4b172ce261b52af9f7b401815589b3d8b9ff494400 root_B=11103 install_A=702 settled=2 quotes=1 quote_ok=true quote_fees=8 third_attempts=0 credit=201 fees=1214 final_A=139 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_PRICE_POLICY fee=8 third_price=400 mode=0 root=170e43fc4f65fe8dece547dd7aeb5b3c50c7aca94899ccb1b744a42c2aa9d2d6 root_B=8391 install_A=533 settled=2 quotes=0 quote_ok=false quote_fees=0 third_attempts=0 credit=201 fees=1122 final_A=231 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_PRICE_POLICY fee=8 third_price=400 mode=1 root=2c10a3d5af71088ad9b40b41d0777902fd59b1e9d7aff82a3327f30b883d2abd root_B=8413 install_A=534 settled=3 quotes=0 quote_ok=false quote_fees=0 third_attempts=1 credit=601 fees=1294 final_A=459 payer_A=799 gas=0 return=Some(U32(3)) replay=true
+S29_PRICE_POLICY fee=8 third_price=400 mode=2 root=cf62968e12adcd0467d3de4b172ce261b52af9f7b401815589b3d8b9ff494400 root_B=11103 install_A=702 settled=3 quotes=1 quote_ok=true quote_fees=8 third_attempts=1 credit=601 fees=1386 final_A=367 payer_A=799 gas=0 return=Some(U32(3)) replay=true
+S29_PRICE_POLICY fee=32 third_price=1 mode=0 root=170e43fc4f65fe8dece547dd7aeb5b3c50c7aca94899ccb1b744a42c2aa9d2d6 root_B=8391 install_A=533 settled=2 quotes=0 quote_ok=false quote_fees=0 third_attempts=0 credit=201 fees=1122 final_A=231 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_PRICE_POLICY fee=32 third_price=1 mode=1 root=2c10a3d5af71088ad9b40b41d0777902fd59b1e9d7aff82a3327f30b883d2abd root_B=8413 install_A=534 settled=3 quotes=0 quote_ok=false quote_fees=0 third_attempts=1 credit=202 fees=1294 final_A=60 payer_A=1198 gas=0 return=Some(U32(3)) replay=true
+S29_PRICE_POLICY fee=32 third_price=1 mode=2 root=cf62968e12adcd0467d3de4b172ce261b52af9f7b401815589b3d8b9ff494400 root_B=11103 install_A=702 settled=2 quotes=1 quote_ok=true quote_fees=32 third_attempts=0 credit=201 fees=1238 final_A=115 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_PRICE_POLICY fee=32 third_price=400 mode=0 root=170e43fc4f65fe8dece547dd7aeb5b3c50c7aca94899ccb1b744a42c2aa9d2d6 root_B=8391 install_A=533 settled=2 quotes=0 quote_ok=false quote_fees=0 third_attempts=0 credit=201 fees=1122 final_A=231 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_PRICE_POLICY fee=32 third_price=400 mode=1 root=2c10a3d5af71088ad9b40b41d0777902fd59b1e9d7aff82a3327f30b883d2abd root_B=8413 install_A=534 settled=3 quotes=0 quote_ok=false quote_fees=0 third_attempts=1 credit=601 fees=1294 final_A=459 payer_A=799 gas=0 return=Some(U32(3)) replay=true
+S29_PRICE_POLICY fee=32 third_price=400 mode=2 root=cf62968e12adcd0467d3de4b172ce261b52af9f7b401815589b3d8b9ff494400 root_B=11103 install_A=702 settled=3 quotes=1 quote_ok=true quote_fees=32 third_attempts=1 credit=601 fees=1410 final_A=343 payer_A=799 gas=0 return=Some(U32(3)) replay=true
+S29_PRICE_POLICY fee=96 third_price=1 mode=0 root=170e43fc4f65fe8dece547dd7aeb5b3c50c7aca94899ccb1b744a42c2aa9d2d6 root_B=8391 install_A=533 settled=2 quotes=0 quote_ok=false quote_fees=0 third_attempts=0 credit=201 fees=1122 final_A=231 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_PRICE_POLICY fee=96 third_price=1 mode=1 root=2c10a3d5af71088ad9b40b41d0777902fd59b1e9d7aff82a3327f30b883d2abd root_B=8413 install_A=534 settled=3 quotes=0 quote_ok=false quote_fees=0 third_attempts=1 credit=202 fees=1294 final_A=60 payer_A=1198 gas=0 return=Some(U32(3)) replay=true
+S29_PRICE_POLICY fee=96 third_price=1 mode=2 root=cf62968e12adcd0467d3de4b172ce261b52af9f7b401815589b3d8b9ff494400 root_B=11103 install_A=702 settled=2 quotes=1 quote_ok=true quote_fees=96 third_attempts=0 credit=201 fees=1302 final_A=51 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_PRICE_POLICY fee=96 third_price=400 mode=0 root=170e43fc4f65fe8dece547dd7aeb5b3c50c7aca94899ccb1b744a42c2aa9d2d6 root_B=8391 install_A=533 settled=2 quotes=0 quote_ok=false quote_fees=0 third_attempts=0 credit=201 fees=1122 final_A=231 payer_A=1199 gas=0 return=Some(U32(2)) replay=true
+S29_PRICE_POLICY fee=96 third_price=400 mode=1 root=2c10a3d5af71088ad9b40b41d0777902fd59b1e9d7aff82a3327f30b883d2abd root_B=8413 install_A=534 settled=3 quotes=0 quote_ok=false quote_fees=0 third_attempts=1 credit=601 fees=1294 final_A=459 payer_A=799 gas=0 return=Some(U32(3)) replay=true
+S29_PRICE_POLICY fee=96 third_price=400 mode=2 root=cf62968e12adcd0467d3de4b172ce261b52af9f7b401815589b3d8b9ff494400 root_B=11103 install_A=702 settled=2 quotes=1 quote_ok=true quote_fees=96 third_attempts=0 credit=201 fees=1346 final_A=7 payer_A=1199 gas=6 return=None replay=true
+S29_PRICE_POLICY_RESULTS equal_mixture_twice_mean=[(8, [462, 519, 506], -13), (32, [462, 519, 458], -61), (96, [462, 519, 58], -461)]
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 3.61s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+native_exit=0
+native_job_result=success
