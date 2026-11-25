@@ -1100,3 +1100,7 @@
 - [协议](./experiments/E001/DEV-S29-PAID-PRICE-DECISION.md)：上一契约 CI 尚不可读，不宣称通过。新工作流串行执行契约、旧隐藏报酬反例、VM 三策略对照。固定第三项 STOP/CONTINUE 与 QUOTE（实际任务ID、版本绑定、159A人工冻结阈值、保留原流动性门），8/32/96A×低高报价×3根，共18轨迹。报告真实运行及安装开销、Gas、产物、账本、精确复演；不预设盈利或高价成功。固定机制反例非泛化、非学习，待原生。G0 GO/G1,G2 NO-GO。
 - 静态复查 @fd0c252 发现根构造错误：ENCODED compute 的源寄存器35传入目标参数98，旧 pilot 断言直接比较两组ID必然失败。修正源参数映射并重新触发同一冻结实验，未更改策略/阈值/样本。连接器仅列PR触发运行，公共 Actions/API访问失败，未取得任何新原生结果；不可宣称已验收。
 - [证据读取备援](./experiments/E001/DEV-S29-NATIVE-EVIDENCE-FALLBACK.md)：再次验证公共 Actions/API 不可访问、本地 GitHub DNS 失败且无 cargo，连接器仅 PR 运行。冻结原三项测试及先后门禁，native只读、记录各退出码和白名单原生结果；隔离 evidence job 单独 contents:write，将报告提交至 research-evidence/s29-paid-price-<source SHA>-<attempt> 分支，不写main、不强推。可经普通文件接口读取；须核对源SHA/运行ID/账本，写权限及备援尚未验收。不得把发布成功等同实验成功。
+
+### 2026-11-25 — S29 付费报价原生验收与成本消融
+- [原生审计与消融协议](./experiments/E001/DEV-S29-PAID-PRICE-NATIVE-AUDIT.md)，[CI #45589101624](https://github.com/iFrankStudio/OCEE/actions/runs/45589101624) @f201f27，证据分支可读，3/3原生；18策略轨迹独立核对账本和复演。8/32/96A 的QUOTE均值253/229/29 vs最佳固定259.5，差-6.5/-30.5/-230.5；8/32正确低停高产但多花fee+84A，96高价6 Gas未完成；安装702A vs533/534A，独立计量。不选QUOTE为默认。
+- 下一消融 BOUND_QUOTE mode3：保留同步内核已绑定的真实查询、code guard、159A阈值与流动性门，去掉重复响应ID/version解析；仅适用于当前可信同步契约。原三根/测试保留，新增24轨迹、真实开销/收据/账本/复演，待CI；不预设正收益。全量workspace仍未验收。G0 GO/G1,G2 NO-GO。
