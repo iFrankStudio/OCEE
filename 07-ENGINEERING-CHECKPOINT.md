@@ -1087,3 +1087,8 @@
 - [完整成本审计](./experiments/E001/DEV-S29-FEATURE-LEARNING-COST-AUDIT.md) @3939951，实际原生日志#45534972346/#45535283019共72轨迹独立提取并核对grant+credit-fees=final、1400-credit=payer，提交JSON。每组18环境：简RAW/ENCODED各47任务/5818credit/22321fee/6537final/35Gas；匹配固定学习开销46/5618/22913/5745/42；SELECT47/5818/23073/5785/42。SELECT对简RAW总任务数相同、额外752A运行消耗/7 Gas/每安装190A/3045B，17/18余额更低；DENSE1152多一项但余额少15A，SPARSE1152少一项/少127A/多7 Gas。描述性固定网格，非环境概率或生命周期fitness，安装在不同epoch单列。暂停继续扩展模型复杂度，不选SELECT为默认。
 - [隐藏报酬反例协议](./experiments/E001/DEV-S29-HIDDEN-PRICE-DECISION.md) @3939951，源码/工作流 @c5dabcd，[CI #45535701802](https://github.com/iFrankStudio/OCEE/actions/runs/45535701802)。原已验收RAW/ENCODED根不变，明确选取已知决策不同的DENSE_TO_SPARSE1152（机制反例非独立泛化），两组仅第三私有报酬1/400A不同，前1/200、托管1400、seed129、15tick。冻结RAW均正常停2、ENCODED均正常3；同根不同报酬实际动作/ActionResult在第三交付前完全一致，第三交付只归一化a_credited，RAW全轨迹相同；真实账本/正确收据/资源sensor/精确复演不变，低报酬继续生产终余额相对停止为负、高报酬为正。非所有策略不可观察性证明，非通用效用结论。待CI，未新增世界或VM权限。G0 GO/G1,G2 NO-GO。
 - 全量workspace #45407357391已取消，仍未验收。
+
+### 2026-11-25 — 隐藏报酬反例原生验收与信息价值边界
+- [隐藏报酬#45535701802](https://github.com/iFrankStudio/OCEE/actions/runs/45535701802) @c5dabcd，native job 138941639061 **1/1原生**，四轨迹，exact_projection=true。RAW两臂均2项/credit201/fees1129/final224/payer1199；ENCODED低价3项/credit202/fees1287/final67/payer1198，高价3项/credit601/fees1287/final466/payer799。均0 Gas、正常return、replay=true；根均7603B/安装484A。逐条核对1152+credit-fees=final及1400-credit=payer。第三项实际边际总费用158A，净差-157/+242A。冻结反例通过，仅限已选fixture，不证明一般策略不可区分。
+- 离线决策边界：若高价概率p，且假设可无误获知价格并保持原轨迹费用，完全信息相对最佳固定策略的期望增益为min(242p,157(1-p)) A，最大约95.22A（p=157/399）。这是该两点反例的理想上界，不是实际信息获取收益或环境分布估计。后续应先冻结真实收费、绑定任务身份/版本的价格观察契约，并计入VM、观察及决策开销，比较无观察固定策略与付费观察策略；不得免费泄露私有报酬或改变旧默认行为。尚未实现或运行该实验。
+- 全量workspace #45407357391已取消，仍未验收。G0 GO/G1,G2 NO-GO；正式E001未校准/预注册。
