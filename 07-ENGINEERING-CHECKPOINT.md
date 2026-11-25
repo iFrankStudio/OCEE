@@ -1125,3 +1125,7 @@
 ### 2026-11-25 — 旧跨epoch边界验收、有限持久收入账本
 - [边界CI #45617241323](https://github.com/iFrankStudio/OCEE/actions/runs/45617241323) @1f779d0，1/1原生、四轨迹精确复演：price1早晚Gas/过期6A；price100早Ok20A/过期85A、晚Gas/过期105A；payer149/50不退款、终0A。明确是原配额语义，不把混合余额全称收入。
 - [持久收入契约](./experiments/E001/DEV-S29-PERSISTENT-EARNED-ACCOUNT.md)：可信单托管opt-in，earned_a可选字段、总余额接口不变，真实支付双账本、先消耗配额、跨epoch仅保留earned并加入新配额、溢出仅裁新配额，旧默认不变。四配对脚本跨两次零授予、失败原子性/溢出、原边界/报价回归；待原生，未声称自主VM或长期自维持，可信快照非敌对验证。G0 GO/G1,G2 NO-GO。
+
+### 2026-11-25 — 持久收入账本原生验收、自主跨周期消费
+- [CI #45618614560](https://github.com/iFrankStudio/OCEE/actions/runs/45618614560) @76b4600，3/3原生，旧边界/报价复现；持久price1留1A、price100跨两次零授予共三次20A工作写入、终45A，旧price100仅一次、终0；payer149/50、溢出裁配额、失败原子性、复演通过。仅脚本机制证据。
+- [自主跨周期协议](./experiments/E001/DEV-S29-AUTONOMOUS-PERSISTENT-EARNED.md)：原已验收earn/spend根不变，a/b×price1/1000×持久off/on共8轨迹，付费安装，epoch16授256，step30自主开始、预期31真实结算、32起零授予，原根继续真实2048B工作写入。独立账本含过期/earned/付款方、正确产物/复演、无自主开始后研究者动作；预期唯高价持久成功，待原生。预设任务与时序非自主目标或长期自维持。G0 GO/G1,G2 NO-GO。

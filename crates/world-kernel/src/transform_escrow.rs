@@ -595,6 +595,92 @@ mod autonomous_pilot{
         }
     }
 
+
+    #[test]
+    fn s29_autonomous_persistent_earned_native(){
+        let p=root();let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+        for (id,input) in [("a",vec![44,7,2]),("b",vec![13,9,4,8,2])]{
+        for price in [1u64,1000]{
+        for persistent in [false,true]{
+            let task=TransformTask{task_id:id.into(),examples:vec![],held_out_input:input.clone()};
+            let key=format!("{OUTCOME}{:02x}",id.as_bytes()[0]);
+            let config=Config{seed:129,a_gas_per_epoch:12000,epoch_length:16,..Config::default()};
+            let mut w=if persistent{World::with_persistent_transform_escrow(config,task,1000,price)}
+                else{World::with_transform_escrow(config,task,1000,price)}.unwrap();
+            for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+            }
+            let install=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+            w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:256}});
+            w.schedule_event(ScheduledEvent{due_step:32,priority:0,sequence_no:1,
+                kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:0}});
+            // Begin two ticks before boundary. The unchanged root reads then
+            // submits, and its next autonomous action occurs at/after step32.
+            while w.state.step<30{w.tick(None);}
+            assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+            assert_eq!(w.state.nodes[&NodeId::A].gas_available,256);
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let mut balance=256u64;let mut earned=0u64;let mut payer=1000u64;
+            let mut fees=0u64;let mut expired=0u64;let mut credit=0u64;
+            let mut submitted_at=None;let mut worked_at=None;let mut post_fees=0u64;let mut gas=0;
+            for step in 30..44{
+                assert_eq!(w.state.step,step);
+                if step==32{
+                    let kept=if persistent{earned}else{0};
+                    expired+=balance-kept;balance=kept;
+                }
+                let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                assert_eq!(r,rr);
+                let fee=r.gas_charged+r.vm_gas_charged;
+                if persistent{
+                    let quota=balance.checked_sub(earned).unwrap();
+                    earned=earned.checked_sub(fee.saturating_sub(quota)).unwrap()+r.a_credited;
+                }
+                balance=balance.checked_sub(fee).unwrap()+r.a_credited;
+                payer=payer.checked_sub(r.a_credited).unwrap();fees+=fee;credit+=r.a_credited;
+                if step>=32{post_fees+=fee;assert_eq!(w.state.nodes[&NodeId::A].gas_per_epoch,0);}
+                if r.code==Code::Gas{gas+=1;}
+                let escrow=w.state.transform_escrow.as_ref().unwrap();
+                assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                assert_eq!(payer,escrow.remaining_a);
+                assert_eq!(escrow.earned_a,persistent.then_some(earned));
+                assert_eq!(balance+payer,1256-fees-expired);
+                let e=w.audit.last().unwrap();
+                if r.a_credited>0{
+                    assert_eq!(r.a_credited,price);assert!(submitted_at.is_none());
+                    assert_eq!(step,31);assert_eq!(r.code,Code::Ok);
+                    assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                    submitted_at=Some(step);
+                }
+                if matches!(&e.action,Some(Action::Write{key,..}) if key=="/self/earned-workspace")&&r.code==Code::Ok{
+                    assert!(step>=32);assert!(worked_at.is_none());worked_at=Some(step);
+                }
+            }
+            assert_eq!(credit,price);assert_eq!(submitted_at,Some(31));
+            let receipt=&w.state.objects[&key];assert_eq!(receipt.owner,ORGANISM_ID);
+            assert_eq!(receipt.version,0);assert_eq!(receipt.bytes.len(),280);
+            assert_eq!(receipt.bytes[0],input.len() as u8);
+            assert_eq!(&receipt.bytes[1..33],Sha256::digest(&input).as_slice());
+            assert!(receipt.bytes[33..].iter().all(|b|*b==0x55));
+            let success=persistent&&price==1000;
+            assert_eq!(worked_at.is_some(),success);
+            assert_eq!(w.state.objects.contains_key("/self/earned-workspace"),success);
+            if success{
+                assert_eq!(w.state.objects["/self/earned-workspace"].bytes,vec![0x37;2048]);
+                assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(1)));
+                assert!(post_fees>0);assert_eq!(gas,0);
+            }
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            println!("S29_AUTONOMOUS_PERSISTENT id={id} persistent={persistent} price={price} root={hash} root_B={} install_A={install} credit={credit} fees={fees} expired_A={expired} post_fees={post_fees} final_A={balance} earned={earned} payer_A={payer} submitted_at={submitted_at:?} worked_at={worked_at:?} gas={gas} return={:?} replay=true",raw.len(),w.state.organisms[&ORGANISM_ID].last_return);
+        }
+        }
+        }
+    }
+
     fn chain_root()->Program{
         let mut p=root();let f=&mut p.functions[0];
         f.blocks.retain(|b|!matches!(b.id.as_str(),"workspace"|"worked"|"done"));
