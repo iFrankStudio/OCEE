@@ -1,0 +1,8 @@
+source_sha=57c2c812ad4770c4d9d288612eb63d5487978751
+run_id=45563810505
+run_attempt=1
+test=s29_paid_price_contract_native exit=101
+test=s29_hidden_price_decision_native status=skipped
+test=s29_paid_price_decision_native status=skipped
+native_exit=101
+native_job_result=failure
