@@ -1105,3 +1105,7 @@
 - [原生审计与消融协议](./experiments/E001/DEV-S29-PAID-PRICE-NATIVE-AUDIT.md)，[CI #45589101624](https://github.com/iFrankStudio/OCEE/actions/runs/45589101624) @f201f27，证据分支可读，3/3原生；18策略轨迹独立核对账本和复演。8/32/96A 的QUOTE均值253/229/29 vs最佳固定259.5，差-6.5/-30.5/-230.5；8/32正确低停高产但多花fee+84A，96高价6 Gas未完成；安装702A vs533/534A，独立计量。不选QUOTE为默认。
 - 下一消融 BOUND_QUOTE mode3：保留同步内核已绑定的真实查询、code guard、159A阈值与流动性门，去掉重复响应ID/version解析；仅适用于当前可信同步契约。原三根/测试保留，新增24轨迹、真实开销/收据/账本/复演，待CI；不预设正收益。全量workspace仍未验收。G0 GO/G1,G2 NO-GO。
 - [分布与安装敏感性审计](./experiments/E001/DEV-S29-PRICE-DISTRIBUTION-SENSITIVITY.md)：从已验收18轨迹离线重加权，p为假设高价频率。现固定控制切换p=3/7；fee8仅在23/57<p<79/171有运行收益，峰值40/7 A，安装差至少168A需30等效独立episode才可能摊销；fee32/96对所有p不占优。历史简RAW/ENCODED跨协议对照峰值33/7 A、额外218A需47 episode；尚非同世界直接比较。不能推断真实p或生命周期fitness，未运行新原生实验。BOUND_QUOTE证据ref尚不存在，保留待验收；本提交不改测试/世界或触发workflow。
+
+### 2026-11-25 — BOUND_QUOTE原生验收、同世界迁移门
+- [原生审计与迁移协议](./experiments/E001/DEV-S29-BOUND-QUOTE-TRANSFER.md)，[CI #45612707970](https://github.com/iFrankStudio/OCEE/actions/runs/45612707970) @e4f6463，4/4原生；24轨迹独立核对账本/复演。BOUND在8/32/96A均值270/246/37.5，对最佳固定差+10.5/-13.5/-222；8/32额外VM/反馈开销84->67A，安装702->654A，体积11103->10333B；96高价仍6 Gas无第三项。低费正向仅已选fixture，尚不选默认。
+- 冻结迁移实验：原RAW/ENCODED/BOUND根直接置于同一报价世界；3 tape（含新MIXED_MID）×3 grant×2 fee×2隐藏报酬×3根=108轨迹，不改内核/阈值、报告每格差/失败/安装，实际收据账本复演；无最低完成数或盈利预测。待原生。G0 GO/G1,G2 NO-GO；全量workspace仍未验收。
