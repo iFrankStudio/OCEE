@@ -1,0 +1,17 @@
+name: S29 Online Feature Selection
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-online-feature-selection.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-world-kernel s29_online_feature_selection_native -- --show-output

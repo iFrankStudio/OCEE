@@ -1490,4 +1490,207 @@ mod autonomous_pilot{
         assert_eq!(checked.len(),4);
     }
 
+
+    // Both histories and the learned feature flag are carried in the actual VM.
+    fn online_feature_selection_root(select:bool)->Program{
+        let mut p=encoded_feature_root(false);let f=&mut p.functions[0];
+        let ys=f.blocks.iter().filter_map(|b|match &b.terminator{
+            Terminator::Yield{next,..}=>Some(next.clone()),_=>None
+        }).collect::<std::collections::BTreeSet<_>>();
+        let u=|id|Param{id,ty:Type::U32};
+        let history=[95,96,97,89];
+        for b in &mut f.blocks{
+            if b.id=="entry"{
+                b.instructions.extend(history.iter().map(|id|Instruction{id:*id,op:Op::ConstU32(0)}));
+            }else{
+                let at=if ys.contains(&b.id){b.params.len()-1}else{b.params.len()};
+                for (offset,id) in history.iter().enumerate(){b.params.insert(at+offset,u(*id));}
+            }
+            match &mut b.terminator{
+                Terminator::Jump{args,..}=>args.extend(history),
+                Terminator::Branch{true_args,false_args,..}=>{true_args.extend(history);false_args.extend(history);},
+                Terminator::Yield{next_args,..}=>next_args.extend(history),
+                Terminator::RepeatBounded{body_args,done_args,..}|
+                Terminator::RepeatScoped{body_args,done_args,..}=>{body_args.extend(history);done_args.extend(history);},
+                Terminator::Return{..}=>{}
+            }
+        }
+        let compute=f.blocks.iter_mut().find(|b|b.id=="compute").unwrap();
+        if let Terminator::Branch{true_args,false_args,..}=&mut compute.terminator{
+            true_args.push(35);false_args.push(35);
+        }else{panic!("compute branch");}
+        for id in ["size_model_start","additive_compare","size_gate","size_submit"]{
+            let b=f.blocks.iter_mut().find(|b|b.id==id).unwrap();
+            b.params.push(u(88));
+            if matches!(id,"size_model_start"|"additive_compare"){
+                // Compute both features with a binary selection mask.
+                let mut prefix=vec![
+                    Instruction{id:40,op:Op::ConstU32(0)},
+                    Instruction{id:41,op:Op::Sub(40,if select{89}else{40})},
+                    Instruction{id:42,op:Op::Sub(95,93)},
+                    Instruction{id:43,op:Op::And(42,41)},
+                    Instruction{id:44,op:Op::Add(93,43)},
+                    Instruction{id:45,op:Op::Sub(88,98)},
+                    Instruction{id:46,op:Op::And(45,41)},
+                    Instruction{id:47,op:Op::Add(98,46)}
+                ];
+                for i in &mut b.instructions{
+                    if i.id==10{i.op=Op::Add(94,47);}
+                    if i.id==11{i.op=if id=="size_model_start"{Op::Div(10,44)}else{Op::Sub(10,44)};}
+                }
+                prefix.append(&mut b.instructions);b.instructions=prefix;
+            }
+            match &mut b.terminator{
+                Terminator::Branch{if_true,true_args,if_false,false_args,..}=>{
+                    if if_true!="failed"{true_args.push(88);}
+                    if if_false!="failed"{false_args.push(88);}
+                },
+                Terminator::Yield{next_args,..}=>{
+                    // submitted: count, sensor A, current raw, previous C,
+                    // current encoded, previous raw, previous encoded, flag.
+                    *next_args=vec![90,91,98,94,88,93,95,89];
+                },
+                _=>panic!("feature flow")
+            }
+        }
+        let m=f.blocks.iter_mut().find(|b|b.id=="liquidity_measure").unwrap();
+        m.instructions.extend([Instruction{id:20,op:Op::ConstU32(1)},Instruction{id:21,op:Op::EqU32(90,20)}]);
+        m.terminator=Terminator::Branch{condition:21,if_true:"feature_fit".into(),
+            true_args:vec![19,13,93,15,95,96,97,89,94],
+            if_false:"chain_header".into(),false_args:vec![19,13,93,15,95,96,97,89]};
+        // Training fixtures have increasing N and E, with deltaE >= deltaN.
+        let ctx=vec![u(90),u(91),u(93),u(94),u(95),u(96),u(97),u(89),u(87)];
+        f.blocks.push(Block{id:"feature_fit".into(),params:ctx,instructions:vec![
+            Instruction{id:10,op:Op::Sub(93,96)},Instruction{id:11,op:Op::Sub(95,97)},
+            Instruction{id:12,op:Op::Sub(11,10)},Instruction{id:13,op:Op::ConstU32(2)},
+            Instruction{id:14,op:Op::Div(12,13)},Instruction{id:15,op:Op::Add(87,10)},
+            Instruction{id:16,op:Op::Add(15,14)},Instruction{id:17,op:Op::ConstU32(32)},
+            Instruction{id:18,op:Op::Add(16,17)},Instruction{id:19,op:Op::Div(94,18)},
+            Instruction{id:20,op:Op::ConstU32(0)},Instruction{id:21,op:Op::EqU32(19,20)},
+            Instruction{id:22,op:Op::ConstU32(1)}
+        ],terminator:Terminator::Branch{condition:21,
+            if_true:"chain_header".into(),true_args:vec![90,91,93,94,95,96,97,20],
+            if_false:"chain_header".into(),false_args:vec![90,91,93,94,95,96,97,22]}});
+        p.validate().expect("typed online feature selection");p
+    }
+
+    #[test]
+    fn s29_online_feature_selection_native(){
+        let mut checked=std::collections::BTreeSet::new();let mut choices=std::collections::BTreeSet::new();let mut paired=Vec::new();
+        for tape in ["DENSE_TO_SPARSE","SPARSE_TO_DENSE"]{
+        for grant in [768u64,896,1024,1152,1280,1408,1536,1664,1792]{
+            let mut outcomes=Vec::new();
+            for estimate in [false,true]{
+                let p=online_feature_selection_root(estimate);let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+                let mut tasks=chain_tasks(1);
+                let byte=if tape=="DENSE_TO_SPARSE"{255}else{7};
+                tasks[1].0.held_out_input=vec![byte;128];tasks[2].0.held_out_input=vec![if byte==255{7}else{255};255];
+                let mut w=World::with_transform_sequence(Config{seed:129,epoch_length:16,
+                    a_gas_per_epoch:12000,..Config::default()},tasks.clone(),1400).unwrap();
+                for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                    let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                    assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+                }
+                let paid=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+                w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                    kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:grant}});
+                while w.state.step<16{w.tick(None);}
+                let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+                let mut balance=grant;let mut remaining=1400u64;let mut fees=0u64;
+                let mut received=0u64;let mut settlements=Vec::new();let mut reads=Vec::new();let mut gas=0;
+                let mut features:Vec<(u32,u32)>=Vec::new();let mut choice=None;let mut sensors=Vec::new();let mut intervals=Vec::new();let mut last_sensor:Option<(u64,u64,u64)>=None;
+                for _ in 0..15{
+                    let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                    let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                    let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                    assert_eq!(r,rr);
+                    let fee=r.gas_charged+r.vm_gas_charged;
+                    balance=balance.checked_sub(fee).unwrap().checked_add(r.a_credited).unwrap();
+                    remaining=remaining.checked_sub(r.a_credited).unwrap();
+                    received+=r.a_credited;fees+=fee;
+                    assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                    let escrow=w.state.transform_escrow.as_ref().unwrap();
+                    assert_eq!(remaining,escrow.remaining_a);assert_eq!(balance+remaining,grant+1400-fees);
+                    let e=w.audit.last().unwrap();
+                    if r.code==Code::Gas{gas+=1;}
+                    if matches!(&e.action,Some(Action::Read{key,..}) if key=="/sys/resource-status")&&r.code==Code::Ok{
+                        assert_eq!(r.gas_charged,2);
+                        let v:serde_json::Value=serde_json::from_slice(&r.payload).unwrap();
+                        assert_eq!(v["a_available"].as_u64(),Some(balance));
+                        assert_eq!(v["capacity"].as_u64(),Some(w.state.nodes[&NodeId::A].storage_capacity));
+                        assert_eq!(v["used"].as_u64(),Some(w.state.organisms[&ORGANISM_ID].storage_used));
+                        if let Some((old,credit,spent))=last_sensor{
+                            let cost=old+(received-credit)-balance;
+                            assert_eq!(cost,fees-spent);assert!(cost>0);
+                            intervals.push((cost,balance,balance/cost));
+                        }
+                        last_sensor=Some((balance,received,fees));sensors.push((e.step,balance));
+                    }
+                    if matches!(&e.action,Some(Action::Read{key,..}) if key==OFFER)&&r.code==Code::Ok{
+                        let slot=settlements.len();
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&r.payload).unwrap(),tasks[slot].0);
+                        reads.push((e.step,slot));
+                        let raw_len=tasks[slot].0.held_out_input.len() as u32;
+                        let json_len=r.payload.len() as u32;
+                        let feature=(raw_len,(raw_len+json_len)/2);
+                        if slot>0{
+                            let c=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().unwrap();
+                            assert_eq!(c.registers.get(&93),Some(&Value::U32(features[slot-1].0)));
+                            assert_eq!(c.registers.get(&95),Some(&Value::U32(features[slot-1].1)));
+                            if slot==2{
+                                assert_eq!(intervals.len(),2);
+                                let dn=u64::from(features[1].0-features[0].0);
+                                let de=u64::from(features[1].1-features[0].1);
+                                let threshold=intervals[0].0+dn+(de-dn)/2+32;
+                                let selected=u32::from(intervals[1].0>=threshold);
+                                assert_eq!(c.registers.get(&89),Some(&Value::U32(selected)));
+                                choice=Some(selected);choices.insert(selected);
+                            }
+                        }
+                        assert_eq!(features.len(),slot);features.push(feature);
+                    }
+                    if r.a_credited>0{
+                        let slot=settlements.len();let (task,price)=&tasks[slot];
+                        let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                        assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,20);
+                        assert!(reads.iter().any(|(step,i)|*step<e.step&&*i==slot));
+                        assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                        let c=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().unwrap();
+                        assert_eq!(c.registers.get(&98),Some(&Value::U32(features[slot].0)));
+                        assert_eq!(c.registers.get(&88),Some(&Value::U32(features[slot].1)));
+                        if slot>0{checked.insert((tape,estimate));}
+                        settlements.push((e.step,slot,*price));
+                        let ledger=&escrow.sequence.as_ref().unwrap().settled;
+                        assert_eq!(ledger.len(),slot+1);
+                        assert_eq!(ledger[slot],TransformSettlement{outcome_key:key,offer_version:slot as u64,step:e.step,price_a:*price});
+                    }
+                }
+                println!("S29_ONLINE_FEATURE tape={tape} grant={grant} estimate={estimate} root={hash} root_B={} install_A={paid} settlements={settlements:?} reads={reads:?} sensors={sensors:?} intervals={intervals:?} features={features:?} choice={choice:?} credit={received} fees={fees} final_A={balance} payer_A={remaining} gas={gas} return={:?} replay=true",raw.len(),w.state.organisms[&ORGANISM_ID].last_return);
+                assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+                let expected=settlements.len();
+                assert!(expected<=3);
+                assert_eq!(received,tasks.iter().take(expected).map(|(_,p)|*p).sum::<u64>());
+                assert!(sensors.len()<=expected+1);
+                assert_eq!(intervals.len(),sensors.len().saturating_sub(1));
+                for (slot,(task,_)) in tasks.iter().enumerate(){
+                    let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                    assert_eq!(w.state.objects.contains_key(&key),slot<expected);
+                    if slot<expected{
+                        let o=&w.state.objects[&key];assert_eq!(o.owner,ORGANISM_ID);assert_eq!(o.version,0);
+                        assert_eq!(o.bytes.len(),280);assert_eq!(o.bytes[0],task.held_out_input.len() as u8);
+                        assert_eq!(&o.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                        assert!(o.bytes[33..].iter().all(|b|*b==0x55));
+                    }
+                }
+                outcomes.push((expected,intervals.into_iter().take(2).collect::<Vec<_>>(),gas,balance,fees,paid,choice));
+            }
+            assert_eq!(outcomes[0].1,outcomes[1].1,"identical first two intervals");
+            assert_eq!(outcomes[0].6,outcomes[1].6);
+            let (raw,encoded)=(&outcomes[0],&outcomes[1]);
+            paired.push((tape,grant,raw.0,encoded.0,raw.2,encoded.2,raw.3,encoded.3,raw.4,encoded.4));
+        }
+        }
+        println!("S29_ONLINE_FEATURE_RESULTS checked={checked:?} choices={choices:?} pairs={paired:?}");
+        assert_eq!(checked.len(),4);assert_eq!(choices,std::collections::BTreeSet::from([0,1]));
+    }
 }
