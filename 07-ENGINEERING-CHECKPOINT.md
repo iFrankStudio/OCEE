@@ -1129,3 +1129,7 @@
 ### 2026-11-25 — 持久收入账本原生验收、自主跨周期消费
 - [CI #45618614560](https://github.com/iFrankStudio/OCEE/actions/runs/45618614560) @76b4600，3/3原生，旧边界/报价复现；持久price1留1A、price100跨两次零授予共三次20A工作写入、终45A，旧price100仅一次、终0；payer149/50、溢出裁配额、失败原子性、复演通过。仅脚本机制证据。
 - [自主跨周期协议](./experiments/E001/DEV-S29-AUTONOMOUS-PERSISTENT-EARNED.md)：原已验收earn/spend根不变，a/b×price1/1000×持久off/on共8轨迹，付费安装，epoch16授256，step30自主开始、预期31真实结算、32起零授予，原根继续真实2048B工作写入。独立账本含过期/earned/付款方、正确产物/复演、无自主开始后研究者动作；预期唯高价持久成功，待原生。预设任务与时序非自主目标或长期自维持。G0 GO/G1,G2 NO-GO。
+
+### 2026-11-25 — 自主跨epoch消费原生验收、零授予生产链
+- [CI #45619699275](https://github.com/iFrankStudio/OCEE/actions/runs/45619699275) @aea36ac，1/1原生，8轨迹独立账本/复演；同根82b103c6…/7367B/469A，a/b均31结算，高价持久组32写2048B、零授予后实际耗295A、终705A、0 Gas/return1；另6臂无工作、12 Gas，低持久保留1A。首次自主VM零授予后以赚取余额消费的证据，非长期自维持。
+- [零授予生产链协议](./experiments/E001/DEV-S29-ZERO-GRANT-PRODUCTIVE-CHAIN.md)：可信有限sequence opt-in持久收入，原chain根/任务不变，first1/200/1000×off/on，6轨迹，初256/30启动/32及48零授予，实测后续生产能否获得正净收入、真实产物/账本/复演。200中间档无成功预测；有限预付需求非无限供给，待原生。G0 GO/G1,G2 NO-GO。
