@@ -15,6 +15,9 @@ pub struct TransformEscrow{
     pub paid_a:u64,
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub sequence:Option<TransformSequence>,
+    /// Opt-in development quote fee. Absent in legacy snapshots.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub price_query_fee:Option<u64>,
 }
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 pub struct TransformSequence{
@@ -41,7 +44,7 @@ impl World{
         w.state.objects.insert(OFFER.into(),Object{owner:0,version:0,bytes:offer.clone()});
         w.state.transform_escrow=Some(TransformEscrow{
             initial_a:endowment,remaining_a:endowment,price_a:price,offer,
-            outcome_key,paid_at:None,paid_a:0,sequence:None
+            outcome_key,paid_at:None,paid_a:0,sequence:None,price_query_fee:None
         });
         Ok(w)
     }
@@ -67,6 +70,45 @@ impl World{
             pending:terms,settled:vec![]
         });
         Ok(w)
+    }
+
+    /// Trusted environment opt-in; never enabled by an organism.
+    pub fn with_priced_transform_sequence(config:Config,tasks:Vec<(TransformTask,u64)>,
+        endowment:u64,fee:u64)->Result<Self,Code>{
+        if !(1..=128).contains(&fee){return Err(Code::BadRequest);}
+        let mut w=Self::with_transform_sequence(config,tasks,endowment)?;
+        w.state.transform_escrow.as_mut().unwrap().price_query_fee=Some(fee);
+        Ok(w)
+    }
+
+    /// A metered read of only the current, unsettled offer. Explicit task/version
+    /// prevents treating an old quote as the price of a new offer.
+    pub(super) fn read_transform_price(&mut self,actor:u64,suffix:&str)->ActionResult{
+        let Some(fee)=self.state.transform_escrow.as_ref().and_then(|e|e.price_query_fee)
+            else{return ActionResult::fail(Code::NotFound);};
+        if actor!=ORGANISM_ID{return ActionResult::fail(Code::Denied);}
+        if !(1..=128).contains(&fee){return ActionResult::fail(Code::BadRequest);}
+        // Pay before any quote-dependent response, including stale requests.
+        if let Err(code)=self.spend_a_gas(fee){return ActionResult::fail(code);}
+        let payload=(||{
+            let e=self.state.transform_escrow.as_ref()?;
+            let seq=e.sequence.as_ref()?;
+            let o=self.state.objects.get(OFFER)?;
+            let version=seq.settled.len() as u64;
+            let paid=seq.settled.iter().try_fold(0u64,|sum,r|sum.checked_add(r.price_a))?;
+            if e.paid_at.is_some() || e.paid_a!=0 || e.price_a==0 ||
+                e.price_a>e.remaining_a || e.initial_a.checked_sub(paid)!=Some(e.remaining_a) ||
+                o.owner!=0 || o.version!=version || o.bytes!=e.offer{return None;}
+            let task:TransformTask=serde_json::from_slice(&e.offer).ok()?;
+            if suffix!=format!("{}/{}",task.task_id,version){return None;}
+            serde_json::to_vec(&serde_json::json!({
+                "task_id":task.task_id,"offer_version":version,"price_a":e.price_a
+            })).ok()
+        })();
+        match payload{
+            Some(bytes)=>ActionResult::ok(bytes,fee,0),
+            None=>ActionResult{gas_charged:fee,..ActionResult::fail(Code::NotFound)}
+        }
     }
 
     // Called solely after a successful ordinary create-only Write in tick_mode.
@@ -135,6 +177,58 @@ mod tests{
     }
     fn a(w:&World)->u64{w.state.nodes[&NodeId::A].gas_available}
     fn escrow(w:&World)->&TransformEscrow{w.state.transform_escrow.as_ref().unwrap()}
+    #[test]
+    fn s29_paid_price_contract_native(){
+        let config=Config{seed:129,a_gas_per_epoch:200,epoch_length:16,..Config::default()};
+        let second=TransformTask{task_id:"b".into(),examples:vec![],held_out_input:vec![7;8]};
+        let tasks=vec![(task(),100),(second,40)];
+        let read=|suffix:&str|Action::Read{actor:ORGANISM_ID,key:format!("/sys/transform-price/{suffix}")};
+        let mut legacy=World::with_transform_sequence(config.clone(),tasks.clone(),150).unwrap();
+        legacy.tick(None);
+        let before=a(&legacy);
+        let r=legacy.tick(Some(read("a/0")));
+        assert_eq!(r,ActionResult::fail(Code::NotFound));assert_eq!(a(&legacy),before);
+        assert!(!legacy.snapshot_json().contains("price_query_fee"));
+        for fee in [8u64,32,96]{
+            let mut w=World::with_priced_transform_sequence(config.clone(),tasks.clone(),150,fee).unwrap();
+            w.tick(None);
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            // First query and settlement fit even at the largest fee. Stale
+            // and current queries must be charged independently.
+            let actions=[read("a/0"),write(ORGANISM_ID,KEY,receipt(),None),
+                read("a/0"),read("b/1")];
+            let mut results=Vec::new();
+            for act in actions{
+                let before=a(&w);let payer=escrow(&w).remaining_a;
+                let r=w.tick(Some(act.clone()));
+                assert_eq!(r,replay.tick(Some(act)));
+                assert_eq!(a(&w),before-r.gas_charged-r.vm_gas_charged+r.a_credited);
+                assert_eq!(escrow(&w).remaining_a,payer-r.a_credited);
+                results.push(r);
+            }
+            let quote=|r:&ActionResult,id:&str,version:u64,price:u64|{
+                assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,fee);
+                assert_eq!(r.a_credited,0);
+                let v:serde_json::Value=serde_json::from_slice(&r.payload).unwrap();
+                assert_eq!(v,serde_json::json!({"task_id":id,"offer_version":version,"price_a":price}));
+            };
+            quote(&results[0],"a",0,100);
+            assert_eq!(results[1].a_credited,100);assert_eq!(results[1].gas_charged,20);
+            assert_eq!(results[2].code,Code::NotFound);assert!(results[2].payload.is_empty());
+            assert_eq!(results[2].gas_charged,fee);
+            if fee==96{
+                assert_eq!(results[3],ActionResult::fail(Code::Gas));
+            }else{quote(&results[3],"b",1,40);}
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            println!("S29_PAID_QUOTE fee={fee} final_A={} payer_A={} last={:?} replay=true",a(&w),escrow(&w).remaining_a,results[3].code);
+        }
+        let mut poor=World::with_priced_transform_sequence(Config{a_gas_per_epoch:7,..config},tasks,150,8).unwrap();
+        poor.tick(None);
+        let r=poor.tick(Some(read("a/0")));
+        assert_eq!(r,ActionResult::fail(Code::Gas));assert_eq!(a(&poor),7);
+        assert_eq!(escrow(&poor).remaining_a,150);
+    }
+
     #[test]
     fn finite_escrow_settles_real_spendable_a_and_replays(){
         let mut w=world(25,1024);w.tick(None);

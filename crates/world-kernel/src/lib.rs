@@ -975,6 +975,9 @@ impl World {
                 ActionResult::ok(view, 1, 0)
             }
             Action::Read {key,..} => {
+                if let Some(suffix)=key.strip_prefix("/sys/transform-price/") {
+                    return self.read_transform_price(actor,suffix);
+                }
                 // Development-only, paid, owner-only immutable program catalog.
                 // A catalog lists installed SELF versions, not garbage-safe
                 // candidates. Only the real kernel ReclaimIndexedVersion may
