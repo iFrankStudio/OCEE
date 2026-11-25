@@ -1,0 +1,19 @@
+name: S29 Paid Price Decision
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-paid-price-decision.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test -p ocee-world-kernel s29_paid_price_contract_native -- --show-output
+      - run: cargo test -p ocee-world-kernel s29_hidden_price_decision_native -- --show-output
+      - run: cargo test -p ocee-world-kernel s29_paid_price_decision_native -- --show-output

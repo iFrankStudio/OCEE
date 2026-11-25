@@ -1910,4 +1910,155 @@ mod autonomous_pilot{
         println!("S29_HIDDEN_PRICE_RESULTS deltas={deltas:?} exact_projection=true");
     }
 
+
+    // Selected fixture only: threshold from the previous measured 158 A
+    // marginal difference; not a learned or universally valid cost estimate.
+    // mode 0=stop, 1=continue, 2=paid quote. All retain the same encoded
+    // liquidity policy for the first two offers and any authorized third.
+    fn price_decision_root(mode:u32)->Program{
+        let mut p=encoded_feature_root(true);let f=&mut p.functions[0];
+        let ctx=f.blocks.iter().find(|b|b.id=="size_model_start").unwrap().params.clone();
+        let args=ctx.iter().map(|p|p.id).collect::<Vec<_>>();
+        let fail=vec![90,91,93,94];
+        let i=|id,op|Instruction{id,op};
+        let mut slot_ctx=ctx.clone();slot_ctx.push(Param{id:13,ty:Type::Bytes});
+        let mut slot_args=args.clone();slot_args.push(13);
+        let compute=f.blocks.iter_mut().find(|b|b.id=="compute").unwrap();
+        if let Terminator::Branch{if_false,false_args,..}=&mut compute.terminator{
+            assert_eq!(if_false,"size_model_start");
+            assert_eq!(*false_args,args);
+            *if_false="price_slot".into();false_args.push(13);
+        }else{panic!("expected compute branch");}
+        f.blocks.push(Block{id:"price_slot".into(),params:slot_ctx.clone(),instructions:vec![
+            i(10,Op::ConstU32(2)),i(11,Op::EqU32(90,10))
+        ],terminator:Terminator::Branch{condition:11,
+            if_true:"price_choice".into(),true_args:slot_args.clone(),
+            if_false:"size_model_start".into(),false_args:args.clone()}});
+        if mode!=2{
+            f.blocks.push(Block{id:"price_choice".into(),params:slot_ctx,instructions:vec![],
+                terminator:Terminator::Jump{target:if mode==0{"failed"}else{"size_model_start"}.into(),
+                    args:if mode==0{fail}else{args}}});
+        }else{
+            let mut reply=slot_ctx.clone();reply.push(Param{id:2,ty:Type::Bytes});
+            let mut payload_ctx=slot_ctx.clone();payload_ctx.push(Param{id:14,ty:Type::Bytes});
+            let mut payload_args=slot_args.clone();payload_args.push(14);
+            f.blocks.extend([
+                Block{id:"price_choice".into(),params:slot_ctx.clone(),instructions:vec![
+                    i(10,literal(b"/sys/transform-price/")),i(11,Op::Concat(10,13)),
+                    i(12,literal(b"/2")),i(20,Op::Concat(11,12))
+                ],terminator:Terminator::Yield{call:WorldCall::Read,args:vec![20],
+                    next:"price_reply".into(),next_args:slot_args.clone()}},
+                Block{id:"price_reply".into(),params:reply.clone(),instructions:vec![
+                    i(10,literal(b"code")),i(11,Op::JsonFieldString(2,10)),
+                    i(12,literal(b"Ok")),i(20,Op::EqBytes(11,12))
+                ],terminator:Terminator::Branch{condition:20,if_true:"price_identity".into(),
+                    true_args:{let mut a=slot_args.clone();a.push(2);a},
+                    if_false:"failed".into(),false_args:fail.clone()}},
+                Block{id:"price_identity".into(),params:reply,instructions:vec![
+                    i(10,literal(b"payload")),i(14,Op::JsonFieldBytes(2,10)),
+                    i(11,literal(b"task_id")),i(12,Op::JsonFieldString(14,11)),
+                    i(20,Op::EqBytes(12,13))
+                ],terminator:Terminator::Branch{condition:20,if_true:"price_version".into(),
+                    true_args:payload_args.clone(),if_false:"failed".into(),false_args:fail.clone()}},
+                Block{id:"price_version".into(),params:payload_ctx.clone(),instructions:vec![
+                    i(10,literal(b"offer_version")),i(11,Op::JsonFieldU32(14,10)),
+                    i(12,Op::EqU32(11,90))
+                ],terminator:Terminator::Branch{condition:12,if_true:"price_threshold".into(),
+                    true_args:payload_args,if_false:"failed".into(),false_args:fail.clone()}},
+                Block{id:"price_threshold".into(),params:payload_ctx,instructions:vec![
+                    i(10,literal(b"price_a")),i(11,Op::JsonFieldU32(14,10)),
+                    i(12,Op::ConstU32(159)),i(20,Op::Div(11,12)),
+                    i(21,Op::ConstU32(0)),i(22,Op::EqU32(20,21))
+                ],terminator:Terminator::Branch{condition:22,if_true:"failed".into(),
+                    true_args:fail,if_false:"size_model_start".into(),false_args:args}}
+            ]);
+        }
+        p.validate().expect("typed price decision root");p
+    }
+
+    #[test]
+    fn s29_paid_price_decision_native(){
+        let mut totals=Vec::new();
+        for fee in [8u64,32,96]{
+            let mut sums=[0u64;3];
+            for third_price in [1u64,400]{
+                for mode in [0u32,1,2]{
+                    let p=price_decision_root(mode);let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+                    let mut tasks=chain_tasks(1);
+                    tasks[1].0.held_out_input=vec![255;128];tasks[2].0.held_out_input=vec![7;255];
+                    tasks[2].1=third_price;
+                    let mut w=World::with_priced_transform_sequence(Config{seed:129,epoch_length:16,
+                        a_gas_per_epoch:12000,..Config::default()},tasks.clone(),1400,fee).unwrap();
+                    for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                        let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                        assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+                    }
+                    let install=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+                    w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                        kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:1152}});
+                    while w.state.step<16{w.tick(None);}
+                    let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+                    let mut balance=1152u64;let mut payer=1400u64;let mut fees=0;let mut credit=0;
+                    let mut settled=0usize;let mut quotes=0;let mut quote_ok=false;let mut gas=0;
+                    let mut quote_fees=0;let mut third_attempts=0;
+                    for _ in 0..15{
+                        let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                        let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                        let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                        assert_eq!(r,rr);
+                        let cost=r.gas_charged+r.vm_gas_charged;
+                        balance=balance.checked_sub(cost).unwrap().checked_add(r.a_credited).unwrap();
+                        payer=payer.checked_sub(r.a_credited).unwrap();fees+=cost;credit+=r.a_credited;
+                        assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                        let escrow=w.state.transform_escrow.as_ref().unwrap();
+                        assert_eq!(payer,escrow.remaining_a);assert_eq!(balance+payer,2552-fees);
+                        let e=w.audit.last().unwrap();
+                        if r.code==Code::Gas{gas+=1;}
+                        if matches!(&e.action,Some(Action::Read{key,..}) if key.starts_with("/sys/transform-price/")){
+                            assert_eq!(mode,2);assert_eq!(settled,2);quotes+=1;
+                            assert!(matches!(&e.action,Some(Action::Read{key,..}) if key=="/sys/transform-price/c/2"));
+                            assert_eq!(r.a_credited,0);quote_fees+=r.gas_charged;
+                            if r.code==Code::Ok{
+                                quote_ok=true;assert_eq!(r.gas_charged,fee);
+                                assert_eq!(serde_json::from_slice::<serde_json::Value>(&r.payload).unwrap(),
+                                    serde_json::json!({"task_id":"c","offer_version":2,"price_a":third_price}));
+                            }
+                        }
+                        if matches!(&e.action,Some(Action::Write{key,..}) if key=="/self/outcomes/s29-offer-63"){
+                            third_attempts+=1;
+                            assert_ne!(mode,0);
+                            if mode==2{assert!(quote_ok);assert_eq!(third_price,400);}
+                        }
+                        if r.a_credited>0{
+                            let (task,price)=&tasks[settled];
+                            let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                            assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);
+                            assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                            let receipt=&w.state.objects[&key];
+                            assert_eq!(receipt.owner,ORGANISM_ID);assert_eq!(receipt.version,0);
+                            assert_eq!(receipt.bytes.len(),280);assert_eq!(receipt.bytes[0],task.held_out_input.len() as u8);
+                            assert_eq!(&receipt.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                            assert!(receipt.bytes[33..].iter().all(|b|*b==0x55));
+                            assert_eq!(escrow.sequence.as_ref().unwrap().settled[settled],
+                                TransformSettlement{outcome_key:key,offer_version:settled as u64,step:e.step,price_a:*price});
+                            settled+=1;
+                        }
+                    }
+                    assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+                    assert_eq!(credit,tasks.iter().take(settled).map(|(_,p)|*p).sum::<u64>());
+                    assert!(settled>=2);assert!(settled<=3);
+                    assert!(quotes<=1);assert!(third_attempts<=1);
+                    if mode==0{assert_eq!(settled,2);assert_eq!(quotes,0);}
+                    if mode==1{assert_eq!(quotes,0);}
+                    if mode==2{assert_eq!(quotes,1);if third_price==1{assert_eq!(third_attempts,0);assert_eq!(settled,2);}}
+                    sums[mode as usize]+=balance;
+                    println!("S29_PRICE_POLICY fee={fee} third_price={third_price} mode={mode} root={hash} root_B={} install_A={install} settled={settled} quotes={quotes} quote_ok={quote_ok} quote_fees={quote_fees} third_attempts={third_attempts} credit={credit} fees={fees} final_A={balance} payer_A={payer} gas={gas} return={:?} replay=true",raw.len(),w.state.organisms[&ORGANISM_ID].last_return);
+                }
+            }
+            let delta=sums[2] as i64-sums[0].max(sums[1]) as i64;
+            totals.push((fee,sums,delta));
+        }
+        println!("S29_PRICE_POLICY_RESULTS equal_mixture_twice_mean={totals:?}");
+    }
+
 }
