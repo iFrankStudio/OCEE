@@ -1113,3 +1113,7 @@
 ### 2026-11-25 — 报价迁移原生验收、流动性优先消融
 - [审计及排序消融协议](./experiments/E001/DEV-S29-LIQUIDITY-FIRST-QUOTE.md)，[CI #45613859968](https://github.com/iFrankStudio/OCEE/actions/runs/45613859968) @efb9a8f，1/1原生，108轨迹独立账本/复演；RAW/ENCODED/BOUND任务96/96/83、余额10572/10436/9196、Gas40/28/46、正常返回30/32/29。BOUND 18格6正12负，正值皆8A；不选默认。DENSE1024/SPARSE1152报价后无第三提交，暴露先询价再判断流动性的浪费。
 - 新LIQUIDITY_FIRST仅交换原ENCODED流动性门与报价决策顺序，原阈值159/费用/矩阵不变，拒绝时跳过查询、通过后报价并按原阈值提交；不保证真实足额资源，低价臂多门开销也可能亏损。4根×原36环境=144轨迹，真实账本/产物/复演及成本，待CI。G0 GO/G1,G2 NO-GO；全量workspace仍未验收。
+
+### 2026-11-25 — 流动性优先原生验收、报价表示消融
+- [原生审计与表示协议](./experiments/E001/DEV-S29-COMPACT-QUOTE.md)，[CI #45614616021](https://github.com/iFrankStudio/OCEE/actions/runs/45614616021) @717c050，144轨迹独立账本/复演。FIRST相对BOUND查询32->24、Gas46->34、正常29->31、任务83不变、余额9196->9668，18格全部低于最佳简单根；低价通过门臂额外14A，安装659A/10406B，未选默认。
+- 新COMPACT同一opt-in收费身份版本契约的2B LE报价表示，旧JSON保持，VM原指令和阈值159不变，FIRST排序不变；七价边界/失效/无余额/旧契约测试及5根×36环境=180轨迹；待原生，不假定盈利。G0 GO/G1,G2 NO-GO；全量workspace仍未验收。

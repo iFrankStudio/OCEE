@@ -976,7 +976,10 @@ impl World {
             }
             Action::Read {key,..} => {
                 if let Some(suffix)=key.strip_prefix("/sys/transform-price/") {
-                    return self.read_transform_price(actor,suffix);
+                    return self.read_transform_price(actor,suffix,false);
+                }
+                if let Some(suffix)=key.strip_prefix("/sys/transform-price-u16/") {
+                    return self.read_transform_price(actor,suffix,true);
                 }
                 // Development-only, paid, owner-only immutable program catalog.
                 // A catalog lists installed SELF versions, not garbage-safe
