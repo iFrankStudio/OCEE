@@ -266,6 +266,58 @@ mod tests{
         println!("S29_COMPACT_CONTRACT seven_prices=true stale=true legacy=true gas=true replay=true");
     }
 
+
+    #[test]
+    fn s29_earned_resource_epoch_boundary_native(){
+        // No new mechanism: directly test legacy grant reset against real
+        // escrow earnings. Scripted actions isolate the accounting boundary.
+        for price in [1u64,100]{
+            let mut w=World::with_transform_escrow(Config{seed:129,a_gas_per_epoch:25,
+                epoch_length:4,..Config::default()},task(),150,price).unwrap();
+            w.tick(None);assert_eq!(a(&w),25);
+            let paid=w.tick(Some(write(ORGANISM_ID,KEY,receipt(),None)));
+            assert_eq!(paid.code,Code::Ok);assert_eq!(paid.gas_charged,20);
+            assert_eq!(paid.a_credited,price);assert_eq!(a(&w),5+price);
+            assert_eq!(escrow(&w).remaining_a,150-price);
+            w.schedule_event(ScheduledEvent{due_step:4,priority:0,sequence_no:0,
+                kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:0}});
+            let snapshot=w.snapshot_json();
+            for delayed in [false,true]{
+                let mut branch=World::from_snapshot(&snapshot).unwrap();
+                let mut replay=World::from_snapshot(&snapshot).unwrap();
+                let work="/self/epoch-boundary-work";
+                let mut fee=0u64;let mut expired=0u64;let mut work_code=None;
+                for step in 2..6{
+                    assert_eq!(branch.state.step,step);
+                    let before=a(&branch);
+                    let action=if step==if delayed{4}else{3}{
+                        Some(write(ORGANISM_ID,work,vec![0x37;280],None))
+                    }else{None};
+                    let attempted=action.is_some();
+                    let r=branch.tick(action.clone());assert_eq!(r,replay.tick(action));
+                    assert_eq!(r.a_credited,0);
+                    assert_eq!(escrow(&branch).remaining_a,150-price);
+                    if step==4{
+                        expired=before;
+                        assert_eq!(branch.state.nodes[&NodeId::A].gas_per_epoch,0);
+                        assert_eq!(a(&branch),0);assert_eq!(r.gas_charged,0);
+                    }else{assert_eq!(a(&branch),before-r.gas_charged-r.vm_gas_charged);}
+                    fee+=r.gas_charged+r.vm_gas_charged;
+                    if attempted{work_code=Some(r.code);}
+                }
+                let success=price==100 && !delayed;
+                assert_eq!(work_code,Some(if success{Code::Ok}else{Code::Gas}));
+                assert_eq!(branch.state.objects.contains_key(work),success);
+                assert_eq!(fee,if success{20}else{0});
+                assert_eq!(expired,5+price-fee);
+                assert_eq!(a(&branch),0);assert_eq!(branch.state.objects[KEY].bytes,receipt());
+                assert_eq!(escrow(&branch).paid_a,price);
+                assert_eq!(branch.snapshot_json(),replay.snapshot_json());assert_eq!(branch.audit,replay.audit);
+                println!("S29_EARNED_EPOCH price={price} delayed={delayed} initial_A=25 settlement_fee=20 credit={price} work_fee={fee} expired_A={expired} final_A=0 payer_A={} work={work_code:?} replay=true",escrow(&branch).remaining_a);
+            }
+        }
+    }
+
     #[test]
     fn finite_escrow_settles_real_spendable_a_and_replays(){
         let mut w=world(25,1024);w.tick(None);

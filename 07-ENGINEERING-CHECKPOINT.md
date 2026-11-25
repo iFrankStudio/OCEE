@@ -1117,3 +1117,7 @@
 ### 2026-11-25 — 流动性优先原生验收、报价表示消融
 - [原生审计与表示协议](./experiments/E001/DEV-S29-COMPACT-QUOTE.md)，[CI #45614616021](https://github.com/iFrankStudio/OCEE/actions/runs/45614616021) @717c050，144轨迹独立账本/复演。FIRST相对BOUND查询32->24、Gas46->34、正常29->31、任务83不变、余额9196->9668，18格全部低于最佳简单根；低价通过门臂额外14A，安装659A/10406B，未选默认。
 - 新COMPACT同一opt-in收费身份版本契约的2B LE报价表示，旧JSON保持，VM原指令和阈值159不变，FIRST排序不变；七价边界/失效/无余额/旧契约测试及5根×36环境=180轨迹；待原生，不假定盈利。G0 GO/G1,G2 NO-GO；全量workspace仍未验收。
+
+### 2026-11-25 — 紧凑报价原生验收、暂停局部优化、跨epoch资源边界
+- [审计及边界协议](./experiments/E001/DEV-S29-EARNED-RESOURCE-EPOCH.md)，[CI #45615030461](https://github.com/iFrankStudio/OCEE/actions/runs/45615030461) @992225a，3/3原生、180轨迹独立账本/复演。COMPACT任务84/余额10520/费用44524/credit12036/Gas28/正常32；相对FIRST余额+852（费用少452、credit多400），18格6正12负，安装661A/10448B vs简根484A/7603B。不选默认，暂停报价局部优化。
+- 转向更基础的生命周期经济：现grant_epoch覆盖全部gas_available，赚取余额未独立持久。冻结旧行为四轨迹：25A、price1/100、epoch4零授予、结算后fork早/晚同一普通280B写入；检验真实费、余额过期、payer不退款、正确产物与复演。仅脚本会计边界、无新机制，待原生。若验证再设计独立有限earned账户，不把周期配额等同可累积资本。G0 GO/G1,G2 NO-GO。
