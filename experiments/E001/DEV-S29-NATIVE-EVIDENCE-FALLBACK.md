@@ -1,0 +1,9 @@
+# S29 native evidence retrieval fallback
+
+The GitHub connector's commit-workflow query currently returns PR-triggered runs only. Public Actions/API and the local GitHub network path are unavailable in the research session; no local Rust toolchain was found. Empty workflow results do not imply no run.
+
+For the frozen S29 paid-price decision workflow only, preserve the three existing commands and gating. The native job has contents: read and disables persisted checkout credentials. Each cargo exit code and the allowlisted test output are captured, including nonzero results. Later tests are skipped when an earlier test fails. The native job still exits nonzero on failure; evidence publication does not convert it into success. The report is uploaded as an artifact.
+
+A separate job with contents: write checks out the exact source SHA, downloads the report, verifies source SHA and run ID, appends native job result and commits the single report to an isolated branch. Branch format: research-evidence/s29-paid-price-<full-source-sha>-<run-attempt>. No force push, no main write, no test execution in the write job, no arbitrary log dump, no credentials copied. Only main-triggered runs can publish. First attempt branch ends in -1. Read experiments/E001/evidence/s29-paid-price-report.txt at that ref through ordinary repository contents retrieval. Cross-check source SHA, run ID, exit codes, expected trajectory count and independent ledger arithmetic before accepting any result. Failed or partial reports are not acceptance. If publication itself fails, record that blocker; do not infer a test result.
+
+This is an opt-in evidence plumbing change for the single pilot, not a new world mechanism or a general deployment. Repository Actions policy may disallow token write permissions; this fallback is not yet validated. G0 GO/G1,G2 NO-GO.

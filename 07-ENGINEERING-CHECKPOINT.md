@@ -1099,3 +1099,4 @@
 ### 2026-11-25 — S29 付费报价决策 pilot（待原生）
 - [协议](./experiments/E001/DEV-S29-PAID-PRICE-DECISION.md)：上一契约 CI 尚不可读，不宣称通过。新工作流串行执行契约、旧隐藏报酬反例、VM 三策略对照。固定第三项 STOP/CONTINUE 与 QUOTE（实际任务ID、版本绑定、159A人工冻结阈值、保留原流动性门），8/32/96A×低高报价×3根，共18轨迹。报告真实运行及安装开销、Gas、产物、账本、精确复演；不预设盈利或高价成功。固定机制反例非泛化、非学习，待原生。G0 GO/G1,G2 NO-GO。
 - 静态复查 @fd0c252 发现根构造错误：ENCODED compute 的源寄存器35传入目标参数98，旧 pilot 断言直接比较两组ID必然失败。修正源参数映射并重新触发同一冻结实验，未更改策略/阈值/样本。连接器仅列PR触发运行，公共 Actions/API访问失败，未取得任何新原生结果；不可宣称已验收。
+- [证据读取备援](./experiments/E001/DEV-S29-NATIVE-EVIDENCE-FALLBACK.md)：再次验证公共 Actions/API 不可访问、本地 GitHub DNS 失败且无 cargo，连接器仅 PR 运行。冻结原三项测试及先后门禁，native只读、记录各退出码和白名单原生结果；隔离 evidence job 单独 contents:write，将报告提交至 research-evidence/s29-paid-price-<source SHA>-<attempt> 分支，不写main、不强推。可经普通文件接口读取；须核对源SHA/运行ID/账本，写权限及备援尚未验收。不得把发布成功等同实验成功。
