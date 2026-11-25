@@ -1693,4 +1693,127 @@ mod autonomous_pilot{
         println!("S29_ONLINE_FEATURE_RESULTS checked={checked:?} choices={choices:?} pairs={paired:?}");
         assert_eq!(checked.len(),4);assert_eq!(choices,std::collections::BTreeSet::from([0,1]));
     }
+
+    #[test]
+    fn s29_hidden_price_decision_native(){
+        let tape="DENSE_TO_SPARSE";
+        let grant=1152u64;
+        let mut projections=std::collections::BTreeMap::new();
+        let mut deltas=Vec::new();
+        for third_price in [1u64,400]{
+            let mut outcomes=Vec::new();
+            for estimate in [false,true]{
+                let p=encoded_feature_root(estimate);let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+                let mut tasks=chain_tasks(1);
+                tasks[1].0.held_out_input=vec![255;128];tasks[2].0.held_out_input=vec![7;255];
+                tasks[2].1=third_price;
+                let mut w=World::with_transform_sequence(Config{seed:129,epoch_length:16,
+                    a_gas_per_epoch:12000,..Config::default()},tasks.clone(),1400).unwrap();
+                for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                    let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                    assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+                }
+                let paid=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+                w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                    kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:grant}});
+                while w.state.step<16{w.tick(None);}
+                let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+                let mut balance=grant;let mut remaining=1400u64;let mut fees=0u64;
+                let mut received=0u64;let mut settlements=Vec::new();let mut reads=Vec::new();let mut gas=0;
+                let mut prefix=Vec::new();let mut third_paid=false;
+                let mut features=Vec::new();let mut sensors=Vec::new();let mut intervals=Vec::new();let mut last_sensor:Option<(u64,u64,u64)>=None;
+                for _ in 0..15{
+                    let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                    let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                    let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                    assert_eq!(r,rr);
+                    let fee=r.gas_charged+r.vm_gas_charged;
+                    balance=balance.checked_sub(fee).unwrap().checked_add(r.a_credited).unwrap();
+                    remaining=remaining.checked_sub(r.a_credited).unwrap();
+                    received+=r.a_credited;fees+=fee;
+                    assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                    let escrow=w.state.transform_escrow.as_ref().unwrap();
+                    assert_eq!(remaining,escrow.remaining_a);assert_eq!(balance+remaining,grant+1400-fees);
+                    let e=w.audit.last().unwrap();
+                    if !third_paid{
+                        let mut projected=r.clone();
+                        if settlements.len()==2&&r.a_credited>0{projected.a_credited=0;third_paid=true;}
+                        prefix.push((e.step,e.action.clone(),projected));
+                    }
+                    if r.code==Code::Gas{gas+=1;}
+                    if matches!(&e.action,Some(Action::Read{key,..}) if key=="/sys/resource-status")&&r.code==Code::Ok{
+                        assert_eq!(r.gas_charged,2);
+                        let v:serde_json::Value=serde_json::from_slice(&r.payload).unwrap();
+                        assert_eq!(v["a_available"].as_u64(),Some(balance));
+                        assert_eq!(v["capacity"].as_u64(),Some(w.state.nodes[&NodeId::A].storage_capacity));
+                        assert_eq!(v["used"].as_u64(),Some(w.state.organisms[&ORGANISM_ID].storage_used));
+                        if let Some((old,credit,spent))=last_sensor{
+                            let cost=old+(received-credit)-balance;
+                            assert_eq!(cost,fees-spent);assert!(cost>0);
+                            intervals.push((cost,balance,balance/cost));
+                        }
+                        last_sensor=Some((balance,received,fees));sensors.push((e.step,balance));
+                    }
+                    if matches!(&e.action,Some(Action::Read{key,..}) if key==OFFER)&&r.code==Code::Ok{
+                        let slot=settlements.len();
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&r.payload).unwrap(),tasks[slot].0);
+                        reads.push((e.step,slot));
+                        let raw_len=tasks[slot].0.held_out_input.len() as u32;
+                        let json_len=r.payload.len() as u32;
+                        let feature=if estimate{(raw_len+json_len)/2}else{raw_len};
+                        if slot>0{
+                            let c=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().unwrap();
+                            assert_eq!(c.registers.get(&93),Some(&Value::U32(features[slot-1])));
+                        }
+                        assert_eq!(features.len(),slot);features.push(feature);
+                    }
+                    if r.a_credited>0{
+                        let slot=settlements.len();let (task,price)=&tasks[slot];
+                        let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                        assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,20);
+                        assert!(reads.iter().any(|(step,i)|*step<e.step&&*i==slot));
+                        assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                        let c=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().unwrap();
+                        assert_eq!(c.registers.get(&98),Some(&Value::U32(features[slot])));
+                        // No feature or price is supplied by the host.
+                        settlements.push((e.step,slot,*price));
+                        let ledger=&escrow.sequence.as_ref().unwrap().settled;
+                        assert_eq!(ledger.len(),slot+1);
+                        assert_eq!(ledger[slot],TransformSettlement{outcome_key:key,offer_version:slot as u64,step:e.step,price_a:*price});
+                    }
+                }
+                println!("S29_HIDDEN_PRICE third_price={third_price} tape={tape} grant={grant} estimate={estimate} root={hash} root_B={} install_A={paid} settlements={settlements:?} reads={reads:?} sensors={sensors:?} intervals={intervals:?} features={features:?} credit={received} fees={fees} final_A={balance} payer_A={remaining} gas={gas} return={:?} replay=true",raw.len(),w.state.organisms[&ORGANISM_ID].last_return);
+                assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+                let expected=settlements.len();
+                assert_eq!(expected,if estimate{3}else{2});
+                assert_eq!(gas,0);
+                assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(expected as u32)));
+                assert_eq!(third_paid,estimate);
+                if third_price==1{projections.insert(estimate,prefix);}else{
+                    assert_eq!(projections.get(&estimate),Some(&prefix),"price-blind actual projection before payout");
+                }
+                assert_eq!(received,tasks.iter().take(expected).map(|(_,p)|*p).sum::<u64>());
+                assert!(sensors.len()<=expected+1);
+                assert_eq!(intervals.len(),sensors.len().saturating_sub(1));
+                for (slot,(task,_)) in tasks.iter().enumerate(){
+                    let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                    assert_eq!(w.state.objects.contains_key(&key),slot<expected);
+                    if slot<expected{
+                        let o=&w.state.objects[&key];assert_eq!(o.owner,ORGANISM_ID);assert_eq!(o.version,0);
+                        assert_eq!(o.bytes.len(),280);assert_eq!(o.bytes[0],task.held_out_input.len() as u8);
+                        assert_eq!(&o.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                        assert!(o.bytes[33..].iter().all(|b|*b==0x55));
+                    }
+                }
+                outcomes.push((expected,intervals.first().copied(),gas,balance,fees,paid));
+            }
+            assert_eq!(outcomes[0].1,outcomes[1].1,"same first observed interval");
+            let (raw,encoded)=(&outcomes[0],&outcomes[1]);
+            let delta=encoded.3 as i64-raw.3 as i64;
+            deltas.push((third_price,delta));
+            if third_price==1{assert!(delta<0);}else{assert!(delta>0);}
+        }
+        println!("S29_HIDDEN_PRICE_RESULTS deltas={deltas:?} exact_projection=true");
+    }
+
 }
