@@ -1,0 +1,20 @@
+source_sha=aea36acd567d870bb82f1b8fed040e760e180612
+run_id=45619699275
+run_attempt=1
+test=s29_autonomous_persistent_earned_native exit=0
+running 1 test
+S29_AUTONOMOUS_PERSISTENT id=a persistent=false price=1 root=82b103c6e0be27474a27918a2c639a130ad7b2005ba9b13f72fbb769e369a5a3 root_B=7367 install_A=469 credit=1 fees=150 expired_A=107 post_fees=0 final_A=0 earned=0 payer_A=999 submitted_at=Some(31) worked_at=None gas=12 return=None replay=true
+S29_AUTONOMOUS_PERSISTENT id=a persistent=true price=1 root=82b103c6e0be27474a27918a2c639a130ad7b2005ba9b13f72fbb769e369a5a3 root_B=7367 install_A=469 credit=1 fees=150 expired_A=106 post_fees=0 final_A=1 earned=1 payer_A=999 submitted_at=Some(31) worked_at=None gas=12 return=None replay=true
+S29_AUTONOMOUS_PERSISTENT id=a persistent=false price=1000 root=82b103c6e0be27474a27918a2c639a130ad7b2005ba9b13f72fbb769e369a5a3 root_B=7367 install_A=469 credit=1000 fees=150 expired_A=1106 post_fees=0 final_A=0 earned=0 payer_A=0 submitted_at=Some(31) worked_at=None gas=12 return=None replay=true
+S29_AUTONOMOUS_PERSISTENT id=a persistent=true price=1000 root=82b103c6e0be27474a27918a2c639a130ad7b2005ba9b13f72fbb769e369a5a3 root_B=7367 install_A=469 credit=1000 fees=445 expired_A=106 post_fees=295 final_A=705 earned=705 payer_A=0 submitted_at=Some(31) worked_at=Some(32) gas=0 return=Some(U32(1)) replay=true
+S29_AUTONOMOUS_PERSISTENT id=b persistent=false price=1 root=82b103c6e0be27474a27918a2c639a130ad7b2005ba9b13f72fbb769e369a5a3 root_B=7367 install_A=469 credit=1 fees=153 expired_A=104 post_fees=0 final_A=0 earned=0 payer_A=999 submitted_at=Some(31) worked_at=None gas=12 return=None replay=true
+S29_AUTONOMOUS_PERSISTENT id=b persistent=true price=1 root=82b103c6e0be27474a27918a2c639a130ad7b2005ba9b13f72fbb769e369a5a3 root_B=7367 install_A=469 credit=1 fees=153 expired_A=103 post_fees=0 final_A=1 earned=1 payer_A=999 submitted_at=Some(31) worked_at=None gas=12 return=None replay=true
+S29_AUTONOMOUS_PERSISTENT id=b persistent=false price=1000 root=82b103c6e0be27474a27918a2c639a130ad7b2005ba9b13f72fbb769e369a5a3 root_B=7367 install_A=469 credit=1000 fees=153 expired_A=1103 post_fees=0 final_A=0 earned=0 payer_A=0 submitted_at=Some(31) worked_at=None gas=12 return=None replay=true
+S29_AUTONOMOUS_PERSISTENT id=b persistent=true price=1000 root=82b103c6e0be27474a27918a2c639a130ad7b2005ba9b13f72fbb769e369a5a3 root_B=7367 install_A=469 credit=1000 fees=448 expired_A=103 post_fees=295 final_A=705 earned=705 payer_A=0 submitted_at=Some(31) worked_at=Some(32) gas=0 return=Some(U32(1)) replay=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 35 filtered out; finished in 1.01s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+native_exit=0
+native_job_result=success
