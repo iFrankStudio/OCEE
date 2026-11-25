@@ -1,0 +1,38 @@
+source_sha=76b460054b2060ff5ab1f0df77447121e57409ae
+run_id=45618614560
+run_attempt=1
+test=s29_earned_resource_epoch_boundary_native exit=0
+running 1 test
+S29_EARNED_EPOCH price=1 delayed=false initial_A=25 settlement_fee=20 credit=1 work_fee=0 expired_A=6 final_A=0 payer_A=149 work=Some(Gas) replay=true
+S29_EARNED_EPOCH price=1 delayed=true initial_A=25 settlement_fee=20 credit=1 work_fee=0 expired_A=6 final_A=0 payer_A=149 work=Some(Gas) replay=true
+S29_EARNED_EPOCH price=100 delayed=false initial_A=25 settlement_fee=20 credit=100 work_fee=20 expired_A=85 final_A=0 payer_A=50 work=Some(Ok) replay=true
+S29_EARNED_EPOCH price=100 delayed=true initial_A=25 settlement_fee=20 credit=100 work_fee=0 expired_A=105 final_A=0 payer_A=50 work=Some(Gas) replay=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 0.01s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+test=s29_persistent_earned_account_native exit=0
+running 1 test
+S29_PERSISTENT_EARNED persistent=false price=1 work_fees=0 final_A=0 earned=None payer_A=149 replay=true
+S29_PERSISTENT_EARNED persistent=false price=100 work_fees=20 final_A=0 earned=None payer_A=50 replay=true
+S29_PERSISTENT_EARNED persistent=true price=1 work_fees=0 final_A=1 earned=Some(1) payer_A=149 replay=true
+S29_PERSISTENT_EARNED persistent=true price=100 work_fees=60 final_A=45 earned=Some(45) payer_A=50 replay=true
+S29_PERSISTENT_EARNED overflow_clip=true atomic_rejection=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 0.01s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+test=s29_paid_price_contract_native exit=0
+running 1 test
+S29_PAID_QUOTE fee=8 final_A=256 payer_A=50 last=Ok replay=true
+S29_PAID_QUOTE fee=32 final_A=184 payer_A=50 last=Ok replay=true
+S29_PAID_QUOTE fee=96 final_A=88 payer_A=50 last=Gas replay=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 0.01s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+native_exit=0
+native_job_result=success
