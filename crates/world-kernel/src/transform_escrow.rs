@@ -188,7 +188,7 @@ mod tests{
         let before=a(&legacy);
         let r=legacy.tick(Some(read("a/0")));
         assert_eq!(r,ActionResult::fail(Code::NotFound));assert_eq!(a(&legacy),before);
-        assert!(!legacy.snapshot_json().contains("price_query_fee"));
+        assert!(!std::str::from_utf8(&legacy.snapshot_json()).unwrap().contains("price_query_fee"));
         for fee in [8u64,32,96]{
             let mut w=World::with_priced_transform_sequence(config.clone(),tasks.clone(),150,fee).unwrap();
             w.tick(None);
