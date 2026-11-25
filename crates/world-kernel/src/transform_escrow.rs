@@ -1926,7 +1926,11 @@ mod autonomous_pilot{
         let compute=f.blocks.iter_mut().find(|b|b.id=="compute").unwrap();
         if let Terminator::Branch{if_false,false_args,..}=&mut compute.terminator{
             assert_eq!(if_false,"size_model_start");
-            assert_eq!(*false_args,args);
+            // Arguments are source-block registers; params are destination IDs.
+            // ENCODED supplies computed feature r35 to destination r98.
+            let mut source_args=args.clone();
+            assert_eq!(source_args.pop(),Some(98));source_args.push(35);
+            assert_eq!(*false_args,source_args);
             *if_false="price_slot".into();false_args.push(13);
         }else{panic!("expected compute branch");}
         f.blocks.push(Block{id:"price_slot".into(),params:slot_ctx.clone(),instructions:vec![

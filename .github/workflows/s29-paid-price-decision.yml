@@ -1,4 +1,5 @@
 name: S29 Paid Price Decision
+# Re-run the frozen pilot after correcting source/destination register mapping.
 on:
   push:
     branches: [main]
