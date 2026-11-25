@@ -18,6 +18,9 @@ pub struct TransformEscrow{
     /// Opt-in development quote fee. Absent in legacy snapshots.
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub price_query_fee:Option<u64>,
+    /// Opt-in earned portion of A's total spendable balance. None = legacy quota reset.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub earned_a:Option<u64>,
 }
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 pub struct TransformSequence{
@@ -44,7 +47,7 @@ impl World{
         w.state.objects.insert(OFFER.into(),Object{owner:0,version:0,bytes:offer.clone()});
         w.state.transform_escrow=Some(TransformEscrow{
             initial_a:endowment,remaining_a:endowment,price_a:price,offer,
-            outcome_key,paid_at:None,paid_a:0,sequence:None,price_query_fee:None
+            outcome_key,paid_at:None,paid_a:0,sequence:None,price_query_fee:None,earned_a:None
         });
         Ok(w)
     }
@@ -78,6 +81,14 @@ impl World{
         if !(1..=128).contains(&fee){return Err(Code::BadRequest);}
         let mut w=Self::with_transform_sequence(config,tasks,endowment)?;
         w.state.transform_escrow.as_mut().unwrap().price_query_fee=Some(fee);
+        Ok(w)
+    }
+
+    /// Trusted opt-in single-offer accounting pilot; no VM enable action.
+    pub fn with_persistent_transform_escrow(config:Config,task:TransformTask,
+        endowment:u64,price:u64)->Result<Self,Code>{
+        let mut w=Self::with_transform_escrow(config,task,endowment,price)?;
+        w.state.transform_escrow.as_mut().unwrap().earned_a=Some(0);
         Ok(w)
     }
 
@@ -143,9 +154,16 @@ impl World{
         let price=escrow.price_a;
         let Some(balance)=self.state.nodes[&NodeId::A].gas_available.checked_add(price) else{return 0;};
         let Some(remaining)=escrow.remaining_a.checked_sub(price) else{return 0;};
-        // Both checked before mutating either account.
+        let earned=if let Some(old)=escrow.earned_a{
+            let Some(new)=old.checked_add(price) else{return 0;};
+            if old>self.state.nodes[&NodeId::A].gas_available ||
+                old>already_paid || new>escrow.initial_a-remaining{return 0;}
+            Some(new)
+        }else{None};
+        // All checks before mutating either account.
         self.state.nodes.get_mut(&NodeId::A).unwrap().gas_available=balance;
         let e=self.state.transform_escrow.as_mut().unwrap();
+        e.earned_a=earned;
         e.remaining_a=remaining;e.paid_at=Some(step);e.paid_a=price;
         let next=if let Some(seq)=e.sequence.as_mut(){
             seq.settled.push(TransformSettlement{outcome_key:key.into(),offer_version:version,step,price_a:price});
@@ -316,6 +334,71 @@ mod tests{
                 println!("S29_EARNED_EPOCH price={price} delayed={delayed} initial_A=25 settlement_fee=20 credit={price} work_fee={fee} expired_A={expired} final_A=0 payer_A={} work={work_code:?} replay=true",escrow(&branch).remaining_a);
             }
         }
+    }
+
+
+    #[test]
+    fn s29_persistent_earned_account_native(){
+        for persistent in [false,true]{
+        for price in [1u64,100]{
+            let config=Config{seed:129,a_gas_per_epoch:25,epoch_length:4,..Config::default()};
+            let mut w=if persistent{World::with_persistent_transform_escrow(config,task(),150,price)}
+                else{World::with_transform_escrow(config,task(),150,price)}.unwrap();
+            w.tick(None);
+            let r=w.tick(Some(write(ORGANISM_ID,KEY,receipt(),None)));
+            assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,20);assert_eq!(r.a_credited,price);
+            assert_eq!(a(&w),5+price);assert_eq!(escrow(&w).earned_a,persistent.then_some(price));
+            w.schedule_event(ScheduledEvent{due_step:4,priority:0,sequence_no:0,
+                kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:0}});
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let mut fees=0;
+            for step in 2..10{
+                assert_eq!(w.state.step,step);
+                let before=a(&w);
+                let earned=escrow(&w).earned_a;
+                let action=match step{
+                    3=>Some(write(ORGANISM_ID,"/self/early-work",vec![7;280],None)),
+                    4=>Some(write(ORGANISM_ID,"/self/late-work",vec![8;280],None)),
+                    8=>Some(write(ORGANISM_ID,"/self/second-late-work",vec![9;280],None)),
+                    _=>None
+                };
+                let r=w.tick(action.clone());assert_eq!(r,replay.tick(action));
+                assert_eq!(r.a_credited,0);assert_eq!(escrow(&w).remaining_a,150-price);
+                let fresh=if step==4||step==8{earned.unwrap_or(0)}else{before};
+                assert_eq!(a(&w),fresh-r.gas_charged-r.vm_gas_charged);
+                if persistent{
+                    let earned=earned.unwrap();
+                    let quota=fresh-earned;
+                    assert_eq!(escrow(&w).earned_a,Some(earned-r.gas_charged.saturating_sub(quota)));
+                }else{assert_eq!(escrow(&w).earned_a,None);}
+                if [3,4,8].contains(&step){
+                    let ok=price==100 && (step==3||persistent);
+                    assert_eq!(r.code,if ok{Code::Ok}else{Code::Gas});
+                    assert_eq!(r.gas_charged,if ok{20}else{0});
+                }
+                fees+=r.gas_charged;
+            }
+            let expected=if persistent{if price==100{45}else{1}}else{0};
+            assert_eq!(a(&w),expected);assert_eq!(escrow(&w).earned_a,persistent.then_some(expected));
+            assert_eq!(fees,if price==100{if persistent{60}else{20}}else{0});
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            println!("S29_PERSISTENT_EARNED persistent={persistent} price={price} work_fees={fees} final_A={} earned={:?} payer_A={} replay=true",a(&w),escrow(&w).earned_a,escrow(&w).remaining_a);
+        }
+        }
+        // Arithmetic edge: initial grant clipped only when a later epoch
+        // combines u64::MAX configured quota and actual earned resources.
+        let mut w=World::with_persistent_transform_escrow(Config{seed:129,a_gas_per_epoch:25,
+            epoch_length:4,..Config::default()},task(),150,100).unwrap();
+        w.tick(None);assert_eq!(w.tick(Some(write(ORGANISM_ID,KEY,receipt(),None))).a_credited,100);
+        w.schedule_event(ScheduledEvent{due_step:4,priority:0,sequence_no:0,
+            kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:u64::MAX}});
+        while w.state.step<=4{w.tick(None);}
+        assert_eq!(a(&w),u64::MAX);assert_eq!(escrow(&w).earned_a,Some(100));
+        assert_eq!(w.spend_a_gas(u64::MAX),Ok(()));assert_eq!(a(&w),0);
+        assert_eq!(escrow(&w).earned_a,Some(0));
+        assert_eq!(w.spend_a_gas(1),Err(Code::Gas));
+        assert_eq!(escrow(&w).earned_a,Some(0));
+        println!("S29_PERSISTENT_EARNED overflow_clip=true atomic_rejection=true");
     }
 
     #[test]

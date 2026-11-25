@@ -523,8 +523,13 @@ impl World {
     fn grant_epoch_if_needed(&mut self) {
         let epoch = self.state.step / self.state.config.epoch_length;
         if self.state.last_granted_epoch == Some(epoch) { return; }
-        for node in self.state.nodes.values_mut() {
-            node.gas_available = node.gas_per_epoch;
+        let earned=self.state.transform_escrow.as_ref().and_then(|e|e.earned_a);
+        for (id,node) in self.state.nodes.iter_mut() {
+            // Preserve finite earned A first. In the overflow edge case the
+            // effective fresh grant is clipped, never the earned balance.
+            node.gas_available = if *id==NodeId::A {
+                node.gas_per_epoch.saturating_add(earned.unwrap_or(0))
+            }else{node.gas_per_epoch};
             node.bandwidth_available = node.bandwidth_per_epoch;
         }
         self.state.last_granted_epoch = Some(epoch);
@@ -785,9 +790,16 @@ impl World {
     }
 
     fn spend_a_gas(&mut self, amount: u64) -> Result<(), Code> {
-        let a = self.state.nodes.get_mut(&NodeId::A).expect("node A");
-        if a.gas_available < amount { return Err(Code::Gas); }
-        a.gas_available -= amount;
+        let total=self.state.nodes[&NodeId::A].gas_available;
+        if total < amount { return Err(Code::Gas); }
+        if let Some(e)=self.state.transform_escrow.as_mut(){
+            if let Some(earned)=e.earned_a{
+                let quota=total.checked_sub(earned).ok_or(Code::BadRequest)?;
+                // Expiring quota first. Failed spends mutate neither account.
+                e.earned_a=Some(earned-amount.saturating_sub(quota));
+            }
+        }
+        self.state.nodes.get_mut(&NodeId::A).expect("node A").gas_available=total-amount;
         Ok(())
     }
 

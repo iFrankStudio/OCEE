@@ -1121,3 +1121,7 @@
 ### 2026-11-25 — 紧凑报价原生验收、暂停局部优化、跨epoch资源边界
 - [审计及边界协议](./experiments/E001/DEV-S29-EARNED-RESOURCE-EPOCH.md)，[CI #45615030461](https://github.com/iFrankStudio/OCEE/actions/runs/45615030461) @992225a，3/3原生、180轨迹独立账本/复演。COMPACT任务84/余额10520/费用44524/credit12036/Gas28/正常32；相对FIRST余额+852（费用少452、credit多400），18格6正12负，安装661A/10448B vs简根484A/7603B。不选默认，暂停报价局部优化。
 - 转向更基础的生命周期经济：现grant_epoch覆盖全部gas_available，赚取余额未独立持久。冻结旧行为四轨迹：25A、price1/100、epoch4零授予、结算后fork早/晚同一普通280B写入；检验真实费、余额过期、payer不退款、正确产物与复演。仅脚本会计边界、无新机制，待原生。若验证再设计独立有限earned账户，不把周期配额等同可累积资本。G0 GO/G1,G2 NO-GO。
+
+### 2026-11-25 — 旧跨epoch边界验收、有限持久收入账本
+- [边界CI #45617241323](https://github.com/iFrankStudio/OCEE/actions/runs/45617241323) @1f779d0，1/1原生、四轨迹精确复演：price1早晚Gas/过期6A；price100早Ok20A/过期85A、晚Gas/过期105A；payer149/50不退款、终0A。明确是原配额语义，不把混合余额全称收入。
+- [持久收入契约](./experiments/E001/DEV-S29-PERSISTENT-EARNED-ACCOUNT.md)：可信单托管opt-in，earned_a可选字段、总余额接口不变，真实支付双账本、先消耗配额、跨epoch仅保留earned并加入新配额、溢出仅裁新配额，旧默认不变。四配对脚本跨两次零授予、失败原子性/溢出、原边界/报价回归；待原生，未声称自主VM或长期自维持，可信快照非敌对验证。G0 GO/G1,G2 NO-GO。
