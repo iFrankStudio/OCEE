@@ -2255,4 +2255,128 @@ mod autonomous_pilot{
         println!("S29_QUOTE_TRANSFER_RESULTS equal_mixture_twice_mean={totals:?}");
     }
 
+
+
+    // Move the existing encoded liquidity gate before the third-slot quote.
+    // This is an ordering ablation, NOT a guarantee that the estimated
+    // remaining resources cover the subsequent quote and production.
+    fn liquidity_first_quote_root()->Program{
+        let mut p=price_decision_root(3);let f=&mut p.functions[0];
+        let compute=f.blocks.iter_mut().find(|b|b.id=="compute").unwrap();
+        if let Terminator::Branch{if_false,..}=&mut compute.terminator{
+            assert_eq!(if_false,"price_slot");*if_false="size_model_start".into();
+        }else{panic!("expected compute branch");}
+        for id in ["size_model_start","additive_compare","size_gate"]{
+            let b=f.blocks.iter_mut().find(|b|b.id==id).unwrap();
+            b.params.push(Param{id:99,ty:Type::Bytes});
+            if let Terminator::Branch{if_false,false_args,..}=&mut b.terminator{
+                if id=="size_gate"{
+                    assert_eq!(if_false,"size_submit");*if_false="price_slot".into();
+                }
+                false_args.push(99);
+            }else{panic!("expected liquidity branch");}
+        }
+        let slot=f.blocks.iter_mut().find(|b|b.id=="price_slot").unwrap();
+        if let Terminator::Branch{if_false,..}=&mut slot.terminator{
+            assert_eq!(if_false,"size_model_start");*if_false="size_submit".into();
+        }else{panic!("expected slot branch");}
+        let threshold=f.blocks.iter_mut().find(|b|b.id=="price_threshold").unwrap();
+        if let Terminator::Branch{if_false,..}=&mut threshold.terminator{
+            assert_eq!(if_false,"size_model_start");*if_false="size_submit".into();
+        }else{panic!("expected threshold branch");}
+        p.validate().expect("typed liquidity-first quote");p
+    }
+
+    #[test]
+    fn s29_liquidity_first_quote_native(){
+        let mut totals=Vec::new();
+        for tape in ["DENSE_TO_SPARSE","SPARSE_TO_DENSE","MIXED_MID"]{
+        for grant in [1024u64,1152,1408]{
+        for fee in [8u64,32]{
+            let mut sums=[0u64;4];
+            for third_price in [1u64,400]{
+                for mode in [0u32,1,2,3]{
+                    let p=match mode{0=>encoded_feature_root(false),1=>encoded_feature_root(true),2=>price_decision_root(3),_=>liquidity_first_quote_root()};let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+                    let mut tasks=chain_tasks(1);
+                    match tape{
+                        "DENSE_TO_SPARSE"=>{tasks[1].0.held_out_input=vec![255;128];tasks[2].0.held_out_input=vec![7;255];},
+                        "SPARSE_TO_DENSE"=>{tasks[1].0.held_out_input=vec![7;128];tasks[2].0.held_out_input=vec![255;255];},
+                        _=>{tasks[1].0.held_out_input=vec![11;96];tasks[2].0.held_out_input=(0..192).map(|n|(n%2)*248+7).map(|n|n as u8).collect();}
+                    }
+                    tasks[2].1=third_price;
+                    let mut w=World::with_priced_transform_sequence(Config{seed:129,epoch_length:16,
+                        a_gas_per_epoch:12000,..Config::default()},tasks.clone(),1400,fee).unwrap();
+                    for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                        let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                        assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+                    }
+                    let install=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+                    w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                        kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:grant}});
+                    while w.state.step<16{w.tick(None);}
+                    let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+                    let mut balance=grant;let mut payer=1400u64;let mut fees=0;let mut credit=0;
+                    let mut settled=0usize;let mut quotes=0;let mut quote_ok=false;let mut gas=0;
+                    let mut quote_fees=0;let mut third_attempts=0;
+                    for _ in 0..15{
+                        let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                        let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                        let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                        assert_eq!(r,rr);
+                        let cost=r.gas_charged+r.vm_gas_charged;
+                        balance=balance.checked_sub(cost).unwrap().checked_add(r.a_credited).unwrap();
+                        payer=payer.checked_sub(r.a_credited).unwrap();fees+=cost;credit+=r.a_credited;
+                        assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                        let escrow=w.state.transform_escrow.as_ref().unwrap();
+                        assert_eq!(payer,escrow.remaining_a);assert_eq!(balance+payer,grant+1400-fees);
+                        let e=w.audit.last().unwrap();
+                        if r.code==Code::Gas{gas+=1;}
+                        if matches!(&e.action,Some(Action::Read{key,..}) if key.starts_with("/sys/transform-price/")){
+                            assert!(mode>=2);assert_eq!(settled,2);quotes+=1;
+                            assert!(matches!(&e.action,Some(Action::Read{key,..}) if key=="/sys/transform-price/c/2"));
+                            assert_eq!(r.a_credited,0);quote_fees+=r.gas_charged;
+                            if r.code==Code::Ok{
+                                quote_ok=true;assert_eq!(r.gas_charged,fee);
+                                assert_eq!(serde_json::from_slice::<serde_json::Value>(&r.payload).unwrap(),
+                                    serde_json::json!({"task_id":"c","offer_version":2,"price_a":third_price}));
+                            }
+                        }
+                        if matches!(&e.action,Some(Action::Write{key,..}) if key=="/self/outcomes/s29-offer-63"){
+                            third_attempts+=1;
+                            if mode>=2{assert!(quote_ok);assert_eq!(third_price,400);}
+                        }
+                        if r.a_credited>0{
+                            let (task,price)=&tasks[settled];
+                            let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                            assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);
+                            assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                            let receipt=&w.state.objects[&key];
+                            assert_eq!(receipt.owner,ORGANISM_ID);assert_eq!(receipt.version,0);
+                            assert_eq!(receipt.bytes.len(),280);assert_eq!(receipt.bytes[0],task.held_out_input.len() as u8);
+                            assert_eq!(&receipt.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                            assert!(receipt.bytes[33..].iter().all(|b|*b==0x55));
+                            assert_eq!(escrow.sequence.as_ref().unwrap().settled[settled],
+                                TransformSettlement{outcome_key:key,offer_version:settled as u64,step:e.step,price_a:*price});
+                            settled+=1;
+                        }
+                    }
+                    assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+                    assert_eq!(credit,tasks.iter().take(settled).map(|(_,p)|*p).sum::<u64>());
+                    assert!(settled<=3);
+                    assert!(quotes<=1);assert!(third_attempts<=1);
+                    if mode<2{assert_eq!(quotes,0);}
+                    if mode>=2 && third_price==1{assert_eq!(third_attempts,0);assert!(settled<=2);}
+                    sums[mode as usize]+=balance;
+                    println!("S29_LIQUIDITY_FIRST tape={tape} grant={grant} fee={fee} third_price={third_price} mode={mode} root={hash} root_B={} install_A={install} settled={settled} quotes={quotes} quote_ok={quote_ok} quote_fees={quote_fees} third_attempts={third_attempts} credit={credit} fees={fees} final_A={balance} payer_A={payer} gas={gas} return={:?} replay=true",raw.len(),w.state.organisms[&ORGANISM_ID].last_return);
+                }
+            }
+            let delta=sums[2] as i64-sums[0].max(sums[1]) as i64;
+            let reordered=sums[3] as i64-sums[0].max(sums[1]) as i64;
+            totals.push((tape,grant,fee,sums,delta,reordered));
+        }
+        }
+        }
+        println!("S29_LIQUIDITY_FIRST_RESULTS equal_mixture_twice_mean={totals:?}");
+    }
+
 }

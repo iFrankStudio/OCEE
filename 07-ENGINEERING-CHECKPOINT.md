@@ -1109,3 +1109,7 @@
 ### 2026-11-25 — BOUND_QUOTE原生验收、同世界迁移门
 - [原生审计与迁移协议](./experiments/E001/DEV-S29-BOUND-QUOTE-TRANSFER.md)，[CI #45612707970](https://github.com/iFrankStudio/OCEE/actions/runs/45612707970) @e4f6463，4/4原生；24轨迹独立核对账本/复演。BOUND在8/32/96A均值270/246/37.5，对最佳固定差+10.5/-13.5/-222；8/32额外VM/反馈开销84->67A，安装702->654A，体积11103->10333B；96高价仍6 Gas无第三项。低费正向仅已选fixture，尚不选默认。
 - 冻结迁移实验：原RAW/ENCODED/BOUND根直接置于同一报价世界；3 tape（含新MIXED_MID）×3 grant×2 fee×2隐藏报酬×3根=108轨迹，不改内核/阈值、报告每格差/失败/安装，实际收据账本复演；无最低完成数或盈利预测。待原生。G0 GO/G1,G2 NO-GO；全量workspace仍未验收。
+
+### 2026-11-25 — 报价迁移原生验收、流动性优先消融
+- [审计及排序消融协议](./experiments/E001/DEV-S29-LIQUIDITY-FIRST-QUOTE.md)，[CI #45613859968](https://github.com/iFrankStudio/OCEE/actions/runs/45613859968) @efb9a8f，1/1原生，108轨迹独立账本/复演；RAW/ENCODED/BOUND任务96/96/83、余额10572/10436/9196、Gas40/28/46、正常返回30/32/29。BOUND 18格6正12负，正值皆8A；不选默认。DENSE1024/SPARSE1152报价后无第三提交，暴露先询价再判断流动性的浪费。
+- 新LIQUIDITY_FIRST仅交换原ENCODED流动性门与报价决策顺序，原阈值159/费用/矩阵不变，拒绝时跳过查询、通过后报价并按原阈值提交；不保证真实足额资源，低价臂多门开销也可能亏损。4根×原36环境=144轨迹，真实账本/产物/复演及成本，待CI。G0 GO/G1,G2 NO-GO；全量workspace仍未验收。

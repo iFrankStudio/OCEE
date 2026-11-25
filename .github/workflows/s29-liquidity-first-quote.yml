@@ -1,0 +1,81 @@
+name: S29 Liquidity First Quote
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/s29-liquidity-first-quote.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run liquidity-first ordering ablation
+        shell: bash
+        run: |
+          report="$RUNNER_TEMP/s29-paid-price-report.txt"
+          printf 'source_sha=%s\nrun_id=%s\nrun_attempt=%s\n' "$GITHUB_SHA" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" > "$report"
+          result=0
+          for test in s29_liquidity_first_quote_native; do
+            if [ "$result" -ne 0 ]; then
+              printf 'test=%s status=skipped\n' "$test" >> "$report"
+              continue
+            fi
+            log="$RUNNER_TEMP/$test.log"
+            set +e
+            cargo test -p ocee-world-kernel "$test" -- --show-output 2>&1 | tee "$log"
+            result=${PIPESTATUS[0]}
+            set -e
+            printf 'test=%s exit=%s\n' "$test" "$result" >> "$report"
+            grep -E '^(S29_PAID_QUOTE |S29_HIDDEN_PRICE |S29_HIDDEN_PRICE_RESULTS |S29_PRICE_POLICY |S29_PRICE_POLICY_RESULTS |S29_BOUND_QUOTE |S29_BOUND_QUOTE_RESULTS |S29_QUOTE_TRANSFER |S29_QUOTE_TRANSFER_RESULTS |S29_LIQUIDITY_FIRST |S29_LIQUIDITY_FIRST_RESULTS |test result:|running [0-9]+ tests?|error\[E[0-9]+\]:|thread .* panicked at )' "$log" | cut -c1-12000 >> "$report" || true
+          done
+          printf 'native_exit=%s\n' "$result" >> "$report"
+          exit "$result"
+      - name: Upload restricted evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s29-paid-price-evidence
+          path: ${{ runner.temp }}/s29-paid-price-report.txt
+          if-no-files-found: error
+          retention-days: 30
+  evidence:
+    needs: native
+    if: ${{ always() && needs.native.result != 'cancelled' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: s29-paid-price-evidence
+          path: ${{ runner.temp }}/s29-evidence
+      - name: Publish evidence to isolated branch
+        shell: bash
+        env:
+          NATIVE_JOB_RESULT: ${{ needs.native.result }}
+        run: |
+          report="$RUNNER_TEMP/s29-evidence/s29-paid-price-report.txt"
+          test -f "$report"
+          grep -Fx "source_sha=$GITHUB_SHA" "$report"
+          grep -Fx "run_id=$GITHUB_RUN_ID" "$report"
+          branch="research-evidence/s29-paid-price-$GITHUB_SHA-$GITHUB_RUN_ATTEMPT"
+          mkdir -p experiments/E001/evidence
+          dest=experiments/E001/evidence/s29-paid-price-report.txt
+          cp "$report" "$dest"
+          printf 'native_job_result=%s\n' "$NATIVE_JOB_RESULT" >> "$dest"
+          git config user.name 'OCEE research evidence'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- "$dest"
+          git commit -m "Archive S29 native evidence for $GITHUB_SHA"
+          git push origin "HEAD:refs/heads/$branch"
