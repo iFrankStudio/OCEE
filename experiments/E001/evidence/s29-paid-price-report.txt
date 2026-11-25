@@ -1,0 +1,22 @@
+source_sha=1711c2a1f875cfdd55384de99992a76a2b692745
+run_id=45622044367
+run_attempt=1
+test=s29_productive_break_even_native exit=0
+running 1 test
+S29_BREAK_EVEN first=200 later=150 net=-200 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=2 credit=350 fees=503 expired_A=103 boundary32_A=200 boundary48_A=0 post_credit=150 post_fees=350 final_A=0 earned=0 payer_A=1250 gas=19 return=None replay=true settlements=[(31, 0, 200, 303), (33, 1, 150, 164)]
+S29_BREAK_EVEN first=200 later=200 net=-6 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=600 fees=559 expired_A=103 boundary32_A=200 boundary48_A=194 post_credit=400 post_fees=406 final_A=194 earned=194 payer_A=1000 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 200, 303), (33, 1, 200, 214), (35, 2, 200, 228)]
+S29_BREAK_EVEN first=200 later=203 net=0 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=606 fees=559 expired_A=103 boundary32_A=200 boundary48_A=200 post_credit=406 post_fees=406 final_A=200 earned=200 payer_A=994 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 200, 303), (33, 1, 203, 217), (35, 2, 203, 234)]
+S29_BREAK_EVEN first=200 later=204 net=2 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=608 fees=559 expired_A=103 boundary32_A=200 boundary48_A=202 post_credit=408 post_fees=406 final_A=202 earned=202 payer_A=992 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 200, 303), (33, 1, 204, 218), (35, 2, 204, 236)]
+S29_BREAK_EVEN first=200 later=250 net=94 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=700 fees=559 expired_A=103 boundary32_A=200 boundary48_A=294 post_credit=500 post_fees=406 final_A=294 earned=294 payer_A=900 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 200, 303), (33, 1, 250, 264), (35, 2, 250, 328)]
+S29_BREAK_EVEN first=1000 later=150 net=-107 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=1300 fees=560 expired_A=103 boundary32_A=1000 boundary48_A=893 post_credit=300 post_fees=407 final_A=893 earned=893 payer_A=300 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 1000, 1103), (33, 1, 150, 963), (35, 2, 150, 927)]
+S29_BREAK_EVEN first=1000 later=200 net=-7 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=1400 fees=560 expired_A=103 boundary32_A=1000 boundary48_A=993 post_credit=400 post_fees=407 final_A=993 earned=993 payer_A=200 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 1000, 1103), (33, 1, 200, 1013), (35, 2, 200, 1027)]
+S29_BREAK_EVEN first=1000 later=203 net=-1 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=1406 fees=560 expired_A=103 boundary32_A=1000 boundary48_A=999 post_credit=406 post_fees=407 final_A=999 earned=999 payer_A=194 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 1000, 1103), (33, 1, 203, 1016), (35, 2, 203, 1033)]
+S29_BREAK_EVEN first=1000 later=204 net=1 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=1408 fees=560 expired_A=103 boundary32_A=1000 boundary48_A=1001 post_credit=408 post_fees=407 final_A=1001 earned=1001 payer_A=192 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 1000, 1103), (33, 1, 204, 1017), (35, 2, 204, 1035)]
+S29_BREAK_EVEN first=1000 later=250 net=93 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=1500 fees=560 expired_A=103 boundary32_A=1000 boundary48_A=1093 post_credit=500 post_fees=407 final_A=1093 earned=1093 payer_A=100 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 1000, 1103), (33, 1, 250, 1063), (35, 2, 250, 1127)]
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; finished in 1.21s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+native_exit=0
+native_job_result=success
