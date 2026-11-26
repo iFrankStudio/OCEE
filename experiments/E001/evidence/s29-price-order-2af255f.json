@@ -1,0 +1,508 @@
+{
+  "source_sha": "2af255f3cb14c278563d38fcf38c7606d40f9a1a",
+  "run_id": 45652163545,
+  "rows": [
+    {
+      "first": "200",
+      "tape": "FLAT",
+      "min_post_A": "161",
+      "net": "173",
+      "persistent": "true",
+      "root": "0e1bde31cfb82a2c9e53e69aecbdaf9f5cbaeccd2050ce3dc8efd37d952354ab",
+      "root_B": "3501",
+      "install_A": "227",
+      "settled": "12",
+      "credit": "2444",
+      "fees": "2224",
+      "expired_A": "103",
+      "boundary32_A": "200",
+      "boundary48_A": "350",
+      "boundary64_A": "373",
+      "post_credit": "2244",
+      "post_fees": "2071",
+      "final_A": "373",
+      "earned": "373",
+      "payer_A": "1306",
+      "gas": "0",
+      "return": "Some(U32(12))",
+      "replay": "true",
+      "settlements": "[(31,"
+    },
+    {
+      "first": "200",
+      "tape": "LOW_FIRST",
+      "min_post_A": "0",
+      "net": "-200",
+      "persistent": "true",
+      "root": "0e1bde31cfb82a2c9e53e69aecbdaf9f5cbaeccd2050ce3dc8efd37d952354ab",
+      "root_B": "3501",
+      "install_A": "227",
+      "settled": "2",
+      "credit": "350",
+      "fees": "503",
+      "expired_A": "103",
+      "boundary32_A": "200",
+      "boundary48_A": "0",
+      "boundary64_A": "0",
+      "post_credit": "150",
+      "post_fees": "350",
+      "final_A": "0",
+      "earned": "0",
+      "payer_A": "3400",
+      "gas": "35",
+      "return": "None",
+      "replay": "true",
+      "settlements": "[(31,"
+    },
+    {
+      "first": "200",
+      "tape": "HIGH_FIRST",
+      "min_post_A": "161",
+      "net": "173",
+      "persistent": "true",
+      "root": "0e1bde31cfb82a2c9e53e69aecbdaf9f5cbaeccd2050ce3dc8efd37d952354ab",
+      "root_B": "3501",
+      "install_A": "227",
+      "settled": "12",
+      "credit": "2444",
+      "fees": "2224",
+      "expired_A": "103",
+      "boundary32_A": "200",
+      "boundary48_A": "512",
+      "boundary64_A": "373",
+      "post_credit": "2244",
+      "post_fees": "2071",
+      "final_A": "373",
+      "earned": "373",
+      "payer_A": "1306",
+      "gas": "0",
+      "return": "Some(U32(12))",
+      "replay": "true",
+      "settlements": "[(31,"
+    },
+    {
+      "first": "200",
+      "tape": "INTERLEAVED",
+      "min_post_A": "0",
+      "net": "-200",
+      "persistent": "true",
+      "root": "0e1bde31cfb82a2c9e53e69aecbdaf9f5cbaeccd2050ce3dc8efd37d952354ab",
+      "root_B": "3501",
+      "install_A": "227",
+      "settled": "2",
+      "credit": "350",
+      "fees": "503",
+      "expired_A": "103",
+      "boundary32_A": "200",
+      "boundary48_A": "0",
+      "boundary64_A": "0",
+      "post_credit": "150",
+      "post_fees": "350",
+      "final_A": "0",
+      "earned": "0",
+      "payer_A": "3400",
+      "gas": "35",
+      "return": "None",
+      "replay": "true",
+      "settlements": "[(31,"
+    },
+    {
+      "first": "1000",
+      "tape": "FLAT",
+      "min_post_A": "960",
+      "net": "172",
+      "persistent": "true",
+      "root": "0e1bde31cfb82a2c9e53e69aecbdaf9f5cbaeccd2050ce3dc8efd37d952354ab",
+      "root_B": "3501",
+      "install_A": "227",
+      "settled": "12",
+      "credit": "3244",
+      "fees": "2225",
+      "expired_A": "103",
+      "boundary32_A": "1000",
+      "boundary48_A": "1149",
+      "boundary64_A": "1172",
+      "post_credit": "2244",
+      "post_fees": "2072",
+      "final_A": "1172",
+      "earned": "1172",
+      "payer_A": "506",
+      "gas": "0",
+      "return": "Some(U32(12))",
+      "replay": "true",
+      "settlements": "[(31,"
+    },
+    {
+      "first": "1000",
+      "tape": "LOW_FIRST",
+      "min_post_A": "819",
+      "net": "172",
+      "persistent": "true",
+      "root": "0e1bde31cfb82a2c9e53e69aecbdaf9f5cbaeccd2050ce3dc8efd37d952354ab",
+      "root_B": "3501",
+      "install_A": "227",
+      "settled": "12",
+      "credit": "3244",
+      "fees": "2225",
+      "expired_A": "103",
+      "boundary32_A": "1000",
+      "boundary48_A": "987",
+      "boundary64_A": "1172",
+      "post_credit": "2244",
+      "post_fees": "2072",
+      "final_A": "1172",
+      "earned": "1172",
+      "payer_A": "506",
+      "gas": "0",
+      "return": "Some(U32(12))",
+      "replay": "true",
+      "settlements": "[(31,"
+    },
+    {
+      "first": "1000",
+      "tape": "HIGH_FIRST",
+      "min_post_A": "960",
+      "net": "172",
+      "persistent": "true",
+      "root": "0e1bde31cfb82a2c9e53e69aecbdaf9f5cbaeccd2050ce3dc8efd37d952354ab",
+      "root_B": "3501",
+      "install_A": "227",
+      "settled": "12",
+      "credit": "3244",
+      "fees": "2225",
+      "expired_A": "103",
+      "boundary32_A": "1000",
+      "boundary48_A": "1311",
+      "boundary64_A": "1172",
+      "post_credit": "2244",
+      "post_fees": "2072",
+      "final_A": "1172",
+      "earned": "1172",
+      "payer_A": "506",
+      "gas": "0",
+      "return": "Some(U32(12))",
+      "replay": "true",
+      "settlements": "[(31,"
+    },
+    {
+      "first": "1000",
+      "tape": "INTERLEAVED",
+      "min_post_A": "924",
+      "net": "172",
+      "persistent": "true",
+      "root": "0e1bde31cfb82a2c9e53e69aecbdaf9f5cbaeccd2050ce3dc8efd37d952354ab",
+      "root_B": "3501",
+      "install_A": "227",
+      "settled": "12",
+      "credit": "3244",
+      "fees": "2225",
+      "expired_A": "103",
+      "boundary32_A": "1000",
+      "boundary48_A": "1149",
+      "boundary64_A": "1172",
+      "post_credit": "2244",
+      "post_fees": "2072",
+      "final_A": "1172",
+      "earned": "1172",
+      "payer_A": "506",
+      "gas": "0",
+      "return": "Some(U32(12))",
+      "replay": "true",
+      "settlements": "[(31,"
+    }
+  ],
+  "model": {
+    "FLAT": {
+      "threshold_high_feedback": 187,
+      "predicted_three_digit_feedback": 186,
+      "costs": [
+        {
+          "slot": 1,
+          "price": 204,
+          "fee": 187,
+          "req": 187
+        },
+        {
+          "slot": 2,
+          "price": 204,
+          "fee": 186,
+          "req": 169
+        },
+        {
+          "slot": 3,
+          "price": 204,
+          "fee": 183,
+          "req": 148
+        },
+        {
+          "slot": 4,
+          "price": 204,
+          "fee": 186,
+          "req": 130
+        },
+        {
+          "slot": 5,
+          "price": 204,
+          "fee": 186,
+          "req": 112
+        },
+        {
+          "slot": 6,
+          "price": 204,
+          "fee": 183,
+          "req": 91
+        },
+        {
+          "slot": 7,
+          "price": 204,
+          "fee": 186,
+          "req": 73
+        },
+        {
+          "slot": 8,
+          "price": 204,
+          "fee": 186,
+          "req": 55
+        },
+        {
+          "slot": 9,
+          "price": 204,
+          "fee": 183,
+          "req": 34
+        },
+        {
+          "slot": 10,
+          "price": 204,
+          "fee": 186,
+          "req": 16
+        },
+        {
+          "slot": 11,
+          "price": 204,
+          "fee": 186,
+          "req": -2
+        }
+      ],
+      "terminal": 34
+    },
+    "LOW_FIRST": {
+      "threshold_high_feedback": 328,
+      "predicted_three_digit_feedback": 327,
+      "costs": [
+        {
+          "slot": 1,
+          "price": 150,
+          "fee": 187,
+          "req": 187
+        },
+        {
+          "slot": 2,
+          "price": 150,
+          "fee": 186,
+          "req": 223
+        },
+        {
+          "slot": 3,
+          "price": 150,
+          "fee": 183,
+          "req": 256
+        },
+        {
+          "slot": 4,
+          "price": 150,
+          "fee": 186,
+          "req": 292
+        },
+        {
+          "slot": 5,
+          "price": 204,
+          "fee": 186,
+          "req": 328
+        },
+        {
+          "slot": 6,
+          "price": 204,
+          "fee": 183,
+          "req": 307
+        },
+        {
+          "slot": 7,
+          "price": 204,
+          "fee": 186,
+          "req": 289
+        },
+        {
+          "slot": 8,
+          "price": 258,
+          "fee": 186,
+          "req": 271
+        },
+        {
+          "slot": 9,
+          "price": 258,
+          "fee": 183,
+          "req": 196
+        },
+        {
+          "slot": 10,
+          "price": 258,
+          "fee": 186,
+          "req": 124
+        },
+        {
+          "slot": 11,
+          "price": 258,
+          "fee": 186,
+          "req": 52
+        }
+      ],
+      "terminal": 34
+    },
+    "HIGH_FIRST": {
+      "threshold_high_feedback": 187,
+      "predicted_three_digit_feedback": 186,
+      "costs": [
+        {
+          "slot": 1,
+          "price": 258,
+          "fee": 187,
+          "req": 187
+        },
+        {
+          "slot": 2,
+          "price": 258,
+          "fee": 186,
+          "req": 115
+        },
+        {
+          "slot": 3,
+          "price": 258,
+          "fee": 183,
+          "req": 40
+        },
+        {
+          "slot": 4,
+          "price": 258,
+          "fee": 186,
+          "req": -32
+        },
+        {
+          "slot": 5,
+          "price": 204,
+          "fee": 186,
+          "req": -104
+        },
+        {
+          "slot": 6,
+          "price": 204,
+          "fee": 183,
+          "req": -125
+        },
+        {
+          "slot": 7,
+          "price": 204,
+          "fee": 186,
+          "req": -143
+        },
+        {
+          "slot": 8,
+          "price": 150,
+          "fee": 186,
+          "req": -161
+        },
+        {
+          "slot": 9,
+          "price": 150,
+          "fee": 183,
+          "req": -128
+        },
+        {
+          "slot": 10,
+          "price": 150,
+          "fee": 186,
+          "req": -92
+        },
+        {
+          "slot": 11,
+          "price": 150,
+          "fee": 186,
+          "req": -56
+        }
+      ],
+      "terminal": 34
+    },
+    "INTERLEAVED": {
+      "threshold_high_feedback": 223,
+      "predicted_three_digit_feedback": 222,
+      "costs": [
+        {
+          "slot": 1,
+          "price": 150,
+          "fee": 187,
+          "req": 187
+        },
+        {
+          "slot": 2,
+          "price": 258,
+          "fee": 186,
+          "req": 223
+        },
+        {
+          "slot": 3,
+          "price": 150,
+          "fee": 183,
+          "req": 148
+        },
+        {
+          "slot": 4,
+          "price": 258,
+          "fee": 186,
+          "req": 184
+        },
+        {
+          "slot": 5,
+          "price": 204,
+          "fee": 186,
+          "req": 112
+        },
+        {
+          "slot": 6,
+          "price": 150,
+          "fee": 183,
+          "req": 91
+        },
+        {
+          "slot": 7,
+          "price": 258,
+          "fee": 186,
+          "req": 127
+        },
+        {
+          "slot": 8,
+          "price": 204,
+          "fee": 186,
+          "req": 55
+        },
+        {
+          "slot": 9,
+          "price": 150,
+          "fee": 183,
+          "req": 34
+        },
+        {
+          "slot": 10,
+          "price": 258,
+          "fee": 186,
+          "req": 70
+        },
+        {
+          "slot": 11,
+          "price": 204,
+          "fee": 186,
+          "req": -2
+        }
+      ],
+      "terminal": 34
+    }
+  }
+}
