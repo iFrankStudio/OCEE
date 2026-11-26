@@ -1962,6 +1962,213 @@ mod autonomous_pilot{
         }
     }
 
+
+    // Once-only, in-episode use of the observed cost; no future price input.
+    // The sham pays identical observation and decision arithmetic, but continues.
+    fn sample_liquidity_gate_root(use_sample:bool)->Program{
+        let mut p=selective_cost_sample_root(1);
+        let f=&mut p.functions[0];
+        let i=|id,op|Instruction{id,op};
+        let ctx=(90..=92).map(|id|Param{id,ty:Type::U32}).collect::<Vec<_>>();
+        let mut fb=ctx.clone();fb.push(Param{id:2,ty:Type::Bytes});
+        let args=vec![90,91,92];let fba=vec![90,91,92,2];
+        let sampled=f.blocks.iter_mut().find(|b|b.id=="sample_paid").unwrap();
+        if let Terminator::Jump{target,..}=&mut sampled.terminator{*target="sample_gate_read".into();}
+        else{panic!("sample paid jump");}
+        f.blocks.extend([
+            Block{id:"sample_gate_read".into(),params:ctx.clone(),
+                instructions:vec![i(10,literal(b"/sys/resource-status"))],
+                terminator:Terminator::Yield{call:WorldCall::Read,args:vec![10],next:"sample_gate_reply".into(),next_args:args.clone()}},
+            Block{id:"sample_gate_reply".into(),params:fb.clone(),instructions:vec![
+                i(10,literal(b"code")),i(11,Op::JsonFieldString(2,10)),i(12,literal(b"Ok")),i(13,Op::EqBytes(11,12))],
+                terminator:Terminator::Branch{condition:13,if_true:"sample_gate_decide".into(),true_args:fba,
+                    if_false:"sample_gate_stop".into(),false_args:args.clone()}},
+            Block{id:"sample_gate_decide".into(),params:fb,instructions:vec![
+                i(10,literal(b"payload")),i(11,Op::JsonFieldBytes(2,10)),
+                i(12,literal(b"a_available")),i(13,Op::JsonFieldU32(11,12)),
+                i(14,Op::Div(13,91)),i(15,Op::ConstU32(0)),i(16,Op::EqU32(14,15))],
+                terminator:Terminator::Branch{condition:16,if_true:if use_sample{"sample_gate_stop".into()}else{"chain_advance".into()},
+                    true_args:args.clone(),if_false:"chain_advance".into(),false_args:args.clone()}},
+            Block{id:"sample_gate_stop".into(),params:ctx,instructions:vec![i(10,Op::ConstU32(1)),i(11,Op::Add(90,10))],
+                terminator:Terminator::Return{value:11}}
+        ]);
+        p.validate().expect("typed sampled liquidity decision");p
+    }
+
+    #[test]
+    fn s29_sample_liquidity_gate_native(){
+        for mode in 0..4{
+        let sample_slot=if mode==0{0u32}else{1};
+        let p=if mode==0{
+            let mut p=chain_root();
+            let header=p.functions[0].blocks.iter_mut().find(|b|b.id=="chain_header").unwrap();
+            if let Terminator::RepeatBounded{limit,..}=&mut header.terminator{*limit=12;}
+            else{panic!("expected bounded loop");}
+            p
+        }else if mode==1{selective_cost_sample_root(1)}else{sample_liquidity_gate_root(mode==3)};
+        p.validate().unwrap();
+        let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+        let mut install=None;
+        for first in [250u64,350,1000]{
+        for tape in ["FLAT","LOW_FIRST","HIGH_FIRST","INTERLEAVED"]{
+            let persistent=true;
+            let templates=chain_tasks(first);
+            // Same sum (2244A) across all 11 later offers; the mixed
+            // tapes use exactly the same multiset, changing only order.
+            let prices:[u64;11]=match tape{
+                "FLAT"=>[204;11],
+                "LOW_FIRST"=>[150,150,150,150,204,204,204,258,258,258,258],
+                "HIGH_FIRST"=>[258,258,258,258,204,204,204,150,150,150,150],
+                _=>[150,258,150,258,204,150,258,204,150,258,204]
+            };
+            assert_eq!(prices.iter().sum::<u64>(),2244);
+            let tasks=(0..12usize).map(|slot|{
+                let mut task=templates[slot%3].0.clone();
+                task.task_id=char::from(b'a'+slot as u8).to_string();
+                (task,if slot==0{first}else{prices[slot-1]})
+            }).collect::<Vec<_>>();
+            let config=Config{seed:129,epoch_length:16,a_gas_per_epoch:12000,..Config::default()};
+            assert!(matches!(World::with_transform_sequence(config.clone(),tasks.clone(),3750),Err(Code::BadRequest)));
+            let mut duplicate=tasks.clone();duplicate[11].0.task_id=duplicate[0].0.task_id.clone();
+            assert!(matches!(World::with_long_persistent_transform_sequence(config.clone(),duplicate,3750),Err(Code::BadRequest)));
+            let mut too_long=tasks.clone();let mut extra=tasks[0].clone();extra.0.task_id="m".into();too_long.push(extra);
+            assert!(matches!(World::with_long_persistent_transform_sequence(config.clone(),too_long,3750),Err(Code::BadRequest)));
+            let required=tasks.iter().map(|(_,p)|*p).sum::<u64>();
+            assert!(matches!(World::with_long_persistent_transform_sequence(config.clone(),tasks.clone(),required-1),Err(Code::BadRequest)));
+            let mut w=World::with_long_persistent_transform_sequence(config,tasks.clone(),3750).unwrap();
+            for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+            }
+            let paid=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+            if let Some(previous)=install{assert_eq!(paid,previous);}else{install=Some(paid);}
+            w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:256}});
+            w.schedule_event(ScheduledEvent{due_step:32,priority:0,sequence_no:1,
+                kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:0}});
+            while w.state.step<30{w.tick(None);}
+            assert_eq!(w.state.nodes[&NodeId::A].gas_available,256);
+            assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let mut balance=256u64;let mut earned=0u64;let mut payer=3750u64;
+            let mut fees=0u64;let mut expired=0u64;let mut credit=0u64;
+            let mut post_fees=0u64;let mut post_credit=0u64;let mut gas=0;
+            let mut at32=0u64;let mut at48=0u64;let mut at64=0u64;
+            let mut min_post=u64::MAX;
+            let mut expected_history=None;let mut sample_read_fee=None;
+            let mut saved_at=None;let mut gate_status=None;let mut gate_step=None;let mut after_gate_read=false;
+            let mut settlements=Vec::new();let mut reads=Vec::new();
+            for step in 30..70{
+                assert_eq!(w.state.step,step);
+                if step==32||step==48||step==64{
+                    let kept=if persistent{earned}else{0};
+                    expired+=balance-kept;balance=kept;
+                    if step==32{at32=kept;}else if step==48{at48=kept;}else{at64=kept;}
+                }
+                let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                assert_eq!(r,rr);
+                let fee=r.gas_charged+r.vm_gas_charged;
+                if persistent{
+                    let quota=balance.checked_sub(earned).unwrap();
+                    earned=earned.checked_sub(fee.saturating_sub(quota)).unwrap()+r.a_credited;
+                }
+                balance=balance.checked_sub(fee).unwrap()+r.a_credited;
+                payer=payer.checked_sub(r.a_credited).unwrap();fees+=fee;credit+=r.a_credited;
+                if step>=32{
+                    post_fees+=fee;
+                    post_credit+=r.a_credited;
+                    min_post=min_post.min(balance);
+                    assert_eq!(w.state.nodes[&NodeId::A].gas_per_epoch,0);}
+                if r.code==Code::Gas{gas+=1;}
+                let escrow=w.state.transform_escrow.as_ref().unwrap();
+                assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                assert_eq!(payer,escrow.remaining_a);assert_eq!(escrow.earned_a,persistent.then_some(earned));
+                assert_eq!(balance+payer,4006-fees-expired);
+                let e=w.audit.last().unwrap();
+                if matches!(&e.action,Some(Action::Read{key,..}) if key==OFFER)&&r.code==Code::Ok{
+                    let slot=settlements.len();
+                    assert_eq!(serde_json::from_slice::<TransformTask>(&r.payload).unwrap(),tasks[slot].0);
+                    reads.push((e.step,slot));
+                    if sample_slot!=0 && slot==sample_slot as usize{assert!(sample_read_fee.is_none());sample_read_fee=Some(fee);}
+                }
+                if matches!(&e.action,Some(Action::Read{key,..}) if key=="/sys/resource-status")&&r.code==Code::Ok{
+                    assert!(mode>=2);assert!(gate_status.is_none());assert_eq!(settlements.len(),2);
+                    let v:serde_json::Value=serde_json::from_slice(&r.payload).unwrap();
+                    assert_eq!(v["a_available"].as_u64(),Some(balance));
+                    gate_status=Some(balance);gate_step=Some(step);
+                }
+                if gate_step.is_some_and(|s|step>s)&&matches!(&e.action,Some(Action::Read{key,..}) if key==OFFER){
+                    after_gate_read=true;
+                }
+                if matches!(&e.action,Some(Action::Write{key,..}) if key=="/self/learned/production-sample-le") && r.code==Code::Ok{
+                    assert!(expected_history.is_some());assert!(saved_at.is_none());saved_at=Some(step);
+                }
+                if r.a_credited>0{
+                    let slot=settlements.len();let (task,price)=&tasks[slot];
+                    let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                    assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,20);
+                    assert!(reads.iter().any(|(s,i)|*s<step&&*i==slot));
+                    assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                    let ledger=&escrow.sequence.as_ref().unwrap().settled;
+                    assert_eq!(ledger.len(),slot+1);
+                    assert_eq!(ledger[slot],TransformSettlement{outcome_key:key,offer_version:slot as u64,step,price_a:*price});
+                    settlements.push((step,slot,*price,balance));
+                    if sample_slot!=0 && slot==sample_slot as usize{
+                        expected_history=Some([sample_slot as u64,sample_read_fee.expect("sample read")+fee,r.a_credited]);
+                    }
+                }
+            }
+            assert_eq!(settlements[0].0,31);assert_eq!(settlements[0].2,first);
+            assert_eq!(credit,tasks.iter().take(settlements.len()).map(|(_,p)|*p).sum::<u64>());
+            for (slot,(task,_)) in tasks.iter().enumerate(){
+                let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                assert_eq!(w.state.objects.contains_key(&key),slot<settlements.len());
+                if slot<settlements.len(){
+                    let o=&w.state.objects[&key];assert_eq!(o.owner,ORGANISM_ID);assert_eq!(o.version,0);
+                    assert_eq!(o.bytes.len(),280);assert_eq!(o.bytes[0],task.held_out_input.len() as u8);
+                    assert_eq!(&o.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                    assert!(o.bytes[33..].iter().all(|b|*b==0x55));
+                }
+            }
+            if settlements.len()==12{
+                assert_eq!(post_credit,2244);
+                assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(12)));
+                assert!(settlements.iter().skip(1).all(|(s,_,_,_)|*s>=32));
+                assert!(settlements.last().unwrap().0>=48);
+                assert_eq!(at64,balance);
+                let escrow=w.state.transform_escrow.as_ref().unwrap();
+                assert!(escrow.sequence.as_ref().unwrap().pending.is_empty());
+                assert_eq!(escrow.paid_a,prices[10]);
+                assert_eq!(escrow.sequence.as_ref().unwrap().settled.len(),12);
+                assert_eq!(payer,3750-first-2244);
+            }
+            let learned=w.state.objects.get("/self/learned/production-sample-le");
+            if let Some(object)=learned{
+                let expected=expected_history.expect("complete history before save");
+                assert_eq!(object.owner,ORGANISM_ID);assert_eq!(object.version,0);
+                let bytes=expected.iter().flat_map(|n|u16::try_from(*n).unwrap().to_le_bytes()).collect::<Vec<_>>();
+                assert_eq!(object.bytes,bytes);assert!(saved_at.is_some());
+            }else{assert!(saved_at.is_none());}
+            if sample_slot==0{assert!(learned.is_none());}
+            else if settlements.len()==12{assert!(learned.is_some());}
+            if first==1000{assert_eq!(settlements.len(),12);}
+            if let (Some(status),Some(sample))=(gate_status,expected_history){
+                if mode==3&&status<sample[1]{
+                    assert!(!after_gate_read);assert_eq!(settlements.len(),2);
+                }
+                if first==1000{assert!(after_gate_read);assert!(status>=sample[1]);}
+            }
+            let net=post_credit as i64-post_fees as i64;
+            assert_eq!(balance as i64-at32 as i64,net);
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            println!("S29_SAMPLE_GATE mode={mode} sample_slot={sample_slot} first={first} gate_status={gate_status:?} gate_step={gate_step:?} after_gate_read={after_gate_read} tape={tape} saved_at={saved_at:?} expected_history={expected_history:?} learned={} min_post_A={min_post} net={net} persistent={persistent} root={hash} root_B={} install_A={paid} settled={} credit={credit} fees={fees} expired_A={expired} boundary32_A={at32} boundary48_A={at48} boundary64_A={at64} post_credit={post_credit} post_fees={post_fees} final_A={balance} earned={earned} payer_A={payer} gas={gas} return={:?} replay=true settlements={settlements:?}",learned.is_some(),raw.len(),settlements.len(),w.state.organisms[&ORGANISM_ID].last_return);
+        }
+        }
+        }
+    }
+
     #[test]
     fn finite_escrow_productive_chain_native(){
         let p=chain_root();let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
