@@ -1153,3 +1153,7 @@
 ### 2026-11-26 — 前缀资本边界原生验收、个体内历史估计
 - [CI #45740483420](https://github.com/iFrankStudio/OCEE/actions/runs/45740483420) @38d1807，1/1原生、12轨迹独立账本/复演。预测186/327/186/222各±1完全命中：低1A分别1/5/1/2项、1 Gas/部分正常返回/终5A；门槛及高1A均12项/return12/0 Gas/post费2071/净+173。仅当前路径的局部门槛，不是未来先知或全局单调。
 - [历史估计协议](./experiments/E001/DEV-S29-RESERVE-HISTORY.md)：不改世界，原12任务四tape×first1000/1500；新根从真实READ/WRITE费用及credit在VM内计算累计最大支付前缺口，首项bootstrap排除，12项后真实付费写6B历史记录（缺口/累计费/credit），独立逐tick oracle复核及复演；末次结算后的保存与反馈成本单列，不假定盈利，不含研究者预计算门槛，不宣称已学会未来决策。待原生。G0 GO/G1,G2 NO-GO。
+
+### 2026-11-26 — 自主历史估计原生验收、学习经济负证据
+- [CI #45741838365](https://github.com/iFrankStudio/OCEE/actions/runs/45741838365) @69cf3de，1/1原生、8轨迹独立账本/复演，均12项/54付费保存/0 Gas；FLAT/LOW_FIRST/HIGH_FIRST/INTERLEAVED历史缺口942/996/888/942、末次结算费2982/credit2244、后续92，总post3074/净-830，终170/670；根7895B/502A，对同first1000简根post2072/净+172、额外1002A及安装275A。学习记录只适用于带仪器根，不是简根门槛；不选默认。
+- [费用表示消融](./experiments/E001/DEV-S29-RESERVE-FEE-REPRESENTATION.md)：opt-in自主JSON附f=真实两费之和，权威账本不变、旧默认不变，新历史根仅合并两处提取，简根/历史根×原/附f四匹配臂×四tape=16，含反馈新增字节/真实安装/保存开销，独立oracle复核；待原生。若仍亏暂停表示微调，转向选择性测量或复用价值。G0 GO/G1,G2 NO-GO。

@@ -21,6 +21,9 @@ pub struct TransformEscrow{
     /// Opt-in earned portion of A's total spendable balance. None = legacy quota reset.
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub earned_a:Option<u64>,
+    /// Opt-in redundant fee total in autonomous feedback; no new information.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub fee_total_feedback:Option<bool>,
 }
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 pub struct TransformSequence{
@@ -49,7 +52,7 @@ impl World{
         w.state.objects.insert(OFFER.into(),Object{owner:0,version:0,bytes:offer.clone()});
         w.state.transform_escrow=Some(TransformEscrow{
             initial_a:endowment,remaining_a:endowment,price_a:price,offer,
-            outcome_key,paid_at:None,paid_a:0,sequence:None,price_query_fee:None,earned_a:None
+            outcome_key,paid_at:None,paid_a:0,sequence:None,price_query_fee:None,earned_a:None,fee_total_feedback:None
         });
         Ok(w)
     }
@@ -1562,6 +1565,176 @@ mod autonomous_pilot{
             assert_eq!(balance as i64-at32 as i64,net);
             assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
             println!("S29_RESERVE_HISTORY first={first} tape={tape} saved_at={saved_at:?} expected_history={expected_history:?} learned={} min_post_A={min_post} net={net} persistent={persistent} root={hash} root_B={} install_A={paid} settled={} credit={credit} fees={fees} expired_A={expired} boundary32_A={at32} boundary48_A={at48} boundary64_A={at64} post_credit={post_credit} post_fees={post_fees} final_A={balance} earned={earned} payer_A={payer} gas={gas} return={:?} replay=true settlements={settlements:?}",learned.is_some(),raw.len(),settlements.len(),w.state.organisms[&ORGANISM_ID].last_return);
+        }
+        }
+    }
+
+    fn reserve_total_fee_root()->Program{
+        let mut p=reserve_history_root();
+        for id in ["measure_read","measure_paid"]{
+            let b=p.functions[0].blocks.iter_mut().find(|b|b.id==id).unwrap();
+            assert_eq!(b.instructions[0].id,10);
+            assert_eq!(b.instructions[4].id,14);
+            b.instructions.splice(0..5,[
+                Instruction{id:10,op:literal(b"f")},
+                Instruction{id:14,op:Op::JsonFieldU32(2,10)}
+            ]);
+        }
+        p.validate().expect("typed total fee history root");p
+    }
+
+    #[test]
+    fn s29_reserve_fee_representation_native(){
+        for mode in 0..4{
+        let p=if mode<2{
+            let mut p=chain_root();
+            let header=p.functions[0].blocks.iter_mut().find(|b|b.id=="chain_header").unwrap();
+            if let Terminator::RepeatBounded{limit,..}=&mut header.terminator{*limit=12;}
+            else{panic!("expected bounded loop");}
+            p
+        }else if mode==2{reserve_history_root()}else{reserve_total_fee_root()};
+        p.validate().unwrap();
+        let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+        let mut install=None;
+        let first=1000u64;
+        for tape in ["FLAT","LOW_FIRST","HIGH_FIRST","INTERLEAVED"]{
+            let persistent=true;
+            let templates=chain_tasks(first);
+            // Same sum (2244A) across all 11 later offers; the mixed
+            // tapes use exactly the same multiset, changing only order.
+            let prices:[u64;11]=match tape{
+                "FLAT"=>[204;11],
+                "LOW_FIRST"=>[150,150,150,150,204,204,204,258,258,258,258],
+                "HIGH_FIRST"=>[258,258,258,258,204,204,204,150,150,150,150],
+                _=>[150,258,150,258,204,150,258,204,150,258,204]
+            };
+            assert_eq!(prices.iter().sum::<u64>(),2244);
+            let tasks=(0..12usize).map(|slot|{
+                let mut task=templates[slot%3].0.clone();
+                task.task_id=char::from(b'a'+slot as u8).to_string();
+                (task,if slot==0{first}else{prices[slot-1]})
+            }).collect::<Vec<_>>();
+            let config=Config{seed:129,epoch_length:16,a_gas_per_epoch:12000,..Config::default()};
+            assert!(matches!(World::with_transform_sequence(config.clone(),tasks.clone(),3750),Err(Code::BadRequest)));
+            let mut duplicate=tasks.clone();duplicate[11].0.task_id=duplicate[0].0.task_id.clone();
+            assert!(matches!(World::with_long_persistent_transform_sequence(config.clone(),duplicate,3750),Err(Code::BadRequest)));
+            let mut too_long=tasks.clone();let mut extra=tasks[0].clone();extra.0.task_id="m".into();too_long.push(extra);
+            assert!(matches!(World::with_long_persistent_transform_sequence(config.clone(),too_long,3750),Err(Code::BadRequest)));
+            let required=tasks.iter().map(|(_,p)|*p).sum::<u64>();
+            assert!(matches!(World::with_long_persistent_transform_sequence(config.clone(),tasks.clone(),required-1),Err(Code::BadRequest)));
+            let mut w=World::with_long_persistent_transform_sequence(config,tasks.clone(),3750).unwrap();
+            if mode==1||mode==3{w.state.transform_escrow.as_mut().unwrap().fee_total_feedback=Some(true);}
+            for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+            }
+            let paid=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+            if let Some(previous)=install{assert_eq!(paid,previous);}else{install=Some(paid);}
+            w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:256}});
+            w.schedule_event(ScheduledEvent{due_step:32,priority:0,sequence_no:1,
+                kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:0}});
+            while w.state.step<30{w.tick(None);}
+            assert_eq!(w.state.nodes[&NodeId::A].gas_available,256);
+            assert!(w.state.organisms[&ORGANISM_ID].vm_continuation.is_none());
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let mut balance=256u64;let mut earned=0u64;let mut payer=3750u64;
+            let mut fees=0u64;let mut expired=0u64;let mut credit=0u64;
+            let mut post_fees=0u64;let mut post_credit=0u64;let mut gas=0;
+            let mut at32=0u64;let mut at48=0u64;let mut at64=0u64;
+            let mut min_post=u64::MAX;
+            let mut observed_deficit=0u64;let mut expected_history=None;
+            let mut saved_at=None;
+            let mut settlements=Vec::new();let mut reads=Vec::new();
+            for step in 30..70{
+                assert_eq!(w.state.step,step);
+                if step==32||step==48||step==64{
+                    let kept=if persistent{earned}else{0};
+                    expired+=balance-kept;balance=kept;
+                    if step==32{at32=kept;}else if step==48{at48=kept;}else{at64=kept;}
+                }
+                let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                assert_eq!(r,rr);
+                let fee=r.gas_charged+r.vm_gas_charged;
+                if persistent{
+                    let quota=balance.checked_sub(earned).unwrap();
+                    earned=earned.checked_sub(fee.saturating_sub(quota)).unwrap()+r.a_credited;
+                }
+                balance=balance.checked_sub(fee).unwrap()+r.a_credited;
+                payer=payer.checked_sub(r.a_credited).unwrap();fees+=fee;credit+=r.a_credited;
+                if step>=32{
+                    post_fees+=fee;
+                    observed_deficit=observed_deficit.max(post_fees.saturating_sub(post_credit));
+                    post_credit+=r.a_credited;
+                    min_post=min_post.min(balance);
+                    assert_eq!(w.state.nodes[&NodeId::A].gas_per_epoch,0);}
+                if r.code==Code::Gas{gas+=1;}
+                let escrow=w.state.transform_escrow.as_ref().unwrap();
+                assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                assert_eq!(payer,escrow.remaining_a);assert_eq!(escrow.earned_a,persistent.then_some(earned));
+                assert_eq!(balance+payer,4006-fees-expired);
+                let e=w.audit.last().unwrap();
+                if matches!(&e.action,Some(Action::Read{key,..}) if key==OFFER)&&r.code==Code::Ok{
+                    let slot=settlements.len();
+                    assert_eq!(serde_json::from_slice::<TransformTask>(&r.payload).unwrap(),tasks[slot].0);
+                    reads.push((e.step,slot));
+                }
+                if matches!(&e.action,Some(Action::Write{key,..}) if key=="/self/learned/production-reserve-le") && r.code==Code::Ok{
+                    assert!(expected_history.is_some());assert!(saved_at.is_none());saved_at=Some(step);
+                }
+                if r.a_credited>0{
+                    let slot=settlements.len();let (task,price)=&tasks[slot];
+                    let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                    assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,20);
+                    assert!(reads.iter().any(|(s,i)|*s<step&&*i==slot));
+                    assert!(matches!(&e.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                    let ledger=&escrow.sequence.as_ref().unwrap().settled;
+                    assert_eq!(ledger.len(),slot+1);
+                    assert_eq!(ledger[slot],TransformSettlement{outcome_key:key,offer_version:slot as u64,step,price_a:*price});
+                    settlements.push((step,slot,*price,balance));
+                    if slot==11{expected_history=Some([observed_deficit,post_fees,post_credit]);}
+                }
+            }
+            assert_eq!(settlements[0].0,31);assert_eq!(settlements[0].2,first);
+            assert_eq!(credit,tasks.iter().take(settlements.len()).map(|(_,p)|*p).sum::<u64>());
+            for (slot,(task,_)) in tasks.iter().enumerate(){
+                let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                assert_eq!(w.state.objects.contains_key(&key),slot<settlements.len());
+                if slot<settlements.len(){
+                    let o=&w.state.objects[&key];assert_eq!(o.owner,ORGANISM_ID);assert_eq!(o.version,0);
+                    assert_eq!(o.bytes.len(),280);assert_eq!(o.bytes[0],task.held_out_input.len() as u8);
+                    assert_eq!(&o.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                    assert!(o.bytes[33..].iter().all(|b|*b==0x55));
+                }
+            }
+            if settlements.len()==12{
+                assert_eq!(post_credit,2244);
+                assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(12)));
+                assert!(settlements.iter().skip(1).all(|(s,_,_,_)|*s>=32));
+                assert!(settlements.last().unwrap().0>=48);
+                assert_eq!(at64,balance);
+                let escrow=w.state.transform_escrow.as_ref().unwrap();
+                assert!(escrow.sequence.as_ref().unwrap().pending.is_empty());
+                assert_eq!(escrow.paid_a,prices[10]);
+                assert_eq!(escrow.sequence.as_ref().unwrap().settled.len(),12);
+                assert_eq!(payer,3750-first-2244);
+            }
+            let learned=w.state.objects.get("/self/learned/production-reserve-le");
+            if let Some(object)=learned{
+                let expected=expected_history.expect("complete history before save");
+                assert_eq!(object.owner,ORGANISM_ID);assert_eq!(object.version,0);
+                let bytes=expected.iter().flat_map(|n|u16::try_from(*n).unwrap().to_le_bytes()).collect::<Vec<_>>();
+                assert_eq!(object.bytes,bytes);assert!(saved_at.is_some());
+            }else{assert!(saved_at.is_none());}
+            if mode<2{assert!(learned.is_none());}
+            if mode==2{assert_eq!(settlements.len(),12);assert!(learned.is_some());}
+            if mode==3&&settlements.len()==12{assert!(learned.is_some());}
+            let net=post_credit as i64-post_fees as i64;
+            assert_eq!(balance as i64-at32 as i64,net);
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            println!("S29_RESERVE_FEE_REP mode={mode} first={first} tape={tape} saved_at={saved_at:?} expected_history={expected_history:?} learned={} min_post_A={min_post} net={net} persistent={persistent} root={hash} root_B={} install_A={paid} settled={} credit={credit} fees={fees} expired_A={expired} boundary32_A={at32} boundary48_A={at48} boundary64_A={at64} post_credit={post_credit} post_fees={post_fees} final_A={balance} earned={earned} payer_A={payer} gas={gas} return={:?} replay=true settlements={settlements:?}",learned.is_some(),raw.len(),settlements.len(),w.state.organisms[&ORGANISM_ID].last_return);
         }
         }
     }

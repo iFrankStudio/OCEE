@@ -1537,8 +1537,17 @@ impl World {
             if let Some(host)=self.state.organisms.get_mut(&actor) {
                 if host.vm_continuation.as_ref().is_some_and(|c| c.awaiting.is_some())
                     && action.is_some() {
-                    host.pending_feedback=Some(serde_json::to_vec(&result)
-                        .expect("serializable action feedback"));
+                    let mut feedback=serde_json::to_vec(&result)
+                        .expect("serializable action feedback");
+                    // The opt-in field is exactly the sum of the two already
+                    // visible charges, never an estimate or a future fee.
+                    if self.state.transform_escrow.as_ref().and_then(|e|e.fee_total_feedback)==Some(true){
+                        if let Some(total)=result.gas_charged.checked_add(result.vm_gas_charged){
+                            assert_eq!(feedback.pop(),Some(b'}'));
+                            feedback.extend_from_slice(format!(",\"f\":{total}}}").as_bytes());
+                        }
+                    }
+                    host.pending_feedback=Some(feedback);
                 }
             }
         }
