@@ -1,0 +1,36 @@
+source_sha=d4ab36fb66cd283d1c8319aa465c3621f2e86235
+run_id=45785495729
+run_attempt=1
+test=s29_decline_offer_contract_native exit=0
+running 1 test
+S29_DECLINE_CONTRACT fees=82 credit=200 final_A=618 payer_A=1 settled=2 declined=1 version=2 legacy=true stale=true final_rejected=true replay=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 46 filtered out; finished in 0.01s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+test=s29_paid_price_contract_native exit=0
+running 1 test
+S29_PAID_QUOTE fee=8 final_A=256 payer_A=50 last=Ok replay=true
+S29_PAID_QUOTE fee=32 final_A=184 payer_A=50 last=Ok replay=true
+S29_PAID_QUOTE fee=96 final_A=88 payer_A=50 last=Gas replay=true
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 46 filtered out; finished in 0.01s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+test=s29_zero_grant_productive_chain_native exit=0
+running 1 test
+S29_ZERO_GRANT_CHAIN first=1 persistent=false root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=1 credit=1 fees=153 expired_A=104 boundary32_A=0 boundary48_A=0 post_credit=0 post_fees=0 final_A=0 earned=0 payer_A=1399 gas=22 return=None replay=true settlements=[(31, 0, 1, 104)]
+S29_ZERO_GRANT_CHAIN first=1 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=1 credit=1 fees=153 expired_A=103 boundary32_A=1 boundary48_A=1 post_credit=0 post_fees=0 final_A=1 earned=1 payer_A=1399 gas=22 return=None replay=true settlements=[(31, 0, 1, 104)]
+S29_ZERO_GRANT_CHAIN first=200 persistent=false root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=1 credit=200 fees=153 expired_A=303 boundary32_A=0 boundary48_A=0 post_credit=0 post_fees=0 final_A=0 earned=0 payer_A=1200 gas=22 return=None replay=true settlements=[(31, 0, 200, 303)]
+S29_ZERO_GRANT_CHAIN first=200 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=600 fees=559 expired_A=103 boundary32_A=200 boundary48_A=194 post_credit=400 post_fees=406 final_A=194 earned=194 payer_A=800 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 200, 303), (33, 1, 200, 214), (35, 2, 200, 228)]
+S29_ZERO_GRANT_CHAIN first=1000 persistent=false root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=1 credit=1000 fees=153 expired_A=1103 boundary32_A=0 boundary48_A=0 post_credit=0 post_fees=0 final_A=0 earned=0 payer_A=400 gas=22 return=None replay=true settlements=[(31, 0, 1000, 1103)]
+S29_ZERO_GRANT_CHAIN first=1000 persistent=true root=792f320d5802eb056cc51545692ec58697e880a3b9276a3d14cfd9686842a1e4 root_B=3500 install_A=227 settled=3 credit=1400 fees=560 expired_A=103 boundary32_A=1000 boundary48_A=993 post_credit=400 post_fees=407 final_A=993 earned=993 payer_A=0 gas=0 return=Some(U32(3)) replay=true settlements=[(31, 0, 1000, 1103), (33, 1, 200, 1013), (35, 2, 200, 1027)]
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 46 filtered out; finished in 1.12s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+running 0 tests
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+native_exit=0
+native_job_result=success

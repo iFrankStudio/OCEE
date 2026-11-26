@@ -2468,6 +2468,156 @@ mod autonomous_pilot{
         }
     }
 
+
+    // Fixed policies only: no oracle price, no learning or changing the world.
+    // Count is resolved slots (paid or declined), not the receipt count.
+    fn decline_choice_root(mode:u32)->Program{
+        assert!((1..=3).contains(&mode));
+        let mut p=chain_root();let f=&mut p.functions[0];
+        let i=|id,op|Instruction{id,op};
+        let ctx=vec![Param{id:90,ty:Type::U32}];
+        let mut fb=ctx.clone();fb.push(Param{id:2,ty:Type::Bytes});
+        let mut work=ctx.clone();
+        for id in [14,16,18]{work.push(Param{id,ty:Type::Bytes});}
+        work.push(Param{id:19,ty:Type::U32});
+        let args=vec![90,14,16,18,19];
+        let compute=f.blocks.iter_mut().find(|b|b.id=="compute").unwrap();
+        let pos=compute.instructions.iter().position(|i|i.id==20).unwrap();
+        let tail=compute.instructions.split_off(pos);
+        let submit=compute.terminator.clone();
+        compute.instructions.extend([i(26,Op::ConstU32(1)),i(27,Op::EqU32(90,26))]);
+        compute.terminator=Terminator::Branch{condition:27,if_true:"middle_decision".into(),true_args:args.clone(),
+            if_false:"produce_receipt".into(),false_args:args.clone()};
+        let yes=if mode==2{"decline_middle"}else{"produce_receipt"};
+        let no=if mode==1{"produce_receipt"}else{"decline_middle"};
+        f.blocks.extend([
+            Block{id:"middle_decision".into(),params:work.clone(),instructions:vec![
+                i(26,Op::ConstU32(32)),i(27,Op::Div(19,26)),i(28,Op::ConstU32(0)),i(29,Op::EqU32(27,28))],
+                terminator:Terminator::Branch{condition:29,if_true:yes.into(),true_args:args.clone(),
+                    if_false:no.into(),false_args:args.clone()}},
+            Block{id:"produce_receipt".into(),params:work.clone(),instructions:tail,terminator:submit},
+            Block{id:"decline_middle".into(),params:work,instructions:vec![
+                i(10,literal(DECLINE.as_bytes())),i(11,Op::Concat(10,14)),
+                i(12,Op::PackByte(90)),i(13,literal(&[0;7])),i(15,Op::Concat(12,13)),
+                i(17,Op::ConstU32(u32::MAX))],
+                terminator:Terminator::Yield{call:WorldCall::Write,args:vec![11,15,17],next:"decline_written".into(),next_args:vec![90]}},
+            Block{id:"decline_written".into(),params:fb,instructions:vec![
+                i(10,literal(b"code")),i(11,Op::JsonFieldString(2,10)),i(12,literal(b"Ok")),i(13,Op::EqBytes(11,12))],
+                terminator:Terminator::Branch{condition:13,if_true:"chain_advance".into(),true_args:vec![90],
+                    if_false:"failed".into(),false_args:vec![90]}}
+        ]);
+        p.validate().expect("typed finite choice root");p
+    }
+
+    #[test]
+    fn s29_autonomous_decline_choice_native(){
+        for mode in 0..4{
+            let p=if mode==0{chain_root()}else{decline_choice_root(mode)};
+            let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
+            for first in [350u64,650,1000]{
+            for long in [false,true]{
+            for middle_price in [1u64,600]{
+                let mut tasks=chain_tasks(first);
+                if long{tasks[1].0.held_out_input=vec![255;96];}
+                tasks[1].1=middle_price;tasks[2].1=400;
+                let config=Config{seed:129,epoch_length:16,a_gas_per_epoch:12000,..Config::default()};
+                let mut w=World::with_declining_transform_sequence(config,tasks.clone(),2200).unwrap();
+                for (key,bytes) in [(format!("/self/versions/{hash}"),raw.clone()),("/self/active".into(),hash.as_bytes().to_vec())]{
+                    let r=w.tick(Some(Action::Write{actor:ORGANISM_ID,key,bytes,expected_version:None}));
+                    assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+                }
+                let install=w.audit.iter().map(|e|e.result.gas_charged+e.result.vm_gas_charged).sum::<u64>();
+                w.schedule_event(ScheduledEvent{due_step:16,priority:0,sequence_no:0,
+                    kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:256}});
+                w.schedule_event(ScheduledEvent{due_step:32,priority:0,sequence_no:1,
+                    kind:EventKind::ResourceChange{node:NodeId::A,gas_per_epoch:0}});
+                while w.state.step<30{w.tick(None);}
+                assert_eq!(w.state.nodes[&NodeId::A].gas_available,256);
+                let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+                let (mut balance,mut earned,mut payer)=(256u64,0u64,2200u64);
+                let (mut fees,mut expired,mut credit,mut post_fees,mut post_credit)=(0u64,0u64,0u64,0u64,0u64);
+                let (mut at32,mut at48,mut gas)=(0u64,0u64,0u64);
+                let mut reads=Vec::new();let mut settlements=Vec::new();let mut declines=Vec::new();
+                for step in 30..54{
+                    assert_eq!(w.state.step,step);
+                    if step==32||step==48{
+                        expired+=balance-earned;balance=earned;
+                        if step==32{at32=balance;}else{at48=balance;}
+                    }
+                    let finished=w.state.organisms[&ORGANISM_ID].vm_continuation.as_ref().is_some_and(|c|c.finished);
+                    let r=if finished{w.tick(None)}else{w.tick_autonomous(ORGANISM_ID)};
+                    let rr=if finished{replay.tick(None)}else{replay.tick_autonomous(ORGANISM_ID)};
+                    assert_eq!(r,rr);
+                    let fee=r.gas_charged+r.vm_gas_charged;
+                    let quota=balance.checked_sub(earned).unwrap();
+                    earned=earned.checked_sub(fee.saturating_sub(quota)).unwrap()+r.a_credited;
+                    balance=balance.checked_sub(fee).unwrap()+r.a_credited;
+                    payer=payer.checked_sub(r.a_credited).unwrap();fees+=fee;credit+=r.a_credited;
+                    if step>=32{post_fees+=fee;post_credit+=r.a_credited;assert_eq!(w.state.nodes[&NodeId::A].gas_per_epoch,0);}
+                    if r.code==Code::Gas{gas+=1;}
+                    let escrow=w.state.transform_escrow.as_ref().unwrap();
+                    let seq=escrow.sequence.as_ref().unwrap();
+                    assert_eq!(balance,w.state.nodes[&NodeId::A].gas_available);
+                    assert_eq!(payer,escrow.remaining_a);assert_eq!(escrow.earned_a,Some(earned));
+                    assert_eq!(balance+payer,2456-fees-expired);
+                    let a=w.audit.last().unwrap();
+                    let slot=settlements.len()+declines.len();
+                    if matches!(&a.action,Some(Action::Read{key,..}) if key==OFFER)&&r.code==Code::Ok{
+                        assert!(slot<3);
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&r.payload).unwrap(),tasks[slot].0);
+                        reads.push((step,slot));
+                    }
+                    if r.a_credited>0{
+                        assert!(slot<3);let (task,price)=&tasks[slot];
+                        let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                        assert_eq!(r.a_credited,*price);assert_eq!(r.code,Code::Ok);
+                        assert!(reads.iter().any(|(s,i)|*s<step&&*i==slot));
+                        assert!(matches!(&a.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                        assert_eq!(seq.settled.last().unwrap(),&TransformSettlement{outcome_key:key,offer_version:slot as u64,step,price_a:*price});
+                        settlements.push((step,slot,*price,balance));
+                    }
+                    if seq.declined.as_ref().unwrap().len()>declines.len(){
+                        assert_eq!(slot,1);assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+                        assert!(fee>0);assert!(reads.iter().any(|(s,i)|*s<step&&*i==slot));
+                        let key=format!("{DECLINE}62");
+                        assert!(matches!(&a.action,Some(Action::Write{key:k,expected_version:None,..}) if k==&key));
+                        assert_eq!(w.state.objects[&key].bytes,1u64.to_le_bytes().to_vec());
+                        assert_eq!(seq.declined.as_ref().unwrap().last().unwrap(),&TransformDecline{outcome_key:format!("{OUTCOME}62"),offer_version:1,step});
+                        assert_eq!(w.state.objects[OFFER].version,2);
+                        assert_eq!(serde_json::from_slice::<TransformTask>(&w.state.objects[OFFER].bytes).unwrap(),tasks[2].0);
+                        assert!(mode==2||(mode==3&&long));
+                        declines.push((step,slot,balance));
+                    }
+                    assert_eq!(seq.settled.len(),settlements.len());
+                    assert_eq!(seq.declined.as_ref().unwrap().len(),declines.len());
+                }
+                assert_eq!(settlements.first().map(|s|(s.0,s.1,s.2)),Some((31,0,first)));
+                for (slot,(task,_)) in tasks.iter().enumerate(){
+                    let key=format!("{OUTCOME}{:02x}",task.task_id.as_bytes()[0]);
+                    let paid=settlements.iter().any(|s|s.1==slot);
+                    assert_eq!(w.state.objects.contains_key(&key),paid);
+                    if paid{
+                        let o=&w.state.objects[&key];assert_eq!(o.owner,ORGANISM_ID);assert_eq!(o.version,0);
+                        assert_eq!(o.bytes.len(),280);assert_eq!(o.bytes[0],task.held_out_input.len() as u8);
+                        assert_eq!(&o.bytes[1..33],Sha256::digest(&task.held_out_input).as_slice());
+                        assert!(o.bytes[33..].iter().all(|b|*b==0x55));
+                    }
+                }
+                if mode<=1||(mode==3&&!long){assert!(declines.is_empty());}
+                if settlements.len()+declines.len()==3{
+                    assert!(settlements.iter().any(|s|s.1==2));
+                    assert_eq!(w.state.organisms[&ORGANISM_ID].last_return,Some(Value::U32(3)));
+                }
+                let net=post_credit as i64-post_fees as i64;
+                assert_eq!(balance as i64-at32 as i64,net);
+                assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+                println!("S29_DECLINE_CHOICE mode={mode} first={first} long={long} middle_price={middle_price} root={hash} root_B={} install_A={install} settled={} declined={} credit={credit} fees={fees} expired_A={expired} boundary32_A={at32} boundary48_A={at48} post_credit={post_credit} post_fees={post_fees} net={net} final_A={balance} earned={earned} payer_A={payer} gas={gas} return={:?} replay=true settlements={settlements:?} declines={declines:?}",raw.len(),settlements.len(),declines.len(),w.state.organisms[&ORGANISM_ID].last_return);
+            }
+            }
+            }
+        }
+    }
+
     #[test]
     fn finite_escrow_productive_chain_native(){
         let p=chain_root();let hash=p.content_hash().unwrap();let raw=p.canonical_bytes();
