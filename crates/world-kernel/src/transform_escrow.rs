@@ -4,6 +4,7 @@ use super::*;
 
 const OFFER:&str="/public/E001/transform";
 const OUTCOME:&str="/self/outcomes/s29-offer-";
+const DECLINE:&str="/self/declines/s29-offer-";
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 pub struct TransformEscrow{
     pub initial_a:u64,
@@ -31,11 +32,16 @@ pub struct TransformSequence{
     settled:Vec<TransformSettlement>,
     #[serde(default,skip_serializing_if="Option::is_none")]
     max_offers:Option<u32>,
+    /// None preserves the old mandatory-settlement sequence.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    declined:Option<Vec<TransformDecline>>,
 }
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 struct TransformTerms{offer:Vec<u8>,outcome_key:String,price_a:u64}
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 struct TransformSettlement{outcome_key:String,offer_version:u64,step:u64,price_a:u64}
+#[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
+struct TransformDecline{outcome_key:String,offer_version:u64,step:u64}
 impl World{
     /// Trusted environment construction only; no corresponding VM call.
     /// The explicitly allocated payer endowment is independent of epoch grants.
@@ -81,7 +87,7 @@ impl World{
         let mut w=Self::with_transform_escrow(config,tasks[0].0.clone(),endowment,tasks[0].1)?;
         terms.remove(0);
         w.state.transform_escrow.as_mut().unwrap().sequence=Some(TransformSequence{
-            pending:terms,settled:vec![],max_offers
+            pending:terms,settled:vec![],max_offers,declined:None
         });
         Ok(w)
     }
@@ -111,6 +117,15 @@ impl World{
         Ok(w)
     }
 
+    /// Trusted finite choice pilot: permit declining nonterminal offers by a
+    /// paid ordinary create-only write, without payment or replenishment.
+    pub fn with_declining_transform_sequence(config:Config,tasks:Vec<(TransformTask,u64)>,
+        endowment:u64)->Result<Self,Code>{
+        let mut w=Self::with_persistent_transform_sequence(config,tasks,endowment)?;
+        w.state.transform_escrow.as_mut().unwrap().sequence.as_mut().unwrap().declined=Some(vec![]);
+        Ok(w)
+    }
+
     /// Trusted opt-in single-offer accounting pilot; no VM enable action.
     pub fn with_persistent_transform_escrow(config:Config,task:TransformTask,
         endowment:u64,price:u64)->Result<Self,Code>{
@@ -132,7 +147,7 @@ impl World{
             let e=self.state.transform_escrow.as_ref()?;
             let seq=e.sequence.as_ref()?;
             let o=self.state.objects.get(OFFER)?;
-            let version=seq.settled.len() as u64;
+            let version=(seq.settled.len()+seq.declined.as_ref().map_or(0,Vec::len)) as u64;
             let paid=seq.settled.iter().try_fold(0u64,|sum,r|sum.checked_add(r.price_a))?;
             if e.paid_at.is_some() || e.paid_a!=0 || e.price_a==0 ||
                 e.price_a>e.remaining_a || e.initial_a.checked_sub(paid)!=Some(e.remaining_a) ||
@@ -163,11 +178,13 @@ impl World{
             key!=escrow.outcome_key{return 0;}
         let (version,already_paid)=if let Some(seq)=&escrow.sequence{
             let max=seq.max_offers.unwrap_or(3) as usize;
-            if !matches!(max,3|12) || seq.settled.len()>=max ||
-                seq.pending.len()+seq.settled.len()>=max ||
-                seq.settled.iter().any(|r|r.outcome_key==key){return 0;}
+            let resolved=seq.settled.len()+seq.declined.as_ref().map_or(0,Vec::len);
+            if !matches!(max,3|12) || resolved>=max ||
+                seq.pending.len()+resolved>=max ||
+                seq.settled.iter().any(|r|r.outcome_key==key) ||
+                seq.declined.as_ref().is_some_and(|rs|rs.iter().any(|r|r.outcome_key==key)){return 0;}
             let Some(sum)=seq.settled.iter().try_fold(0u64,|sum,r|sum.checked_add(r.price_a)) else{return 0;};
-            (seq.settled.len() as u64,sum)
+            (resolved as u64,sum)
         }else{(0,0)};
         if escrow.initial_a.checked_sub(already_paid)!=Some(escrow.remaining_a){return 0;}
         let Some(offer)=self.state.objects.get(OFFER) else{return 0;};
@@ -206,6 +223,38 @@ impl World{
         }
         price
     }
+
+    // Only after a successful create-only ordinary Write. A wrong/stale
+    // marker is ordinary owned data, not an acknowledgement or free advance.
+    pub(super) fn decline_transform_write(&mut self,actor:u64,key:&str,step:u64){
+        if actor!=ORGANISM_ID{return;}
+        let Some(e)=self.state.transform_escrow.as_ref() else{return;};
+        let Some(seq)=e.sequence.as_ref() else{return;};
+        let Some(declined)=seq.declined.as_ref() else{return;};
+        let resolved=seq.settled.len()+declined.len();
+        let max=seq.max_offers.unwrap_or(3) as usize;
+        if max!=3 || seq.pending.is_empty() || resolved+seq.pending.len()>=max ||
+            e.paid_at.is_some() || e.paid_a!=0 || e.price_a==0 || e.price_a>e.remaining_a ||
+            seq.settled.iter().any(|r|r.outcome_key==e.outcome_key) ||
+            declined.iter().any(|r|r.outcome_key==e.outcome_key){return;}
+        let Some(suffix)=e.outcome_key.strip_prefix(OUTCOME) else{return;};
+        if key!=format!("{DECLINE}{suffix}"){return;}
+        let Some(offer)=self.state.objects.get(OFFER) else{return;};
+        let Some(marker)=self.state.objects.get(key) else{return;};
+        let version=resolved as u64;
+        if offer.owner!=0 || offer.version!=version || offer.bytes!=e.offer ||
+            marker.owner!=actor || marker.version!=0 || marker.bytes.as_slice()!=version.to_le_bytes().as_slice(){return;}
+        let Some(paid)=seq.settled.iter().try_fold(0u64,|sum,r|sum.checked_add(r.price_a)) else{return;};
+        if e.initial_a.checked_sub(paid)!=Some(e.remaining_a) ||
+            e.earned_a.is_none_or(|earned|earned>paid||earned>self.state.nodes[&NodeId::A].gas_available){return;}
+        let e=self.state.transform_escrow.as_mut().unwrap();
+        let seq=e.sequence.as_mut().unwrap();
+        seq.declined.as_mut().unwrap().push(TransformDecline{outcome_key:e.outcome_key.clone(),offer_version:version,step});
+        let next=seq.pending.remove(0);
+        e.offer=next.offer.clone();e.outcome_key=next.outcome_key;e.price_a=next.price_a;
+        self.state.objects.insert(OFFER.into(),Object{owner:0,version:version+1,bytes:next.offer});
+        self.state.version_ref_index=None;
+    }
 }
 
 #[cfg(test)]
@@ -229,6 +278,70 @@ mod tests{
     }
     fn a(w:&World)->u64{w.state.nodes[&NodeId::A].gas_available}
     fn escrow(w:&World)->&TransformEscrow{w.state.transform_escrow.as_ref().unwrap()}
+
+    #[test]
+    fn s29_decline_offer_contract_native(){
+        let cfg=Config{seed:129,a_gas_per_epoch:500,epoch_length:64,..Config::default()};
+        let mut b=task();b.task_id="b".into();
+        let mut c=task();c.task_id="c".into();
+        let tasks=vec![(task(),100),(b.clone(),1),(c.clone(),100)];
+        let make=|enabled:bool|{
+            let mut w=if enabled{World::with_declining_transform_sequence(cfg.clone(),tasks.clone(),201)}
+                else{World::with_persistent_transform_sequence(cfg.clone(),tasks.clone(),201)}.unwrap();
+            w.state.transform_escrow.as_mut().unwrap().price_query_fee=Some(8);
+            w.tick(None);w
+        };
+        let decline=|id:&str,version:u64|write(ORGANISM_ID,&format!("{DECLINE}{id}"),version.to_le_bytes().to_vec(),None);
+        let quote=|id:&str,version:u64|Action::Read{actor:ORGANISM_ID,key:format!("/sys/transform-price-u16/{id}/{version}")};
+        let mut legacy=make(false);
+        let r=legacy.tick(Some(decline("61",0)));
+        assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+        assert_eq!(legacy.state.objects[OFFER].version,0);
+        assert!(!std::str::from_utf8(&legacy.snapshot_json()).unwrap().contains("\"declined\""));
+        let mut invalid=make(true);
+        let r=invalid.tick(Some(decline("61",1)));
+        assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);
+        assert_eq!(invalid.state.objects[OFFER].version,0);
+        assert!(escrow(&invalid).sequence.as_ref().unwrap().declined.as_ref().unwrap().is_empty());
+        let mut w=make(true);
+        let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+        let mut fees=0u64;let mut credit=0u64;
+        let acts=[
+            write(ORGANISM_ID,KEY,receipt(),None), // a: settle
+            decline("62",1),                      // b: decline
+            quote("b",1),                         // stale, paid NotFound
+            quote("c",2),                         // current, paid price
+            write(ORGANISM_ID,"/self/outcomes/s29-offer-62",receipt(),None), // declined: no credit
+            decline("63",2),                      // final: no advance
+            write(ORGANISM_ID,"/self/outcomes/s29-offer-63",receipt(),None), // c: settle
+            decline("62",1),                      // repeated marker: rejected
+        ];
+        for (i,act) in acts.into_iter().enumerate(){
+            let r=w.tick(Some(act.clone()));assert_eq!(r,replay.tick(Some(act)));
+            let fee=r.gas_charged+r.vm_gas_charged;fees+=fee;credit+=r.a_credited;
+            assert_eq!(a(&w),500+credit-fees);
+            assert_eq!(escrow(&w).remaining_a,201-credit);
+            assert_eq!(escrow(&w).earned_a,Some(credit)); // initial quota covers all fees
+            match i{
+                0|6=>{assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,100);}
+                1=>{assert_eq!(r.code,Code::Ok);assert!(fee>0);assert_eq!(r.a_credited,0);
+                    assert_eq!(w.state.objects[OFFER].version,2);
+                    assert_eq!(serde_json::from_slice::<TransformTask>(&w.state.objects[OFFER].bytes).unwrap(),c);}
+                2=>{assert_eq!(r.code,Code::NotFound);assert_eq!(fee,8);}
+                3=>{assert_eq!(r.code,Code::Ok);assert_eq!(r.payload,100u16.to_le_bytes().to_vec());assert_eq!(fee,8);}
+                4|5=>{assert_eq!(r.code,Code::Ok);assert_eq!(r.a_credited,0);assert_eq!(w.state.objects[OFFER].version,2);}
+                7=>{assert_ne!(r.code,Code::Ok);assert_eq!(r.a_credited,0);}
+                _=>unreachable!()
+            }
+        }
+        let seq=escrow(&w).sequence.as_ref().unwrap();
+        assert_eq!(seq.settled.iter().map(|r|r.offer_version).collect::<Vec<_>>(),vec![0,2]);
+        assert_eq!(seq.declined.as_ref().unwrap().as_slice(),&[TransformDecline{outcome_key:"/self/outcomes/s29-offer-62".into(),offer_version:1,step:2}]);
+        assert!(seq.pending.is_empty());assert_eq!(credit,200);assert_eq!(escrow(&w).remaining_a,1);
+        assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+        println!("S29_DECLINE_CONTRACT fees={fees} credit={credit} final_A={} payer_A={} settled=2 declined=1 version=2 legacy=true stale=true final_rejected=true replay=true",a(&w),escrow(&w).remaining_a);
+    }
+
     #[test]
     fn s29_paid_price_contract_native(){
         let config=Config{seed:129,a_gas_per_epoch:200,epoch_length:16,..Config::default()};

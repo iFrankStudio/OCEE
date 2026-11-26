@@ -1520,6 +1520,7 @@ impl World {
         if self.state.transform_escrow.is_some() && result.code==Code::Ok {
             if let Some(Action::Write{actor,key,expected_version:None,..})=action.as_ref(){
                 result.a_credited=self.settle_transform_write(*actor,key,k);
+                if result.a_credited==0{self.decline_transform_write(*actor,key,k);}
             }
         }
         if matches!(action.as_ref(),Some(Action::Exec{..})) &&
