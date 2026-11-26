@@ -987,6 +987,9 @@ impl World {
                 ActionResult::ok(view, 1, 0)
             }
             Action::Read {key,..} => {
+                if let Some(suffix)=key.strip_prefix("/sys/transform-summary/") {
+                    return self.read_transform_summary(actor,suffix);
+                }
                 if let Some(suffix)=key.strip_prefix("/sys/transform-price/") {
                     return self.read_transform_price(actor,suffix,false);
                 }

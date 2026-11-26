@@ -25,6 +25,9 @@ pub struct TransformEscrow{
     /// Opt-in redundant fee total in autonomous feedback; no new information.
     #[serde(default,skip_serializing_if="Option::is_none")]
     pub fee_total_feedback:Option<bool>,
+    /// Opt-in metered compact current-offer summary, independent of price quote.
+    #[serde(default,skip_serializing_if="Option::is_none")]
+    pub offer_summary_fee:Option<u64>,
 }
 #[derive(Clone,Debug,Eq,PartialEq,Serialize,Deserialize)]
 pub struct TransformSequence{
@@ -58,7 +61,7 @@ impl World{
         w.state.objects.insert(OFFER.into(),Object{owner:0,version:0,bytes:offer.clone()});
         w.state.transform_escrow=Some(TransformEscrow{
             initial_a:endowment,remaining_a:endowment,price_a:price,offer,
-            outcome_key,paid_at:None,paid_a:0,sequence:None,price_query_fee:None,earned_a:None,fee_total_feedback:None
+            outcome_key,paid_at:None,paid_a:0,sequence:None,price_query_fee:None,earned_a:None,fee_total_feedback:None,offer_summary_fee:None
         });
         Ok(w)
     }
@@ -126,6 +129,15 @@ impl World{
         Ok(w)
     }
 
+    /// Trusted three-slot choice pilot with a paid current-offer summary.
+    pub fn with_summarized_transform_sequence(config:Config,tasks:Vec<(TransformTask,u64)>,
+        endowment:u64,fee:u64)->Result<Self,Code>{
+        if !(1..=128).contains(&fee){return Err(Code::BadRequest);}
+        let mut w=Self::with_declining_transform_sequence(config,tasks,endowment)?;
+        w.state.transform_escrow.as_mut().unwrap().offer_summary_fee=Some(fee);
+        Ok(w)
+    }
+
     /// Trusted opt-in single-offer accounting pilot; no VM enable action.
     pub fn with_persistent_transform_escrow(config:Config,task:TransformTask,
         endowment:u64,price:u64)->Result<Self,Code>{
@@ -162,6 +174,46 @@ impl World{
                     "task_id":task.task_id,"offer_version":version,"price_a":e.price_a
                 })).ok()
             }
+        })();
+        match payload{
+            Some(bytes)=>ActionResult::ok(bytes,fee,0),
+            None=>ActionResult{gas_charged:fee,..ActionResult::fail(Code::NotFound)}
+        }
+    }
+
+    /// Six bytes: ASCII id, version u16 LE, input length u8, price u16 LE.
+    /// A summary is information only: no reservation, payout or future offer.
+    pub(super) fn read_transform_summary(&mut self,actor:u64,suffix:&str)->ActionResult{
+        let Some(fee)=self.state.transform_escrow.as_ref().and_then(|e|e.offer_summary_fee)
+            else{return ActionResult::fail(Code::NotFound);};
+        if actor!=ORGANISM_ID{return ActionResult::fail(Code::Denied);}
+        if !(1..=128).contains(&fee){return ActionResult::fail(Code::BadRequest);}
+        if let Err(code)=self.spend_a_gas(fee){return ActionResult::fail(code);}
+        let payload=(||{
+            let e=self.state.transform_escrow.as_ref()?;
+            let seq=e.sequence.as_ref()?;
+            let declined=seq.declined.as_ref()?;
+            let o=self.state.objects.get(OFFER)?;
+            let resolved=seq.settled.len().checked_add(declined.len())?;
+            let version=u16::try_from(resolved).ok()?;
+            let paid=seq.settled.iter().try_fold(0u64,|sum,r|sum.checked_add(r.price_a))?;
+            if seq.max_offers.is_some() || resolved>=3 || resolved.checked_add(seq.pending.len())?>=3 ||
+                e.paid_at.is_some() || e.paid_a!=0 || e.price_a==0 || e.price_a>e.remaining_a ||
+                e.initial_a>4096 || e.initial_a.checked_sub(paid)!=Some(e.remaining_a) ||
+                o.owner!=0 || o.version!=u64::from(version) || o.bytes!=e.offer ||
+                suffix!=version.to_string() ||
+                seq.settled.iter().any(|r|r.outcome_key==e.outcome_key) ||
+                declined.iter().any(|r|r.outcome_key==e.outcome_key){return None;}
+            let task:TransformTask=serde_json::from_slice(&e.offer).ok()?;
+            let id=task.task_id.as_bytes();
+            if id.len()!=1 || !id[0].is_ascii_lowercase() || !task.examples.is_empty() ||
+                task.held_out_input.is_empty() || e.outcome_key!=format!("{OUTCOME}{:02x}",id[0]){return None;}
+            let len=u8::try_from(task.held_out_input.len()).ok()?;
+            let price=u16::try_from(e.price_a).ok()?;
+            let mut bytes=vec![id[0]];
+            bytes.extend_from_slice(&version.to_le_bytes());
+            bytes.push(len);bytes.extend_from_slice(&price.to_le_bytes());
+            Some(bytes)
         })();
         match payload{
             Some(bytes)=>ActionResult::ok(bytes,fee,0),
@@ -278,6 +330,74 @@ mod tests{
     }
     fn a(w:&World)->u64{w.state.nodes[&NodeId::A].gas_available}
     fn escrow(w:&World)->&TransformEscrow{w.state.transform_escrow.as_ref().unwrap()}
+
+
+    #[test]
+    fn s29_offer_summary_contract_native(){
+        let cfg=Config{seed:129,a_gas_per_epoch:500,epoch_length:64,..Config::default()};
+        let mut b=task();b.task_id="b".into();b.held_out_input=vec![255;96];
+        let mut c=task();c.task_id="c".into();c.held_out_input=vec![7;255];
+        let tasks=vec![(task(),100),(b,1),(c,600)];
+        let read=|suffix:&str|Action::Read{actor:ORGANISM_ID,key:format!("/sys/transform-summary/{suffix}")};
+        let mut legacy=World::with_declining_transform_sequence(cfg.clone(),tasks.clone(),701).unwrap();
+        legacy.tick(None);
+        assert_eq!(legacy.tick(Some(read("0"))),ActionResult::fail(Code::NotFound));
+        assert_eq!(a(&legacy),500);
+        assert!(!std::str::from_utf8(&legacy.snapshot_json()).unwrap().contains("offer_summary_fee"));
+        for fee in [0u64,129]{
+            assert!(matches!(World::with_summarized_transform_sequence(cfg.clone(),tasks.clone(),701,fee),Err(Code::BadRequest)));
+        }
+        for fee in [2u64,8,32]{
+            let mut w=World::with_summarized_transform_sequence(cfg.clone(),tasks.clone(),701,fee).unwrap();
+            w.tick(None);
+            let mut replay=World::from_snapshot(&w.snapshot_json()).unwrap();
+            let mut fees=0u64;let mut credit=0u64;
+            let mut last=vec![255];
+            last.extend_from_slice(Sha256::digest(&tasks[2].0.held_out_input).as_slice());
+            last.extend_from_slice(&[0x55;247]);
+            let acts=[
+                read("0"),read("1"),read("00"),
+                write(ORGANISM_ID,KEY,receipt(),None),
+                read("0"),read("1"),
+                write(ORGANISM_ID,&format!("{DECLINE}62"),1u64.to_le_bytes().to_vec(),None),
+                read("1"),read("2"),
+                write(ORGANISM_ID,&format!("{OUTCOME}63"),last,None),
+                read("2")
+            ];
+            for (i,act) in acts.into_iter().enumerate(){
+                let r=w.tick(Some(act.clone()));assert_eq!(r,replay.tick(Some(act)));
+                fees+=r.gas_charged+r.vm_gas_charged;credit+=r.a_credited;
+                assert_eq!(a(&w),500+credit-fees);
+                assert_eq!(escrow(&w).remaining_a,701-credit);
+                assert_eq!(escrow(&w).earned_a,Some(credit));
+                let expected=match i{
+                    0=>Some(vec![b'a',0,0,3,100,0]),
+                    5=>Some(vec![b'b',1,0,96,1,0]),
+                    8=>Some(vec![b'c',2,0,255,88,2]),
+                    _=>None
+                };
+                if let Some(bytes)=expected{
+                    assert_eq!(r.code,Code::Ok);assert_eq!(r.gas_charged,fee);
+                    assert_eq!(r.payload,bytes);assert_eq!(r.a_credited,0);
+                }else if matches!(i,1|2|4|7|10){
+                    assert_eq!(r.code,Code::NotFound);assert_eq!(r.gas_charged,fee);
+                    assert!(r.payload.is_empty());assert_eq!(r.a_credited,0);
+                }else{
+                    assert_eq!(r.code,Code::Ok);
+                    assert_eq!(r.a_credited,match i{3=>100,9=>600,_=>0});
+                }
+            }
+            assert_eq!(credit,700);assert_eq!(escrow(&w).remaining_a,1);
+            let seq=escrow(&w).sequence.as_ref().unwrap();
+            assert_eq!(seq.settled.len(),2);assert_eq!(seq.declined.as_ref().unwrap().len(),1);
+            assert_eq!(w.snapshot_json(),replay.snapshot_json());assert_eq!(w.audit,replay.audit);
+            println!("S29_SUMMARY_CONTRACT fee={fee} fees={fees} credit={credit} final_A={} payer_A={} settled=2 declined=1 stale=true future=true terminal=true replay=true",a(&w),escrow(&w).remaining_a);
+        }
+        let mut poor=World::with_summarized_transform_sequence(Config{a_gas_per_epoch:7,..cfg},tasks,701,8).unwrap();
+        poor.tick(None);
+        assert_eq!(poor.tick(Some(read("0"))),ActionResult::fail(Code::Gas));
+        assert_eq!(a(&poor),7);assert_eq!(escrow(&poor).remaining_a,701);
+    }
 
     #[test]
     fn s29_decline_offer_contract_native(){
